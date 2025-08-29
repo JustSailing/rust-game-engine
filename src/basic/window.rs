@@ -39,15 +39,19 @@ impl Drop for Display {
     }
 }
 
-pub struct Window<'a> {
-    display: &'a Display,
+pub struct Window {
+    display: Display,
     window_id: Window_,
     wm_protocols: Atom,
     wm_delete: Atom,
 }
 
-impl<'a> Window<'a> {
-    pub fn create(display: &'a Display, width: u32, height: u32) -> Result<Self, X11Error> {
+impl Window {
+    pub fn create(width: u32, height: u32) -> Result<Self, X11Error> {
+        let display = match Display::open() {
+            Ok(d) => d,
+            Err(_) => return Err(X11Error::OperationFailed("Could not open display")),
+        };
         let screen_num = unsafe { XDefaultScreen(display.raw) };
         let root_win_id = unsafe { XRootWindow(display.raw, screen_num) };
         let window_id = unsafe {
@@ -113,6 +117,8 @@ impl<'a> Window<'a> {
         unsafe {
             XkbSetDetectableAutoRepeat(display.raw, 1, &mut enable);
         };
+
+        display.sync();
 
         Ok(Window {
             display: display,
@@ -346,7 +352,7 @@ impl<'a> Window<'a> {
     }
 }
 
-impl<'a> Drop for Window<'a> {
+impl Drop for Window {
     fn drop(&mut self) {
         unsafe { XDestroyWindow(self.display.raw, self.window_id) };
     }

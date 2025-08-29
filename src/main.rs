@@ -1,25 +1,16 @@
-mod basic;
+mod application;
 
-use basic::window::{Display, Window, X11Error, Event};
+use application::*;
 
-fn main() -> Result<(), X11Error>{
+fn main() -> Result<(), AppError> {
     println!("Hello, world!");
-    let display = Display::open()?;
-    let window = Window::create(&display, 900, 500)?;
-    window.set_title("Hello World");
-    window.show();
-    loop {
-        if let Some(event) = window.get_event() {
-            match event {
-                Event::Key { key } => continue,
-                Event::Button { button } => continue,
-                Event::MousePos { x, y } => continue,
-                Event::ConfigureNotify { x, y, width, height } => continue,
-                Event::CloseWindow => {return Ok(());},
-            }
-        } else {
-            continue;
-        }
-    }
-
+    let _ = application::ApplicationState::create(&AppConfig {
+        start_pos_x: 0,
+        start_pos_y: 0,
+        start_width: 1000,
+        start_height: 800,
+        name: "Hello William",
+    });
+    let _ = application::ApplicationState::run();
+    Ok(())
 }
