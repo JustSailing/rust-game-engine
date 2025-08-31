@@ -47,7 +47,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn create(width: u32, height: u32) -> Result<Self, X11Error> {
+    pub fn create(x: i32, y: i32, width: i32, height: i32) -> Result<Self, X11Error> {
         let display = match Display::open() {
             Ok(d) => d,
             Err(_) => return Err(X11Error::OperationFailed("Could not open display")),
@@ -58,10 +58,10 @@ impl Window {
             XCreateSimpleWindow(
                 display.raw,
                 root_win_id,
-                0,
-                0,
-                width,
-                height,
+                x,
+                y,
+                width as u32,
+                height as u32,
                 1,
                 XWhitePixel(display.raw, screen_num),
                 XBlackPixel(display.raw, screen_num),
@@ -358,7 +358,7 @@ impl Drop for Window {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Key {
     Unknown = 0x00,
     Backspace = 0x08,
@@ -500,7 +500,7 @@ pub enum Key {
     Grave = 0xC0,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Button {
     Left,
     Right,
