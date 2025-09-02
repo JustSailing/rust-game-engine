@@ -1,9 +1,12 @@
-#[path = "basic/mod.rs"]
+#[path = "./basic/mod.rs"]
 mod basic;
+#[path = "./renderer/mod.rs"]
+mod renderer;
 
 use basic::event::{EventError, EventState};
 use basic::input::{InputError, InputState};
 use basic::window::{Event, Window};
+use renderer::renderer_types::{FrontendRenderer, FrontendRendererError};
 
 pub struct AppConfig {
     pub start_pos_x: i32,
@@ -18,6 +21,9 @@ pub enum AppError {
     CouldNotCreateWindow,
     NotInitialized,
     AlreadyInitialized,
+    FrontendRendererAlreadyInitialized,
+    FrontendRendererAlreadyShutdown,
+    FrontendRendererNotInitialized,
     EventAlreadyInitialized,
     EventNotInitialized,
     EventAlreadyShutdown,
@@ -25,6 +31,20 @@ pub enum AppError {
     InputNotInitialized,
     InputAlreadyShutdown,
     AlreadyShutdown,
+    OperationFailed(&'static str),
+}
+
+impl From<FrontendRendererError> for AppError {
+    fn from(value: FrontendRendererError) -> Self {
+        match value {
+            FrontendRendererError::AlreadyInitialized => {
+                AppError::FrontendRendererAlreadyInitialized
+            }
+            FrontendRendererError::AlreadyShutdown => AppError::FrontendRendererAlreadyShutdown,
+            FrontendRendererError::NotInitialized => AppError::FrontendRendererNotInitialized,
+            FrontendRendererError::OperationFailed(v) => AppError::OperationFailed(v),
+        }
+    }
 }
 
 impl From<EventError> for AppError {
@@ -101,6 +121,11 @@ impl ApplicationState {
             Err(e) => return Err(AppError::from(e)),
         };
 
+        match FrontendRenderer::initialize(config.name) {
+            Ok(_) => (),
+            Err(e) => return Err(AppError::from(e)),
+        }
+
         Ok(())
     }
 
@@ -147,6 +172,19 @@ impl ApplicationState {
                         return Ok(());
                     }
                 }
+            }
+        }
+    }
+
+    pub fn shutdown() -> Result<(), AppError> {
+        unsafe {
+            if let Some(ref mut _state) = APP_STATE {
+                let _ = FrontendRenderer::shutdown();
+                let _ = EventState::shutdown();
+                APP_STATE = None;
+                return Ok(());
+            } else {
+                return Err(AppError::AlreadyShutdown);
             }
         }
     }

@@ -1,12 +1,5 @@
-#[path = "window.rs"]
-mod window;
-
-use window::{Button, Key};
-
-#[path = "event.rs"]
-mod event;
-
-use event::{EventCodes, EventCtx, EventState};
+use crate::application::basic::event::{EventCodes, EventCtx, EventState};
+use crate::application::basic::window::{Button, Key};
 
 #[derive(Clone, Copy)]
 struct KeyboardState {
@@ -294,5 +287,4 @@ impl InputState {
             state.mouse_previous.pos_y.into(),
         ))
     }
-    
 }
