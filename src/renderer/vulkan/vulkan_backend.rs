@@ -158,14 +158,17 @@ impl VulkanContext {
                 state
                     .dbg_util_loader
                     .destroy_debug_utils_messenger(state.dbg_messenger, None);
-                //state.instance.destroy_instance(None);
+                state.instance.destroy_instance(None);
+                VULKAN_STATE = None;
             }
         }
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state.instance.destroy_instance(None);
+                VULKAN_STATE = None;
             }
         }
+
         Ok(())
     }
     pub fn on_resize(width: i32, height: i32) -> Result<(), VulkanError> {
