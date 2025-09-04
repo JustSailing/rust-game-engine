@@ -8,3 +8,5 @@ ash = {version = "0.38.0", features = ["linked", "debug"]}
 libc = "0.2.175"
 x11 = "2.21.0"
 
+[features]
+debug = []
