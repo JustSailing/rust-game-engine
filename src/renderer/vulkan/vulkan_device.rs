@@ -1,0 +1,355 @@
+use ash::{
+    khr::{self, surface}, vk::{
+        DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, PhysicalDeviceProperties, PhysicalDeviceType, PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, KHR_SWAPCHAIN_NAME
+    }, Device, Instance
+};
+
+use crate::application::renderer::renderer_types::vulkan::vulkan_backend::VulkanError;
+use std::ffi::CStr;
+
+struct PhysicalDeviceRequirements {
+    graphics: bool,
+    present: bool,
+    compute: bool,
+    transfer: bool,
+    device_extension_names: Vec<&'static CStr>,
+    sampler_anisotropy: bool,
+    discrete_gpu: bool,
+}
+
+struct SwapchainSupportInfo {
+    capabilities: Option<SurfaceCapabilitiesKHR>,
+    formats: Vec<SurfaceFormatKHR>,
+    present_modes: Vec<PresentModeKHR>,
+}
+
+struct PhysicalDeviceQueueFamilyInfo {
+    graphics_family_index: i32,
+    present_family_index: i32,
+    compute_family_index: i32,
+    transfer_family_index: i32,
+}
+pub struct VulkanDevice {
+    pub device: Device,
+    physical_device: PhysicalDevice,
+    properties: PhysicalDeviceProperties,
+    features: PhysicalDeviceFeatures,
+    memory: PhysicalDeviceMemoryProperties,
+    swapchain_support: SwapchainSupportInfo,
+    graphics_queue_index: i32,
+    present_queue_index: i32,
+    transfer_queue_index: i32,
+    graphics_queue: Queue,
+    transfer_queue: Queue,
+    present_queue: Queue,
+}
+
+impl VulkanDevice {
+    pub fn new(
+        instance: &Instance,
+        surface: &SurfaceKHR,
+        surface_loader: &surface::Instance,
+    ) -> Result<Self, VulkanError> {
+        let physical_devices = unsafe {
+            match instance.enumerate_physical_devices() {
+                Ok(devs) => devs,
+                Err(_) => {
+                    return Err(VulkanError::OperationFailed(
+                        "Could not enumerate physical devices",
+                    ));
+                }
+            }
+        };
+
+        for phys_dev in physical_devices {
+            let properties = unsafe { instance.get_physical_device_properties(phys_dev) };
+            let features = unsafe { instance.get_physical_device_features(phys_dev) };
+            let memory = unsafe { instance.get_physical_device_memory_properties(phys_dev) };
+            let mut requirements = PhysicalDeviceRequirements {
+                graphics: true,
+                present: true,
+                compute: true,
+                transfer: true,
+                device_extension_names: Vec::new(),
+                sampler_anisotropy: true,
+                discrete_gpu: false,
+            };
+            requirements
+                .device_extension_names
+                .push(ash::vk::KHR_SWAPCHAIN_NAME);
+            let mut queue_info = PhysicalDeviceQueueFamilyInfo {
+                graphics_family_index: -1,
+                present_family_index: -1,
+                compute_family_index: -1,
+                transfer_family_index: -1,
+            };
+            let mut swap_info = SwapchainSupportInfo {
+                capabilities: None,
+                formats: Vec::new(),
+                present_modes: Vec::new(),
+            };
+            match VulkanDevice::physical_device_meets_requirements(
+                instance,
+                &phys_dev,
+                surface,
+                surface_loader,
+                &properties,
+                &features,
+                &requirements,
+                &mut queue_info,
+                &mut swap_info,
+            ) {
+                Ok(e) => {
+                    if !e {
+                        continue;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+
+            let present_shares_graphics_queue =
+                queue_info.graphics_family_index == queue_info.present_family_index;
+            let transfer_shares_graphics_queue =
+                queue_info.graphics_family_index == queue_info.transfer_family_index;
+            let mut index_count = 1;
+            if !present_shares_graphics_queue {
+                index_count += 1;
+            }
+            if !transfer_shares_graphics_queue {
+                index_count += 1;
+            }
+            let mut indices: Vec<i32> = Vec::new();
+            indices.reserve(index_count as usize);
+
+            indices.push(queue_info.graphics_family_index);
+            if !present_shares_graphics_queue {
+                indices.push(queue_info.present_family_index);
+            }
+            if !transfer_shares_graphics_queue {
+                indices.push(queue_info.transfer_family_index);
+            }
+
+            let queue_priority = [1.0f32];
+
+            let queue_create_info = indices
+                .iter()
+                .map(|index| {
+                    DeviceQueueCreateInfo::default()
+                        .queue_family_index(*index as u32)
+                        .queue_priorities(&queue_priority)
+                })
+                .collect::<Vec<_>>();
+            let device_features = PhysicalDeviceFeatures::default().sampler_anisotropy(true);
+            let extension_names = [KHR_SWAPCHAIN_NAME.as_ptr()];
+            let device_create_info = DeviceCreateInfo::default()
+                .queue_create_infos(&queue_create_info)
+                .enabled_features(&device_features)
+                .enabled_extension_names(&extension_names);
+            let dev = unsafe {
+                match instance.create_device(phys_dev, &device_create_info, None) {
+                    Ok(dev) => dev,
+                    Err(_) => {
+                        return Err(VulkanError::OperationFailed(
+                            "could not create logical device",
+                        ));
+                    }
+                }
+            };
+            let graphics_queue = unsafe { dev.get_device_queue(queue_info.graphics_family_index as u32, 0)
+            };
+            let transfer_queue = unsafe { dev.get_device_queue(queue_info.transfer_family_index as u32, 0)
+            };
+            let present_queue = unsafe { dev.get_device_queue(queue_info.present_family_index as u32, 0)
+            };
+            return Ok(VulkanDevice {
+                device: dev,
+                physical_device: phys_dev,
+                properties: properties,
+                features: features,
+                memory: memory,
+                swapchain_support: swap_info,
+                graphics_queue_index: queue_info.graphics_family_index,
+                present_queue_index: queue_info.present_family_index,
+                transfer_queue_index: queue_info.transfer_family_index,
+                graphics_queue,
+                transfer_queue,
+                present_queue,
+            });
+        }
+        return Err(VulkanError::OperationFailed(
+            "Could not find suitable device",
+        ));
+    }
+
+    fn query_swapchain_support(
+        phys_dev: &PhysicalDevice,
+        surface: &SurfaceKHR,
+        surface_loader: &surface::Instance,
+        swapchain_support_info: &mut SwapchainSupportInfo,
+    ) -> Result<(), VulkanError> {
+        let capabilities = unsafe {
+            match surface_loader.get_physical_device_surface_capabilities(*phys_dev, *surface) {
+                Ok(c) => c,
+                Err(_) => {
+                    return Err(VulkanError::OperationFailed(
+                        "could not get surface capabilities",
+                    ));
+                }
+            }
+        };
+        let formats = unsafe {
+            match surface_loader.get_physical_device_surface_formats(*phys_dev, *surface) {
+                Ok(f) => f,
+                Err(_) => {
+                    return Err(VulkanError::OperationFailed(
+                        "could not get surface formats",
+                    ));
+                }
+            }
+        };
+        let present_modes = unsafe {
+            match surface_loader.get_physical_device_surface_present_modes(*phys_dev, *surface) {
+                Ok(p) => p,
+                Err(_) => return Err(VulkanError::OperationFailed("could not get present modes")),
+            }
+        };
+        swapchain_support_info.capabilities = Some(capabilities);
+        swapchain_support_info.formats = formats;
+        swapchain_support_info.present_modes = present_modes;
+        Ok(())
+    }
+
+    fn physical_device_meets_requirements(
+        instance: &Instance,
+        phys_dev: &PhysicalDevice,
+        surface: &SurfaceKHR,
+        surface_loader: &surface::Instance,
+        dev_properties: &PhysicalDeviceProperties,
+        features: &PhysicalDeviceFeatures,
+        requirements: &PhysicalDeviceRequirements,
+        queue_family_info: &mut PhysicalDeviceQueueFamilyInfo,
+        swapchain_support_info: &mut SwapchainSupportInfo,
+    ) -> Result<bool, VulkanError> {
+        queue_family_info.compute_family_index = -1;
+        queue_family_info.graphics_family_index = -1;
+        queue_family_info.present_family_index = -1;
+        queue_family_info.transfer_family_index = -1;
+
+        if requirements.discrete_gpu {
+            if dev_properties.device_type != PhysicalDeviceType::DISCRETE_GPU {
+                return Ok(false);
+            }
+        }
+
+        let queue_families =
+            unsafe { instance.get_physical_device_queue_family_properties(*phys_dev) };
+        println!("Graphics | Present  | Compute  | Name");
+        let mut min_transfer_score: u8 = 255;
+        for (index, queue_family) in queue_families.iter().enumerate() {
+            let mut current_transfer_score: u8 = 0;
+            if queue_family.queue_flags & QueueFlags::GRAPHICS == QueueFlags::GRAPHICS {
+                queue_family_info.graphics_family_index = index as i32;
+                current_transfer_score += 1;
+            }
+            if queue_family.queue_flags & QueueFlags::COMPUTE == QueueFlags::COMPUTE {
+                queue_family_info.compute_family_index = index as i32;
+                current_transfer_score += 1;
+            }
+            if queue_family.queue_flags & QueueFlags::TRANSFER == QueueFlags::TRANSFER {
+                if current_transfer_score <= min_transfer_score {
+                    min_transfer_score = current_transfer_score;
+                    queue_family_info.transfer_family_index = index as i32;
+                }
+            }
+
+            let res = unsafe {
+                match surface_loader.get_physical_device_surface_support(
+                    *phys_dev,
+                    index as u32,
+                    *surface,
+                ) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        return Err(VulkanError::OperationFailed(
+                            "Failed to get physical device surface support",
+                        ));
+                    }
+                }
+            };
+            if res {
+                queue_family_info.present_family_index = index as i32;
+            }
+        }
+        let name = match dev_properties.device_name_as_c_str() {
+            Ok(s) => s.to_str().unwrap_or("could not convert cstr to str"),
+            Err(_) => return Err(VulkanError::OperationFailed("Could not get device name")),
+        };
+        println!(
+            "   {}     |    {}     |    {}     | {}",
+            queue_family_info.graphics_family_index,
+            queue_family_info.present_family_index,
+            queue_family_info.compute_family_index,
+            name
+        );
+        if (!requirements.graphics
+            || (requirements.graphics && queue_family_info.graphics_family_index != -1))
+            && (!requirements.compute
+                || (requirements.compute && queue_family_info.compute_family_index != -1))
+            && (!requirements.present
+                || (requirements.present && queue_family_info.present_family_index != -1))
+            && (!requirements.transfer
+                || (requirements.transfer && queue_family_info.transfer_family_index != -1))
+        {
+            println!("Device meets queue requirements")
+        }
+        match VulkanDevice::query_swapchain_support(
+            phys_dev,
+            surface,
+            surface_loader,
+            swapchain_support_info,
+        ) {
+            Ok(_) => (),
+            Err(err) => return Err(err),
+        }
+        if swapchain_support_info.formats.len() < 1
+            || swapchain_support_info.present_modes.len() < 1
+        {
+            return Ok(false);
+        }
+        let extensions = unsafe {
+            match instance.enumerate_device_extension_properties(*phys_dev) {
+                Ok(ext) => ext,
+                Err(_) => {
+                    return Err(VulkanError::OperationFailed(
+                        "could not get extension properties",
+                    ));
+                }
+            }
+        };
+
+        for req in &requirements.device_extension_names {
+            let mut found = false;
+            for ext in &extensions {
+                let name = match ext.extension_name_as_c_str() {
+                    Ok(e) => e,
+                    Err(_) => {
+                        return Err(VulkanError::OperationFailed("could not get extension name"));
+                    }
+                };
+                if *req == name {
+                    found = true;
+                }
+            }
+            if !found {
+                println!("device not suitable...skipping device");
+                return Ok(false);
+            }
+        }
+        if requirements.sampler_anisotropy && features.sampler_anisotropy < 1 {
+            println!("device not does not have sampler anisotropy...skipping device");
+            return Ok(false);
+        }
+        Ok(true)
+    }
+}
+

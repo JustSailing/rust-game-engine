@@ -14,7 +14,7 @@ pub enum X11Error {
 }
 
 pub struct Display {
-    raw: *mut Display_,
+    pub raw: *mut Display_,
 }
 
 impl Display {
@@ -40,8 +40,8 @@ impl Drop for Display {
 }
 
 pub struct Window {
-    display: Display,
-    window_id: Window_,
+    pub display: Display,
+    pub window_id: Window_,
     wm_protocols: Atom,
     wm_delete: Atom,
 }

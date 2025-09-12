@@ -1,14 +1,18 @@
 use ash::{
-    Device, Entry, Instance,
-    ext::debug_utils,
-    khr::{surface, swapchain, xlib_surface},
-    vk,
-    vk::DebugUtilsMessengerEXT,
+    Entry, Instance,
+    khr::surface::Instance as SurfaceInstance,
+    khr::{surface, xlib_surface},
+    vk::{self, SurfaceKHR},
 };
+#[cfg(feature = "debug")]
+use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
+#[cfg(feature = "debug")]
+use std::{borrow::Cow, ffi};
 
-use std::{
-    borrow::Cow,
-    ffi::{self, CString},
+use std::{ffi::CString, os::raw::c_void};
+
+use crate::application::{
+    basic::window::Window, renderer::renderer_types::vulkan::vulkan_device::VulkanDevice,
 };
 
 pub enum VulkanError {
@@ -18,15 +22,18 @@ pub enum VulkanError {
 static mut VULKAN_STATE: Option<VulkanContext> = None;
 
 pub struct VulkanContext {
-    instance: Instance,
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    device: VulkanDevice,
+    surface_loader: SurfaceInstance,
+    surface: SurfaceKHR,
+    instance: Instance,
 }
 
 impl VulkanContext {
-    pub fn initialize(name: &str) -> Result<(), VulkanError> {
+    pub fn initialize(name: &str, window: &Window) -> Result<(), VulkanError> {
         unsafe {
             if let Some(ref _state) = VULKAN_STATE {
                 return Err(VulkanError::OperationFailed(
@@ -35,7 +42,13 @@ impl VulkanContext {
             }
         }
 
-        let entry = Entry::linked();
+        let entry = unsafe {
+            match Entry::load() {
+                Ok(e) => e,
+                Err(_) => return Err(VulkanError::OperationFailed("Could not load entry")),
+            }
+        };
+
         let app_name = match CString::new(name) {
             Ok(e) => e,
             //this error is temporary
@@ -94,14 +107,17 @@ impl VulkanContext {
             }
         }
 
-        let create_info = vk::InstanceCreateInfo::default()
+        let mut create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
-            .enabled_extension_names(&extensions)
-            .enabled_layer_names(&layers_names_raw);
+            .enabled_extension_names(&extensions);
+        if cfg!(feature = "debug") {
+            create_info = create_info.enabled_layer_names(&layers_names_raw);
+        }
         let instance = unsafe {
             match entry.create_instance(&create_info, None) {
                 Ok(instance) => instance,
-                Err(_) => {
+                Err(e) => {
+                    println!("{:?}", e);
                     return Err(VulkanError::OperationFailed(
                         "Could not create instance [fn] VulkanContext::initialize",
                     ));
@@ -109,6 +125,26 @@ impl VulkanContext {
             }
         };
 
+        // create xlib surface
+        let xlib_surface_info = vk::XlibSurfaceCreateInfoKHR::default()
+            .dpy(window.display.raw as *mut c_void)
+            .window(window.window_id);
+        let xlib_surface_loader = xlib_surface::Instance::new(&entry, &instance);
+        let surface = unsafe {
+            match xlib_surface_loader.create_xlib_surface(&xlib_surface_info, None) {
+                Ok(res) => res,
+                Err(_) => {
+                    return Err(VulkanError::OperationFailed(
+                        "Could not create Xlib surface",
+                    ));
+                }
+            }
+        };
+        let surface_loader = surface::Instance::new(&entry, &instance);
+        let dev = match VulkanDevice::new(&instance, &surface, &surface_loader) {
+            Ok(dev) => dev,
+            Err(e) => return Err(e),
+        };
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -132,18 +168,24 @@ impl VulkanContext {
             };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    device: dev,
+                    surface_loader: surface_loader,
+                    surface: surface,
                     instance: instance,
                     dbg_messenger: debug_messenger,
                     dbg_util_loader: debug_utils_loader,
                 })
             };
         }
+
         #[cfg(not(feature = "debug"))]
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    device: dev,
                     instance: instance,
-                    //dbg_messenger: None,
+                    surface: surface,
+                    surface_loader: surface_loader,
                 });
             }
         }
@@ -152,20 +194,13 @@ impl VulkanContext {
     }
 
     pub fn shutdown() -> Result<(), VulkanError> {
-        #[cfg(feature = "debug")]
         unsafe {
-            if let Some(ref mut state) = VULKAN_STATE {
-                state
-                    .dbg_util_loader
-                    .destroy_debug_utils_messenger(state.dbg_messenger, None);
-                state.instance.destroy_instance(None);
+            if let Some(ref _state) = VULKAN_STATE {
                 VULKAN_STATE = None;
-            }
-        }
-        unsafe {
-            if let Some(ref mut state) = VULKAN_STATE {
-                state.instance.destroy_instance(None);
-                VULKAN_STATE = None;
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context already destroyed",
+                ));
             }
         }
 
@@ -179,6 +214,30 @@ impl VulkanContext {
     }
     pub fn end_frame(delta: f32) -> Result<(), VulkanError> {
         Ok(())
+    }
+}
+
+impl Drop for VulkanContext {
+    fn drop(&mut self) {
+        #[cfg(feature = "debug")]
+        unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state.device.device.destroy_device(None);
+                state.surface_loader.destroy_surface(state.surface, None);
+                state
+                    .dbg_util_loader
+                    .destroy_debug_utils_messenger(state.dbg_messenger, None);
+                state.instance.destroy_instance(None);
+            }
+        }
+        #[cfg(not(feature = "debug"))]
+        unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state.device.device.destroy_device(None);
+                state.surface_loader.destroy_surface(state.surface, None);
+                state.instance.destroy_instance(None);
+            }
+        }
     }
 }
 

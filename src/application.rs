@@ -111,19 +111,49 @@ impl ApplicationState {
             });
         }
 
+        let state = unsafe {
+            if let Some(ref st) = APP_STATE {
+                st
+            } else {
+                return Err(AppError::OperationFailed("Could not get Application State"));
+            }
+        };
+        // for the error parts if initialization returns error not sure if I need if let part
+        // may just APP_STATE= None would suffice
         match InputState::initialize() {
             Ok(_) => (),
-            Err(e) => return Err(AppError::from(e)),
+            Err(e) => {
+                unsafe {
+                    if let Some(ref mut _state) = APP_STATE {
+                        APP_STATE = None;
+                    }
+                }
+                return Err(AppError::from(e));
+            }
         }
 
         match EventState::initialize() {
             Ok(_) => (),
-            Err(e) => return Err(AppError::from(e)),
+            Err(e) => {
+                unsafe {
+                    if let Some(ref mut _state) = APP_STATE {
+                        APP_STATE = None;
+                    }
+                }
+                return Err(AppError::from(e));
+            }
         };
 
-        match FrontendRenderer::initialize(config.name) {
+        match FrontendRenderer::initialize(config.name, &state.window) {
             Ok(_) => (),
-            Err(e) => return Err(AppError::from(e)),
+            Err(e) => {
+                unsafe {
+                    if let Some(ref mut _state) = APP_STATE {
+                        APP_STATE = None;
+                    }
+                }
+                return Err(AppError::from(e));
+            }
         }
 
         Ok(())
@@ -161,14 +191,6 @@ impl ApplicationState {
                     Event::CloseWindow => {
                         app_state.is_running = false;
                         app_state.is_suspended = false;
-                        match EventState::shutdown() {
-                            Ok(_) => (),
-                            Err(e) => return Err(AppError::from(e)),
-                        }
-                        match InputState::shutdown() {
-                            Ok(_) => (),
-                            Err(e) => return Err(AppError::from(e)),
-                        }
                         return Ok(());
                     }
                 }
@@ -179,12 +201,23 @@ impl ApplicationState {
     pub fn shutdown() -> Result<(), AppError> {
         unsafe {
             if let Some(ref mut _state) = APP_STATE {
-                let _ = FrontendRenderer::shutdown();
-                let _ = EventState::shutdown();
                 APP_STATE = None;
                 return Ok(());
             } else {
                 return Err(AppError::AlreadyShutdown);
+            }
+        }
+    }
+}
+
+impl Drop for ApplicationState {
+    fn drop(&mut self) {
+        unsafe {
+            if let Some(ref mut _state) = APP_STATE {
+                // probably log to console
+                let _ = FrontendRenderer::shutdown();
+                let _ = EventState::shutdown();
+                let _ = InputState::shutdown();
             }
         }
     }

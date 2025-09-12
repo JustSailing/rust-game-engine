@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ash = {version = "0.38.0", features = ["linked", "debug"]}
+ash = {version = "0.38.0", features = ["linked"]}
 libc = "0.2.175"
 x11 = "2.21.0"
 

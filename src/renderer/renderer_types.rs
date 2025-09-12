@@ -2,6 +2,8 @@
 mod vulkan;
 
 use vulkan::vulkan_backend::{VulkanContext, VulkanError};
+
+use crate::application::basic::window::Window;
 pub enum RendererBackendType {
     Vulkan,
     OpenGL,
@@ -14,7 +16,7 @@ pub struct RendererPacket {
 
 pub struct RendererBackend {
     frame_number: u64,
-    initialize: fn(application_name: &str) -> Result<(), VulkanError>,
+    initialize: fn(application_name: &str, window: &Window) -> Result<(), VulkanError>,
     shutdown: fn() -> Result<(), VulkanError>,
     resized: fn(width: i32, height: i32) -> Result<(), VulkanError>,
     begin_frame: fn(delta_time: f32) -> Result<(), VulkanError>,
@@ -41,7 +43,7 @@ impl From<VulkanError> for FrontendRendererError {
 pub struct FrontendRenderer;
 
 impl FrontendRenderer {
-    pub fn initialize(app_name: &str) -> Result<(), FrontendRendererError> {
+    pub fn initialize(app_name: &str, window: &Window) -> Result<(), FrontendRendererError> {
         unsafe {
             if let Some(ref _state) = RENDERER_BACKEND {
                 return Err(FrontendRendererError::AlreadyInitialized);
@@ -53,7 +55,7 @@ impl FrontendRenderer {
                     };
             }
             if let Some(ref state) = RENDERER_BACKEND {
-                match (state.initialize)(app_name) {
+                match (state.initialize)(app_name, window) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(FrontendRendererError::from(e)),
                 }
