@@ -1,8 +1,10 @@
 use ash::{
     Entry, Instance,
-    khr::surface::Instance as SurfaceInstance,
-    khr::{surface, xlib_surface},
-    vk::{self, SurfaceKHR},
+    khr::{
+        surface::{self, Instance as SurfaceInstance},
+        xlib_surface,
+    },
+    vk::{self, MemoryPropertyFlags, PhysicalDevice, SurfaceKHR},
 };
 #[cfg(feature = "debug")]
 use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
@@ -12,7 +14,10 @@ use std::{borrow::Cow, ffi};
 use std::{ffi::CString, os::raw::c_void};
 
 use crate::application::{
-    basic::window::Window, renderer::renderer_types::vulkan::vulkan_device::VulkanDevice,
+    basic::window::Window,
+    renderer::renderer_types::vulkan::{
+        vulkan_device::VulkanDevice, vulkan_swapchain::VulkanSwapchain,
+    },
 };
 
 pub enum VulkanError {
@@ -26,6 +31,9 @@ pub struct VulkanContext {
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    swapchain: VulkanSwapchain,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
     device: VulkanDevice,
     surface_loader: SurfaceInstance,
     surface: SurfaceKHR,
@@ -141,10 +149,23 @@ impl VulkanContext {
             }
         };
         let surface_loader = surface::Instance::new(&entry, &instance);
-        let dev = match VulkanDevice::new(&instance, &surface, &surface_loader) {
+        let mut dev = match VulkanDevice::new(&instance, &surface, &surface_loader) {
             Ok(dev) => dev,
             Err(e) => return Err(e),
         };
+
+        let swap = match VulkanSwapchain::create(
+            &instance,
+            &mut dev,
+            &surface,
+            &surface_loader,
+            window.width,
+            window.height,
+        ) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -172,6 +193,9 @@ impl VulkanContext {
                     surface_loader: surface_loader,
                     surface: surface,
                     instance: instance,
+                    swapchain: swap,
+                    framebuffer_height: window.height,
+                    framebuffer_width: window.width,
                     dbg_messenger: debug_messenger,
                     dbg_util_loader: debug_utils_loader,
                 })
@@ -186,6 +210,9 @@ impl VulkanContext {
                     instance: instance,
                     surface: surface,
                     surface_loader: surface_loader,
+                    swapchain: swap,
+                    framebuffer_height: window.height,
+                    framebuffer_width: window.width,
                 });
             }
         }
@@ -215,6 +242,50 @@ impl VulkanContext {
     pub fn end_frame(delta: f32) -> Result<(), VulkanError> {
         Ok(())
     }
+
+    pub fn find_memory_index(
+        instance: &Instance,
+        dev: &VulkanDevice,
+        type_filter: u32,
+        property_flags: MemoryPropertyFlags,
+    ) -> Result<i32, VulkanError> {
+        let memory_props =
+            unsafe { instance.get_physical_device_memory_properties(dev.physical_device) };
+        for i in 0..memory_props.memory_type_count {
+            let suitable = (type_filter & (1 << i)) != 0;
+            let memory_type = memory_props.memory_types[i as usize];
+
+            if suitable && memory_type.property_flags.contains(property_flags) {
+                return Ok(i as i32);
+            }
+        }
+        Ok(-1)
+    }
+
+    pub fn recreate_swapchain() -> Result<(), VulkanError> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context not initialized",
+                ));
+            }
+        };
+        state.swapchain.destroy(&state.device);
+        state.swapchain = match VulkanSwapchain::create(
+            &state.instance,
+            &mut state.device,
+            &state.surface,
+            &state.surface_loader,
+            state.framebuffer_width,
+            state.framebuffer_height,
+        ) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+        Ok(())
+    }
 }
 
 impl Drop for VulkanContext {
@@ -222,6 +293,7 @@ impl Drop for VulkanContext {
         #[cfg(feature = "debug")]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
+                state.swapchain.destroy(&state.device);
                 state.device.device.destroy_device(None);
                 state.surface_loader.destroy_surface(state.surface, None);
                 state
@@ -233,6 +305,7 @@ impl Drop for VulkanContext {
         #[cfg(not(feature = "debug"))]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
+                state.swapchain.destroy(&state.device);
                 state.device.device.destroy_device(None);
                 state.surface_loader.destroy_surface(state.surface, None);
                 state.instance.destroy_instance(None);

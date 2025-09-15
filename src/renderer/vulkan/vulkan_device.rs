@@ -1,7 +1,12 @@
 use ash::{
-    khr::{self, surface}, vk::{
-        DeviceCreateInfo, DeviceQueueCreateInfo, PhysicalDevice, PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, PhysicalDeviceProperties, PhysicalDeviceType, PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR, KHR_SWAPCHAIN_NAME
-    }, Device, Instance
+    Device, Instance,
+    khr::surface,
+    vk::{
+        self, DeviceCreateInfo, DeviceQueueCreateInfo, Format, FormatFeatureFlags,
+        FormatProperties, KHR_SWAPCHAIN_NAME, PhysicalDevice, PhysicalDeviceFeatures,
+        PhysicalDeviceMemoryProperties, PhysicalDeviceProperties, PhysicalDeviceType,
+        PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR,
+    },
 };
 
 use crate::application::renderer::renderer_types::vulkan::vulkan_backend::VulkanError;
@@ -17,10 +22,10 @@ struct PhysicalDeviceRequirements {
     discrete_gpu: bool,
 }
 
-struct SwapchainSupportInfo {
-    capabilities: Option<SurfaceCapabilitiesKHR>,
-    formats: Vec<SurfaceFormatKHR>,
-    present_modes: Vec<PresentModeKHR>,
+pub struct SwapchainSupportInfo {
+    pub capabilities: Option<SurfaceCapabilitiesKHR>,
+    pub formats: Vec<SurfaceFormatKHR>,
+    pub present_modes: Vec<PresentModeKHR>,
 }
 
 struct PhysicalDeviceQueueFamilyInfo {
@@ -31,17 +36,18 @@ struct PhysicalDeviceQueueFamilyInfo {
 }
 pub struct VulkanDevice {
     pub device: Device,
-    physical_device: PhysicalDevice,
+    pub physical_device: PhysicalDevice,
     properties: PhysicalDeviceProperties,
     features: PhysicalDeviceFeatures,
     memory: PhysicalDeviceMemoryProperties,
-    swapchain_support: SwapchainSupportInfo,
-    graphics_queue_index: i32,
-    present_queue_index: i32,
+    pub swapchain_support: SwapchainSupportInfo,
+    pub graphics_queue_index: i32,
+    pub present_queue_index: i32,
     transfer_queue_index: i32,
     graphics_queue: Queue,
     transfer_queue: Queue,
     present_queue: Queue,
+    pub depth_format: Format,
 }
 
 impl VulkanDevice {
@@ -155,12 +161,12 @@ impl VulkanDevice {
                     }
                 }
             };
-            let graphics_queue = unsafe { dev.get_device_queue(queue_info.graphics_family_index as u32, 0)
-            };
-            let transfer_queue = unsafe { dev.get_device_queue(queue_info.transfer_family_index as u32, 0)
-            };
-            let present_queue = unsafe { dev.get_device_queue(queue_info.present_family_index as u32, 0)
-            };
+            let graphics_queue =
+                unsafe { dev.get_device_queue(queue_info.graphics_family_index as u32, 0) };
+            let transfer_queue =
+                unsafe { dev.get_device_queue(queue_info.transfer_family_index as u32, 0) };
+            let present_queue =
+                unsafe { dev.get_device_queue(queue_info.present_family_index as u32, 0) };
             return Ok(VulkanDevice {
                 device: dev,
                 physical_device: phys_dev,
@@ -174,6 +180,7 @@ impl VulkanDevice {
                 graphics_queue,
                 transfer_queue,
                 present_queue,
+                depth_format: Format::default(),
             });
         }
         return Err(VulkanError::OperationFailed(
@@ -181,7 +188,7 @@ impl VulkanDevice {
         ));
     }
 
-    fn query_swapchain_support(
+    pub fn query_swapchain_support(
         phys_dev: &PhysicalDevice,
         surface: &SurfaceKHR,
         surface_loader: &surface::Instance,
@@ -351,5 +358,25 @@ impl VulkanDevice {
         }
         Ok(true)
     }
-}
 
+    pub fn detect_depth_format(&mut self, instance: &Instance) -> bool {
+        let candidates = [
+            Format::D32_SFLOAT,
+            Format::D32_SFLOAT_S8_UINT,
+            Format::D24_UNORM_S8_UINT,
+        ];
+        let flags = FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT;
+        for f in &candidates {
+            let properties =
+                unsafe { instance.get_physical_device_format_properties(self.physical_device, *f) };
+            if (properties.linear_tiling_features & flags) == flags {
+                self.depth_format = *f;
+                return true;
+            } else if (properties.optimal_tiling_features & flags) == flags {
+                self.depth_format = *f;
+                return true;
+            }
+        }
+        false
+    }
+}

@@ -44,6 +44,8 @@ pub struct Window {
     pub window_id: Window_,
     wm_protocols: Atom,
     wm_delete: Atom,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl Window {
@@ -125,6 +127,8 @@ impl Window {
             window_id: window_id,
             wm_protocols: wm_protocols,
             wm_delete: wm_delete_window,
+            width: width as u32,
+            height: height as u32,
         })
     }
 
