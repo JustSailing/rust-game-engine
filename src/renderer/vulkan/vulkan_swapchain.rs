@@ -17,7 +17,7 @@ use ash::{
 
 pub struct VulkanSwapchain {
     pub image_format: SurfaceFormatKHR,
-    max_frames_in_flight: u8,
+    pub max_frames_in_flight: u8,
     swapchain: SwapchainKHR,
     swapchain_loader: swapchain::Device,
     pub image_count: u32,

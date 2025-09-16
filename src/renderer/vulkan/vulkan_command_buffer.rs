@@ -131,7 +131,6 @@ impl VulkanCommandBuffer {
         device: &VulkanDevice,
         pool: CommandPool,
         queue: Queue,
-        fence: Fence,
     ) -> Result<(), VulkanError> {
         match self.end(device, 0) {
             Ok(_) => {}
@@ -141,8 +140,11 @@ impl VulkanCommandBuffer {
         let submit_info = SubmitInfo::default().command_buffers(&self.command_buffer);
         let submit_infos = [submit_info];
         unsafe {
-            match device.device.queue_submit(queue, &submit_infos, fence) {
-                Ok(_) => {}
+            match device
+                .device
+                .queue_submit(queue, &submit_infos, Fence::null())
+            {
+                Ok(_) => {},
                 Err(_) => return Err(VulkanError::OperationFailed("could not submit queue")),
             }
 

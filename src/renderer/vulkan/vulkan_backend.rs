@@ -14,8 +14,11 @@ use std::{borrow::Cow, ffi};
 use std::{ffi::CString, os::raw::c_void};
 
 use super::{
-    vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
-    vulkan_renderpass::VulkanRenderPass, vulkan_swapchain::VulkanSwapchain,
+    vulkan_command_buffer::VulkanCommandBuffer,
+    vulkan_device::VulkanDevice,
+    vulkan_renderpass::VulkanRenderPass,
+    vulkan_swapchain::VulkanSwapchain,
+    vulkan_sync_objects::{InFlightFrames, SyncObjects},
 };
 use crate::application::basic::window::Window;
 
@@ -30,6 +33,7 @@ pub struct VulkanContext {
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    in_fligh_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
     main_renderpass: VulkanRenderPass,
     swapchain: VulkanSwapchain,
@@ -191,6 +195,17 @@ impl VulkanContext {
             Err(e) => return Err(e),
         };
 
+        let mut sync_objects = Vec::new();
+        for i in 0..swap.max_frames_in_flight {
+            let obj = match SyncObjects::create(&dev, true) {
+                Ok(o) => o,
+                Err(e) => return Err(e),
+            };
+            sync_objects.push(obj);
+        }
+
+        let in_flight_frames = InFlightFrames::new(sync_objects);
+
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -214,6 +229,7 @@ impl VulkanContext {
             };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    in_fligh_frames: in_flight_frames,
                     graphics_cmd_bufs: graph_cmd_buf,
                     device: dev,
                     surface_loader: surface_loader,
@@ -233,6 +249,7 @@ impl VulkanContext {
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    in_fligh_frames: in_flight_frames,
                     graphics_cmd_bufs: graph_cmd_buf,
                     device: dev,
                     instance: instance,
@@ -338,6 +355,8 @@ impl Drop for VulkanContext {
         #[cfg(feature = "debug")]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
+                let _ = state.device.device.device_wait_idle();
+                state.in_fligh_frames.destroy(&state.device);
                 state
                     .device
                     .device
@@ -355,6 +374,8 @@ impl Drop for VulkanContext {
         #[cfg(not(feature = "debug"))]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
+                let _ = state.device.device.device_wait_idle();
+                state.in_fligh_frames.destroy(&state.device);
                 state
                     .device
                     .device
