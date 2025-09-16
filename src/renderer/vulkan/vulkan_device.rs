@@ -2,14 +2,14 @@ use ash::{
     Device, Instance,
     khr::surface,
     vk::{
-        self, DeviceCreateInfo, DeviceQueueCreateInfo, Format, FormatFeatureFlags,
-        FormatProperties, KHR_SWAPCHAIN_NAME, PhysicalDevice, PhysicalDeviceFeatures,
-        PhysicalDeviceMemoryProperties, PhysicalDeviceProperties, PhysicalDeviceType,
-        PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR,
+        CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, DeviceCreateInfo,
+        DeviceQueueCreateInfo, Format, FormatFeatureFlags, KHR_SWAPCHAIN_NAME, PhysicalDevice,
+        PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, PhysicalDeviceProperties,
+        PhysicalDeviceType, PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR,
+        SurfaceFormatKHR, SurfaceKHR,
     },
 };
-
-use crate::application::renderer::renderer_types::vulkan::vulkan_backend::VulkanError;
+use super::{vulkan_backend::VulkanError};
 use std::ffi::CStr;
 
 struct PhysicalDeviceRequirements {
@@ -37,17 +37,19 @@ struct PhysicalDeviceQueueFamilyInfo {
 pub struct VulkanDevice {
     pub device: Device,
     pub physical_device: PhysicalDevice,
-    properties: PhysicalDeviceProperties,
-    features: PhysicalDeviceFeatures,
-    memory: PhysicalDeviceMemoryProperties,
+
     pub swapchain_support: SwapchainSupportInfo,
+    pub depth_format: Format,
+    pub graphics_command_pool: CommandPool,
     pub graphics_queue_index: i32,
     pub present_queue_index: i32,
     transfer_queue_index: i32,
     graphics_queue: Queue,
     transfer_queue: Queue,
     present_queue: Queue,
-    pub depth_format: Format,
+    properties: PhysicalDeviceProperties,
+    features: PhysicalDeviceFeatures,
+    memory: PhysicalDeviceMemoryProperties,
 }
 
 impl VulkanDevice {
@@ -167,6 +169,19 @@ impl VulkanDevice {
                 unsafe { dev.get_device_queue(queue_info.transfer_family_index as u32, 0) };
             let present_queue =
                 unsafe { dev.get_device_queue(queue_info.present_family_index as u32, 0) };
+            let pool_create_info = CommandPoolCreateInfo::default()
+                .queue_family_index(queue_info.graphics_family_index as u32)
+                .flags(CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+            let graph_pool = unsafe {
+                match dev.create_command_pool(&pool_create_info, None) {
+                    Ok(g) => g,
+                    Err(_) => {
+                        return Err(VulkanError::OperationFailed(
+                            "could not create graphics command pool",
+                        ));
+                    }
+                }
+            };
             return Ok(VulkanDevice {
                 device: dev,
                 physical_device: phys_dev,
@@ -174,6 +189,7 @@ impl VulkanDevice {
                 features: features,
                 memory: memory,
                 swapchain_support: swap_info,
+                graphics_command_pool: graph_pool,
                 graphics_queue_index: queue_info.graphics_family_index,
                 present_queue_index: queue_info.present_family_index,
                 transfer_queue_index: queue_info.transfer_family_index,

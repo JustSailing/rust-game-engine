@@ -1,3 +1,8 @@
+use super::{
+    vulkan_backend::{VulkanContext, VulkanError},
+    vulkan_device::VulkanDevice,
+    vulkan_image::VulkanImage,
+};
 use ash::{
     Instance,
     khr::{surface, swapchain},
@@ -10,18 +15,12 @@ use ash::{
     },
 };
 
-use crate::application::renderer::renderer_types::vulkan::{
-    vulkan_backend::{VulkanContext, VulkanError},
-    vulkan_device::VulkanDevice,
-    vulkan_image::VulkanImage,
-};
-
 pub struct VulkanSwapchain {
-    image_format: SurfaceFormatKHR,
+    pub image_format: SurfaceFormatKHR,
     max_frames_in_flight: u8,
     swapchain: SwapchainKHR,
     swapchain_loader: swapchain::Device,
-    image_count: u32,
+    pub image_count: u32,
     images: Vec<Image>,
     views: Vec<ImageView>,
     depth_attachment: VulkanImage,
@@ -271,7 +270,7 @@ impl VulkanSwapchain {
                 match VulkanContext::recreate_swapchain() {
                     Ok(_) => {}
                     Err(e) => return Err(e),
-                }; 
+                };
                 return Ok(());
             }
             _ => {

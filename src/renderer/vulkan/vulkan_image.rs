@@ -1,3 +1,7 @@
+use super::{
+    vulkan_backend::{VulkanContext, VulkanError},
+    vulkan_device::VulkanDevice,
+};
 use ash::{
     Instance,
     vk::{
@@ -6,11 +10,6 @@ use ash::{
         ImageViewCreateInfo, ImageViewType, MemoryAllocateInfo, MemoryPropertyFlags,
         SampleCountFlags, SharingMode,
     },
-};
-
-use crate::application::renderer::renderer_types::vulkan::{
-    vulkan_backend::{VulkanContext, VulkanError},
-    vulkan_device::VulkanDevice,
 };
 
 pub struct VulkanImage {

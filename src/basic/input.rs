@@ -1,5 +1,5 @@
-use crate::application::basic::event::{EventCodes, EventCtx, EventState};
-use crate::application::basic::window::{Button, Key};
+use super::event::{EventCodes, EventCtx, EventState};
+use super::window::{Button, Key};
 
 #[derive(Clone, Copy)]
 struct KeyboardState {

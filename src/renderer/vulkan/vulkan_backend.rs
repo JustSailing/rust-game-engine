@@ -4,7 +4,7 @@ use ash::{
         surface::{self, Instance as SurfaceInstance},
         xlib_surface,
     },
-    vk::{self, MemoryPropertyFlags, PhysicalDevice, SurfaceKHR},
+    vk::{self, MemoryPropertyFlags, SurfaceKHR},
 };
 #[cfg(feature = "debug")]
 use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
@@ -13,12 +13,11 @@ use std::{borrow::Cow, ffi};
 
 use std::{ffi::CString, os::raw::c_void};
 
-use crate::application::{
-    basic::window::Window,
-    renderer::renderer_types::vulkan::{
-        vulkan_device::VulkanDevice, vulkan_swapchain::VulkanSwapchain,
-    },
+use super::{
+    vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
+    vulkan_renderpass::VulkanRenderPass, vulkan_swapchain::VulkanSwapchain,
 };
+use crate::application::basic::window::Window;
 
 pub enum VulkanError {
     OperationFailed(&'static str),
@@ -31,6 +30,8 @@ pub struct VulkanContext {
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    graphics_cmd_bufs: VulkanCommandBuffer,
+    main_renderpass: VulkanRenderPass,
     swapchain: VulkanSwapchain,
     framebuffer_width: u32,
     framebuffer_height: u32,
@@ -166,6 +167,30 @@ impl VulkanContext {
             Err(e) => return Err(e),
         };
 
+        let rend_pass = match VulkanRenderPass::create(
+            0.0,
+            0.0,
+            window.width as f32,
+            window.height as f32,
+            0.0,
+            0.0,
+            0.2,
+            1.0,
+            1.0,
+            0,
+            &dev,
+            swap.image_format.format,
+            dev.depth_format,
+        ) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        let graph_cmd_buf = match Self::create_command_buffer(&dev, swap.image_count as usize) {
+            Ok(g) => g,
+            Err(e) => return Err(e),
+        };
+
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -189,11 +214,13 @@ impl VulkanContext {
             };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    graphics_cmd_bufs: graph_cmd_buf,
                     device: dev,
                     surface_loader: surface_loader,
                     surface: surface,
                     instance: instance,
                     swapchain: swap,
+                    main_renderpass: rend_pass,
                     framebuffer_height: window.height,
                     framebuffer_width: window.width,
                     dbg_messenger: debug_messenger,
@@ -206,11 +233,13 @@ impl VulkanContext {
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    graphics_cmd_bufs: graph_cmd_buf,
                     device: dev,
                     instance: instance,
                     surface: surface,
                     surface_loader: surface_loader,
                     swapchain: swap,
+                    main_renderpass: rend_pass,
                     framebuffer_height: window.height,
                     framebuffer_width: window.width,
                 });
@@ -286,6 +315,22 @@ impl VulkanContext {
         };
         Ok(())
     }
+
+    fn create_command_buffer(
+        device: &VulkanDevice,
+        image_count: usize,
+    ) -> Result<VulkanCommandBuffer, VulkanError> {
+        let cmd_buf = match VulkanCommandBuffer::allocate(
+            device,
+            true,
+            device.graphics_command_pool,
+            image_count as u32,
+        ) {
+            Ok(c) => Ok(c),
+            Err(e) => return Err(e),
+        };
+        cmd_buf
+    }
 }
 
 impl Drop for VulkanContext {
@@ -293,6 +338,11 @@ impl Drop for VulkanContext {
         #[cfg(feature = "debug")]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
+                state
+                    .device
+                    .device
+                    .destroy_command_pool(state.device.graphics_command_pool, None);
+                state.main_renderpass.destroy(&state.device);
                 state.swapchain.destroy(&state.device);
                 state.device.device.destroy_device(None);
                 state.surface_loader.destroy_surface(state.surface, None);
@@ -305,6 +355,11 @@ impl Drop for VulkanContext {
         #[cfg(not(feature = "debug"))]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
+                state
+                    .device
+                    .device
+                    .destroy_command_pool(state.device.graphics_command_pool, None);
+                state.main_renderpass.destroy(&state.device);
                 state.swapchain.destroy(&state.device);
                 state.device.device.destroy_device(None);
                 state.surface_loader.destroy_surface(state.surface, None);

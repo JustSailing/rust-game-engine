@@ -1,4 +1,6 @@
 pub mod vulkan_backend;
 mod vulkan_device;
-mod vulkan_swapchain;
 mod vulkan_image;
+mod vulkan_renderpass;
+mod vulkan_swapchain;
+mod vulkan_command_buffer;

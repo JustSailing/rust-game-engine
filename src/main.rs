@@ -1,6 +1,6 @@
 mod application;
+use application::{AppConfig, AppError, ApplicationState};
 
-use crate::application::{AppConfig, AppError, ApplicationState};
 fn main() -> Result<(), AppError> {
     println!("Hello, world!");
     let init = ApplicationState::create(&AppConfig {
