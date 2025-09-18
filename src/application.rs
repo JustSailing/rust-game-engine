@@ -8,6 +8,9 @@ use basic::input::{InputError, InputState};
 use basic::window::{Event, Window};
 use renderer::renderer_types::{FrontendRenderer, FrontendRendererError};
 
+
+use crate::application::renderer::renderer_types::RendererPacket;
+
 pub struct AppConfig {
     pub start_pos_x: i32,
     pub start_pos_y: i32,
@@ -187,6 +190,10 @@ impl ApplicationState {
                         app_state.width = width;
                         app_state.pos_x = x;
                         app_state.pos_y = y;
+                        match FrontendRenderer::on_resize(width, height) {
+                            Ok(_) => {},
+                            Err(e) => return  Err(AppError::from(e)),
+                        }
                     }
                     Event::CloseWindow => {
                         app_state.is_running = false;
@@ -194,6 +201,11 @@ impl ApplicationState {
                         return Ok(());
                     }
                 }
+            }
+            let render_packet = RendererPacket { delta_time: 1.0 };
+            match FrontendRenderer::draw_frame(&render_packet) {
+                Ok(_) => (),
+                Err(e) => return Err(AppError::from(e)),
             }
         }
     }

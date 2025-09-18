@@ -4,18 +4,22 @@ use ash::{
         surface::{self, Instance as SurfaceInstance},
         xlib_surface,
     },
-    vk::{self, MemoryPropertyFlags, SurfaceKHR},
+    vk::{
+        self, Extent2D, Fence, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Rect2D,
+        SemaphoreWaitFlags, SemaphoreWaitInfo, SubmitInfo, SurfaceKHR, Viewport,
+    },
 };
 #[cfg(feature = "debug")]
 use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
 #[cfg(feature = "debug")]
 use std::{borrow::Cow, ffi};
 
-use std::{ffi::CString, os::raw::c_void};
+use std::{ffi::CString, os::raw::c_void, u64};
 
 use super::{
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
+    vulkan_framebuffer::VulkanFramebuffer,
     vulkan_renderpass::VulkanRenderPass,
     vulkan_swapchain::VulkanSwapchain,
     vulkan_sync_objects::{InFlightFrames, SyncObjects},
@@ -28,15 +32,21 @@ pub enum VulkanError {
 
 static mut VULKAN_STATE: Option<VulkanContext> = None;
 
-pub struct VulkanContext {
+pub struct VulkanContext<'a> {
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    images_in_flight: Vec<Option<&'a SyncObjects>>,
     in_fligh_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
+    swapchain_framebuffers: Vec<VulkanFramebuffer>,
     main_renderpass: VulkanRenderPass,
+    image_index: u32,
+    recreating_swapchain: bool,
     swapchain: VulkanSwapchain,
+    frame_buffer_size_generation: u32,
+    frame_buffer_last_generation: u32,
     framebuffer_width: u32,
     framebuffer_height: u32,
     device: VulkanDevice,
@@ -45,7 +55,7 @@ pub struct VulkanContext {
     instance: Instance,
 }
 
-impl VulkanContext {
+impl<'a> VulkanContext<'a> {
     pub fn initialize(name: &str, window: &Window) -> Result<(), VulkanError> {
         unsafe {
             if let Some(ref _state) = VULKAN_STATE {
@@ -154,11 +164,14 @@ impl VulkanContext {
             }
         };
         let surface_loader = surface::Instance::new(&entry, &instance);
+
+        //create device
         let mut dev = match VulkanDevice::new(&instance, &surface, &surface_loader) {
             Ok(dev) => dev,
             Err(e) => return Err(e),
         };
 
+        // create swapchain
         let swap = match VulkanSwapchain::create(
             &instance,
             &mut dev,
@@ -171,6 +184,7 @@ impl VulkanContext {
             Err(e) => return Err(e),
         };
 
+        // create renderpass
         let rend_pass = match VulkanRenderPass::create(
             0.0,
             0.0,
@@ -190,18 +204,42 @@ impl VulkanContext {
             Err(e) => return Err(e),
         };
 
+        let mut swap_framebuffers = Vec::new();
+        for i in 0..swap.views.len() {
+            let mut swap_attachments = Vec::new();
+            swap_attachments.push(swap.views[i]);
+            swap_attachments.push(swap.depth_attachment.view.unwrap());
+            let buf = match VulkanFramebuffer::create(
+                &dev,
+                &rend_pass,
+                window.height,
+                window.width,
+                &swap_attachments,
+            ) {
+                Ok(f) => f,
+                Err(e) => return Err(e),
+            };
+            swap_framebuffers.push(buf);
+        }
+        // creating command buffer
         let graph_cmd_buf = match Self::create_command_buffer(&dev, swap.image_count as usize) {
             Ok(g) => g,
             Err(e) => return Err(e),
         };
 
-        let mut sync_objects = Vec::new();
-        for i in 0..swap.max_frames_in_flight {
+        // creating sync objects
+        let mut sync_objects = Vec::with_capacity(swap.max_frames_in_flight as usize);
+        let mut images_in_flight = Vec::with_capacity(swap.max_frames_in_flight as usize);
+        for _ in 0..swap.max_frames_in_flight {
             let obj = match SyncObjects::create(&dev, true) {
                 Ok(o) => o,
                 Err(e) => return Err(e),
             };
             sync_objects.push(obj);
+        }
+
+        for _ in 0..swap.image_count as usize {
+            images_in_flight.push(None);
         }
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
@@ -229,6 +267,9 @@ impl VulkanContext {
             };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    images_in_flight: images_in_flight,
+                    image_index: 0,
+                    recreating_swapchain: false,
                     in_fligh_frames: in_flight_frames,
                     graphics_cmd_bufs: graph_cmd_buf,
                     device: dev,
@@ -239,6 +280,9 @@ impl VulkanContext {
                     main_renderpass: rend_pass,
                     framebuffer_height: window.height,
                     framebuffer_width: window.width,
+                    frame_buffer_size_generation: 0,
+                    frame_buffer_last_generation: 0,
+                    swapchain_framebuffers: swap_framebuffers,
                     dbg_messenger: debug_messenger,
                     dbg_util_loader: debug_utils_loader,
                 })
@@ -249,6 +293,9 @@ impl VulkanContext {
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    images_in_flight: images_in_flight,
+                    image_index: 0,
+                    recreating_swapchain: false,
                     in_fligh_frames: in_flight_frames,
                     graphics_cmd_bufs: graph_cmd_buf,
                     device: dev,
@@ -259,6 +306,9 @@ impl VulkanContext {
                     main_renderpass: rend_pass,
                     framebuffer_height: window.height,
                     framebuffer_width: window.width,
+                    frame_buffer_size_generation: 0,
+                    frame_buffer_last_generation: 0,
+                    swapchain_framebuffers: swap_framebuffers,
                 });
             }
         }
@@ -280,12 +330,230 @@ impl VulkanContext {
         Ok(())
     }
     pub fn on_resize(width: i32, height: i32) -> Result<(), VulkanError> {
+        let mut state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context already destroyed",
+                ));
+            }
+        };
+
+        state.framebuffer_height = height as u32;
+        state.framebuffer_width = width as u32;
+        state.frame_buffer_last_generation += 1;
+
+        println!(
+            "renderer backend resized w: {}, h: {}, gen: {}",
+            state.framebuffer_width, state.framebuffer_height, state.frame_buffer_last_generation
+        );
+
         Ok(())
     }
-    pub fn begin_frame(delta: f32) -> Result<(), VulkanError> {
-        Ok(())
+    pub fn begin_frame(delta: f32) -> Result<bool, VulkanError> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context already destroyed",
+                ));
+            }
+        };
+        if state.recreating_swapchain {
+            match unsafe { state.device.device.device_wait_idle() } {
+                Ok(_) => return Ok(false),
+                Err(_) => return Err(VulkanError::OperationFailed("could not wait on device")),
+            }
+        }
+
+        if state.frame_buffer_last_generation != state.frame_buffer_size_generation {
+            match unsafe { state.device.device.device_wait_idle() } {
+                Ok(_) =>
+                //{}
+                {
+                    match Self::recreate_swapchain() {
+                        Ok(()) => return Ok(false),
+                        Err(e) => return Err(e),
+                    }
+                }
+                Err(_) => return Err(VulkanError::OperationFailed("could not wait on device")),
+            }
+        }
+        let sync = &state.in_fligh_frames.sync_objs;
+        let current_frame = state.in_fligh_frames.current_frame;
+        match sync[current_frame].fence_wait(&state.device, u64::MAX) {
+            Ok(b) => {
+                if !b {
+                    return Ok(false);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+        match sync[current_frame].reset_fence(&state.device) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+        state.image_index = match state.swapchain.acquire_next_image_index(
+            u64::MAX,
+            sync[current_frame].image_avail_semaphore,
+            sync[current_frame].fence,
+        ) {
+            Ok((suboptimal, index)) => {
+                if suboptimal {
+                    return Ok(false);
+                } else {
+                    index
+                }
+            }
+            Err(e) => return Err(e),
+        };
+
+        let command_buffer = &mut state.graphics_cmd_bufs;
+        match command_buffer.begin(
+            &state.device,
+            false,
+            false,
+            false,
+            state.image_index as usize,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        let viewport = Viewport::default()
+            .x(0.0)
+            .y(state.framebuffer_height as f32)
+            .height(state.framebuffer_height as f32)
+            .width(state.framebuffer_width as f32)
+            .min_depth(0.0)
+            .max_depth(1.0);
+        let scissor = Rect2D::default()
+            .extent(
+                Extent2D::default()
+                    .height(state.frame_buffer_last_generation)
+                    .width(state.framebuffer_width),
+            )
+            .offset(Offset2D::default());
+
+        unsafe {
+            state.device.device.cmd_set_viewport(
+                command_buffer.command_buffer[state.image_index as usize],
+                0,
+                std::slice::from_ref(&viewport),
+            );
+        };
+        unsafe {
+            state.device.device.cmd_set_scissor(
+                command_buffer.command_buffer[state.image_index as usize],
+                0,
+                std::slice::from_ref(&scissor),
+            )
+        };
+
+        state.main_renderpass.w = state.framebuffer_width as f32;
+        state.main_renderpass.h = state.framebuffer_height as f32;
+        state.main_renderpass.begin(
+            &state.device,
+            command_buffer,
+            state.image_index as usize,
+            state.swapchain_framebuffers[state.image_index as usize].framebuffer,
+        );
+
+        Ok(true)
     }
     pub fn end_frame(delta: f32) -> Result<(), VulkanError> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context already destroyed",
+                ));
+            }
+        };
+        let image_index = state.image_index;
+        let mut command_buff = &mut state.graphics_cmd_bufs;
+        state
+            .main_renderpass
+            .end(&state.device, &mut command_buff, image_index as usize);
+        match command_buff.end(&state.device, image_index as usize) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        if let Some(sync_obj) = state.images_in_flight[state.image_index as usize] {
+            match sync_obj.fence_wait(&state.device, u64::MAX) {
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        state.images_in_flight[image_index as usize] =
+            Some(&state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame]);
+
+        match state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame]
+            .fence_wait(&state.device, u64::MAX)
+        {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+        // ensure the last frame is not acquiring image from swap
+        // let last_current_frame = (state.in_fligh_frames.current_frame + 1)
+        //     % state.swapchain.max_frames_in_flight as usize;
+        // match state.in_fligh_frames.sync_objs[last_current_frame]
+        //     .fence_wait(&state.device, u64::MAX)
+        // {
+        //     Ok(_) => {}
+        //     Err(e) => return Err(e),
+        // }
+        match state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame]
+            .reset_fence(&state.device)
+        {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        let submit_info = SubmitInfo::default()
+            .command_buffers(std::slice::from_ref(
+                &state.graphics_cmd_bufs.command_buffer[state.image_index as usize],
+            ))
+            .signal_semaphores(std::slice::from_ref(
+                &state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame as usize]
+                    .render_finished_semaphore,
+            ))
+            .wait_semaphores(std::slice::from_ref(
+                &state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame as usize]
+                    .image_avail_semaphore,
+            ))
+            .wait_dst_stage_mask(std::slice::from_ref(
+                &PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            ));
+
+        unsafe {
+            match state.device.device.queue_submit(
+                state.device.graphics_queue,
+                std::slice::from_ref(&submit_info),
+                state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame as usize].fence,
+            ) {
+                Ok(_) => {}
+                Err(_) => return Err(VulkanError::OperationFailed("could not submit to queue")),
+            }
+        }
+
+        match state.swapchain.present(
+            &state.device.graphics_queue,
+            &state.device.present_queue,
+            &state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame]
+                .render_finished_semaphore,
+            state.image_index,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+        state.in_fligh_frames.current_frame = (state.in_fligh_frames.current_frame + 1)
+            % state.swapchain.max_frames_in_flight as usize;
+
         Ok(())
     }
 
@@ -318,6 +586,9 @@ impl VulkanContext {
                 ));
             }
         };
+        println!("recreating swapchain");
+        let _ = unsafe { state.device.device.device_wait_idle() };
+        state.recreating_swapchain = true;
         state.swapchain.destroy(&state.device);
         state.swapchain = match VulkanSwapchain::create(
             &state.instance,
@@ -330,6 +601,41 @@ impl VulkanContext {
             Ok(s) => s,
             Err(e) => return Err(e),
         };
+
+        state.main_renderpass.w = state.framebuffer_width as f32;
+        state.main_renderpass.h = state.framebuffer_height as f32;
+
+        state.frame_buffer_last_generation = state.frame_buffer_size_generation;
+
+        state
+            .graphics_cmd_bufs
+            .free(&state.device, state.device.graphics_command_pool);
+
+        for i in 0..state.swapchain.image_count as usize {
+            state.swapchain_framebuffers[i].destroy(&state.device);
+        }
+
+        state.swapchain_framebuffers = match Self::regenerate_framebuffers(
+            &state.device,
+            &state.main_renderpass,
+            &state.swapchain,
+            state.framebuffer_height,
+            state.framebuffer_width,
+        ) {
+            Ok(f) => f,
+            Err(e) => return Err(e),
+        };
+
+        state.graphics_cmd_bufs = match Self::create_command_buffer(
+            &state.device,
+            state.swapchain.image_count as usize,
+        ) {
+            Ok(c) => c,
+            Err(e) => return Err(e),
+        };
+
+        state.recreating_swapchain = false;
+
         Ok(())
     }
 
@@ -348,14 +654,40 @@ impl VulkanContext {
         };
         cmd_buf
     }
+
+    fn regenerate_framebuffers(
+        dev: &VulkanDevice,
+        rend_pass: &VulkanRenderPass,
+        swap: &VulkanSwapchain,
+        height: u32,
+        width: u32,
+    ) -> Result<Vec<VulkanFramebuffer>, VulkanError> {
+        let mut swap_framebuffers = Vec::new();
+        for i in 0..swap.views.len() {
+            let mut swap_attachments = Vec::new();
+            swap_attachments.push(swap.views[i]);
+            swap_attachments.push(swap.depth_attachment.view.unwrap());
+            let buf =
+                match VulkanFramebuffer::create(&dev, &rend_pass, height, width, &swap_attachments)
+                {
+                    Ok(f) => f,
+                    Err(e) => return Err(e),
+                };
+            swap_framebuffers.push(buf);
+        }
+        Ok(swap_framebuffers)
+    }
 }
 
-impl Drop for VulkanContext {
+impl<'a> Drop for VulkanContext<'a> {
     fn drop(&mut self) {
         #[cfg(feature = "debug")]
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 let _ = state.device.device.device_wait_idle();
+                for frame in &state.swapchain_framebuffers {
+                    frame.destroy(&state.device);
+                }
                 state.in_fligh_frames.destroy(&state.device);
                 state
                     .device
@@ -375,6 +707,9 @@ impl Drop for VulkanContext {
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 let _ = state.device.device.device_wait_idle();
+                for frame in &state.swapchain_framebuffers {
+                    frame.destroy(&state.device);
+                }
                 state.in_fligh_frames.destroy(&state.device);
                 state
                     .device
