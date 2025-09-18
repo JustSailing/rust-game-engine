@@ -11,7 +11,7 @@ pub enum RendererBackendType {
 }
 
 pub struct RendererPacket {
-    delta_time: f32,
+    pub delta_time: f32,
 }
 
 pub struct RendererBackend {
@@ -19,7 +19,7 @@ pub struct RendererBackend {
     initialize: fn(application_name: &str, window: &Window) -> Result<(), VulkanError>,
     shutdown: fn() -> Result<(), VulkanError>,
     resized: fn(width: i32, height: i32) -> Result<(), VulkanError>,
-    begin_frame: fn(delta_time: f32) -> Result<(), VulkanError>,
+    begin_frame: fn(delta_time: f32) -> Result<bool, VulkanError>,
     end_frame: fn(delta_time: f32) -> Result<(), VulkanError>,
 }
 
@@ -77,11 +77,11 @@ impl FrontendRenderer {
         }
     }
 
-    pub fn begin_frame(delta: f32) -> Result<(), FrontendRendererError> {
+    pub fn begin_frame(delta: f32) -> Result<bool, FrontendRendererError> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 match (state.begin_frame)(delta) {
-                    Ok(_) => return Ok(()),
+                    Ok(b) => return Ok(b),
                     Err(e) => Err(FrontendRendererError::from(e)),
                 }
             } else {
@@ -106,16 +106,34 @@ impl FrontendRenderer {
 
     pub fn draw_frame(packet: &RendererPacket) -> Result<(), FrontendRendererError> {
         match FrontendRenderer::begin_frame(packet.delta_time) {
-            Ok(_) => match FrontendRenderer::end_frame(packet.delta_time) {
-                Ok(_) => (),
-                Err(e) => return Err(e),
+            Ok(b) => match b {
+                false => return Ok(()),
+                true => match FrontendRenderer::end_frame(packet.delta_time) {
+                    Ok(_) => (),
+                    Err(e) => return Err(e),
+                },
             },
+
             Err(e) => return Err(e),
         }
         Ok(())
     }
 
     pub fn on_resize(width: i32, height: i32) -> Result<(), FrontendRendererError> {
+        unsafe {
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                match (state.resized)(width, height) {
+                    Ok(_) => (),
+                    Err(_) => {
+                        return Err(FrontendRendererError::OperationFailed(
+                            "failed to resize window",
+                        ));
+                    }
+                }
+            } else {
+                return Err(FrontendRendererError::NotInitialized);
+            }
+        }
         Ok(())
     }
 

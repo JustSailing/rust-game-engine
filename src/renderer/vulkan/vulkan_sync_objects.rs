@@ -1,12 +1,12 @@
 use ash::vk::{self, Fence, FenceCreateFlags, FenceCreateInfo, Semaphore, SemaphoreCreateInfo};
 
-use super::{vulkan_device::VulkanDevice, vulkan_backend::VulkanError};
+use super::{vulkan_backend::VulkanError, vulkan_device::VulkanDevice};
 
 #[derive(Clone, Copy)]
 pub struct SyncObjects {
-    image_avail_semaphore: Semaphore,
-    render_finished_semaphore: Semaphore,
-    fence: Fence,
+    pub image_avail_semaphore: Semaphore,
+    pub render_finished_semaphore: Semaphore,
+    pub fence: Fence,
 }
 
 impl SyncObjects {
@@ -45,8 +45,10 @@ impl SyncObjects {
 
     pub fn fence_wait(&self, device: &VulkanDevice, time_out: u64) -> Result<bool, VulkanError> {
         unsafe {
-            let wait = [self.fence];
-            match device.device.wait_for_fences(&wait, true, time_out) {
+            match device
+                .device
+                .wait_for_fences(std::slice::from_ref(&self.fence), true, time_out)
+            {
                 Ok(_) => Ok(true),
                 Err(vk::Result::SUCCESS) => Ok(true),
                 Err(vk::Result::TIMEOUT) => {
@@ -69,8 +71,10 @@ impl SyncObjects {
 
     pub fn reset_fence(&self, device: &VulkanDevice) -> Result<(), VulkanError> {
         unsafe {
-            let reset = [self.fence];
-            match device.device.reset_fences(&reset) {
+            match device
+                .device
+                .reset_fences(std::slice::from_ref(&self.fence))
+            {
                 Ok(_) => Ok(()),
                 Err(_) => Err(VulkanError::OperationFailed("could not reset fence")),
             }
@@ -91,8 +95,8 @@ impl SyncObjects {
 }
 
 pub struct InFlightFrames {
-    sync_objs: Vec<SyncObjects>,
-    current_frame: usize,
+    pub sync_objs: Vec<SyncObjects>,
+    pub current_frame: usize,
 }
 
 impl InFlightFrames {

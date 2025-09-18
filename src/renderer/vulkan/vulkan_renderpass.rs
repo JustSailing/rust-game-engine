@@ -20,11 +20,11 @@ pub enum RenderPassState {
 }
 
 pub struct VulkanRenderPass {
-    renderpass: RenderPass,
+    pub renderpass: RenderPass,
     x: f32,
     y: f32,
-    w: f32,
-    h: f32,
+    pub w: f32,
+    pub h: f32,
     r: f32,
     g: f32,
     b: f32,
@@ -146,6 +146,7 @@ impl VulkanRenderPass {
         &self,
         device: &VulkanDevice,
         command_buffer: &mut VulkanCommandBuffer,
+        index: usize,
         frame_buffer: Framebuffer,
     ) {
         let mut begin_info = RenderPassBeginInfo::default()
@@ -180,7 +181,7 @@ impl VulkanRenderPass {
         begin_info.clear_value_count = 2;
         unsafe {
             device.device.cmd_begin_render_pass(
-                *command_buffer.command_buffer.first().unwrap(),
+                command_buffer.command_buffer[index],
                 &begin_info,
                 SubpassContents::INLINE,
             )
@@ -188,11 +189,11 @@ impl VulkanRenderPass {
         command_buffer.state = CommandBufferState::InRenderPass
     }
 
-    pub fn end(&self, device: &VulkanDevice, command_buffer: &mut VulkanCommandBuffer) {
+    pub fn end(&self, device: &VulkanDevice, command_buffer: &mut VulkanCommandBuffer, index: usize) {
         unsafe {
             device
                 .device
-                .cmd_end_render_pass(*command_buffer.command_buffer.first().unwrap());
+                .cmd_end_render_pass(command_buffer.command_buffer[index]);
         }
         command_buffer.state = CommandBufferState::Recording;
     }

@@ -1,6 +1,7 @@
 use super::{
     vulkan_backend::{VulkanContext, VulkanError},
     vulkan_device::VulkanDevice,
+    vulkan_framebuffer::VulkanFramebuffer,
     vulkan_image::VulkanImage,
 };
 use ash::{
@@ -22,8 +23,8 @@ pub struct VulkanSwapchain {
     swapchain_loader: swapchain::Device,
     pub image_count: u32,
     images: Vec<Image>,
-    views: Vec<ImageView>,
-    depth_attachment: VulkanImage,
+    pub views: Vec<ImageView>,
+    pub depth_attachment: VulkanImage,
 }
 
 impl VulkanSwapchain {
@@ -252,13 +253,10 @@ impl VulkanSwapchain {
         render_complete_semaphore: &Semaphore,
         present_image_index: u32,
     ) -> Result<(), VulkanError> {
-        let swapchains = [self.swapchain];
-        let image_index = [present_image_index];
-        let semaphores = [*render_complete_semaphore];
         let present_info = PresentInfoKHR::default()
-            .wait_semaphores(&semaphores)
-            .swapchains(&swapchains)
-            .image_indices(&image_index);
+            .wait_semaphores(std::slice::from_ref(render_complete_semaphore))
+            .swapchains(std::slice::from_ref(&self.swapchain))
+            .image_indices(std::slice::from_ref(&present_image_index));
         let res = unsafe {
             self.swapchain_loader
                 .queue_present(*present_queue, &present_info)
@@ -294,6 +292,7 @@ impl VulkanSwapchain {
             Ok((index, suboptimal)) => return Ok((suboptimal, index)),
             // should recreate swapchain
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                println!("swapchain out of date");
                 match VulkanContext::recreate_swapchain() {
                     Ok(_) => {}
                     Err(e) => return Err(e),

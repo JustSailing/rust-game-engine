@@ -15,7 +15,7 @@ use ash::{
 pub struct VulkanImage {
     image: Image,
     memory: DeviceMemory,
-    view: Option<ImageView>,
+    pub view: Option<ImageView>,
     width: u32,
     height: u32,
 }
