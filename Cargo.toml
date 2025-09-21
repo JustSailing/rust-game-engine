@@ -9,8 +9,5 @@ bitflags = "2.9.4"
 libc = "0.2.175"
 x11 = "2.21.0"
 
-[build-dependencies]
-shaderc = { version = "0.10.1", features = ["prefer-static-linking", "build-from-source"] }
-
 [features]
 debug = []

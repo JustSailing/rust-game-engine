@@ -92,16 +92,16 @@ impl VulkanImage {
                 }
             }
         };
-        let mut image_view = ImageView::default();
+        let mut image_view: Option<ImageView> = None;
         if create_view {
             image_view = match Self::create_view(device, image, format, view_aspect_flags) {
-                Ok(iv) => iv,
+                Ok(iv) => Some(iv),
                 Err(e) => return Err(e),
             };
             return Ok(VulkanImage {
                 image: image,
                 memory: device_memory,
-                view: Some(image_view),
+                view: image_view,
                 width: width,
                 height: height,
             });
@@ -110,7 +110,7 @@ impl VulkanImage {
         Ok(VulkanImage {
             image: image,
             memory: device_memory,
-            view: None,
+            view: image_view,
             width: width,
             height: height,
         })

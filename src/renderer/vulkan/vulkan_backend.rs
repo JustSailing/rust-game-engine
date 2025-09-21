@@ -5,8 +5,8 @@ use ash::{
         xlib_surface,
     },
     vk::{
-        self, Extent2D, Fence, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Rect2D,
-        SemaphoreWaitFlags, SemaphoreWaitInfo, SubmitInfo, SurfaceKHR, Viewport,
+        self, Extent2D, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Rect2D, SubmitInfo,
+        SurfaceKHR, Viewport,
     },
 };
 #[cfg(feature = "debug")]
@@ -17,6 +17,7 @@ use std::{borrow::Cow, ffi};
 use std::{ffi::CString, os::raw::c_void, u64};
 
 use super::{
+    super::vulkan::shaders::vulkan_object_shader::VulkanObjectShader,
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
     vulkan_framebuffer::VulkanFramebuffer,
@@ -37,6 +38,7 @@ pub struct VulkanContext<'a> {
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    object_shader: VulkanObjectShader<'a>,
     images_in_flight: Vec<Option<&'a SyncObjects>>,
     in_fligh_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
@@ -244,6 +246,11 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
+        let object_shader = match VulkanObjectShader::create(&dev, &rend_pass, window.width, window.height) {
+            Ok(o) => o,
+            Err(e) => return Err(e),
+        };
+
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -267,6 +274,7 @@ impl<'a> VulkanContext<'a> {
             };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    object_shader: object_shader,
                     images_in_flight: images_in_flight,
                     image_index: 0,
                     recreating_swapchain: false,
@@ -293,6 +301,7 @@ impl<'a> VulkanContext<'a> {
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    object_shader: object_shader,
                     images_in_flight: images_in_flight,
                     image_index: 0,
                     recreating_swapchain: false,
@@ -588,6 +597,9 @@ impl<'a> VulkanContext<'a> {
         };
         println!("recreating swapchain");
         let _ = unsafe { state.device.device.device_wait_idle() };
+        for i in 0..state.swapchain.max_frames_in_flight as usize {
+            state.images_in_flight[i] = None;
+        }
         state.recreating_swapchain = true;
         state.swapchain.destroy(&state.device);
         state.swapchain = match VulkanSwapchain::create(
@@ -688,6 +700,7 @@ impl<'a> Drop for VulkanContext<'a> {
                 for frame in &state.swapchain_framebuffers {
                     frame.destroy(&state.device);
                 }
+                state.object_shader.destroy(&state.device);
                 state.in_fligh_frames.destroy(&state.device);
                 state
                     .device
@@ -710,6 +723,7 @@ impl<'a> Drop for VulkanContext<'a> {
                 for frame in &state.swapchain_framebuffers {
                     frame.destroy(&state.device);
                 }
+                state.object_shader.destroy(&state.device);
                 state.in_fligh_frames.destroy(&state.device);
                 state
                     .device

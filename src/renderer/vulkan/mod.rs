@@ -1,8 +1,11 @@
+mod shaders;
 pub mod vulkan_backend;
+mod vulkan_buffer;
+mod vulkan_command_buffer;
 mod vulkan_device;
+mod vulkan_framebuffer;
 mod vulkan_image;
+mod vulkan_pipeline;
 mod vulkan_renderpass;
 mod vulkan_swapchain;
-mod vulkan_command_buffer;
 mod vulkan_sync_objects;
-mod vulkan_framebuffer;
