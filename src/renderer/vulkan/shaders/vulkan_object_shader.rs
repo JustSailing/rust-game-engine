@@ -1,6 +1,8 @@
+
 use ash::vk::{
     Extent2D, Format, Offset2D, PipelineShaderStageCreateInfo, Rect2D, ShaderModule,
-    ShaderModuleCreateInfo, ShaderStageFlags, VertexInputAttributeDescription, Viewport,
+    ShaderModuleCreateInfo, ShaderStageFlags,
+    VertexInputAttributeDescription, Viewport,
 };
 
 use super::super::{
@@ -43,7 +45,6 @@ impl<'a> VulkanObjectShader<'a> {
                 BUILT_IN_NAME,
                 stage_type_strs[i],
                 stage_flags[i],
-                i,
             ) {
                 Ok(shader_stage) => shader_stage,
                 Err(e) => return Err(e),
@@ -83,7 +84,6 @@ impl<'a> VulkanObjectShader<'a> {
         }
         //TODO: Desciptor set layouts.
 
-        
         let mut stage_create_infos: [PipelineShaderStageCreateInfo; OBJECT_SHADER_STAGE_COUNT] =
             unsafe { std::mem::zeroed() };
 
@@ -95,7 +95,7 @@ impl<'a> VulkanObjectShader<'a> {
             device,
             renderpass,
             &attribute_descriptions,
-            None,//descriptor_set_layout,
+            None, //descriptor_set_layout,
             &stage_create_infos,
             viewport,
             scissor,
@@ -114,18 +114,8 @@ impl<'a> VulkanObjectShader<'a> {
         name: &str,
         stage_type_str: &str,
         stage_flag: ShaderStageFlags,
-        index: usize,
     ) -> Result<VulkanShaderStage<'a>, VulkanError> {
-        #[cfg(feature = "debug")]
-        let file_name = format!(
-            "target/debug/assets/shaders/{}.{}.spv",
-            name, stage_type_str
-        );
-        #[cfg(not(feature = "debug"))]
-        let file_name = format!(
-            "target/release/assets/shaders/{}.{}.spv",
-            name, stage_type_str
-        );
+        let file_name = format!("bin/assets/shaders/{}.{}.spv", name, stage_type_str);
         println!("file name: {}", file_name);
         let mut file_handle = match FileHandle::open(&file_name, FileModes::READ, false) {
             Ok(f) => f,
