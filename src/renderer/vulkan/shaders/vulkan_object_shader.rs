@@ -1,12 +1,12 @@
-
 use ash::vk::{
-    Extent2D, Format, Offset2D, PipelineShaderStageCreateInfo, Rect2D, ShaderModule,
-    ShaderModuleCreateInfo, ShaderStageFlags,
-    VertexInputAttributeDescription, Viewport,
+    Extent2D, Format, Offset2D, PipelineBindPoint, PipelineShaderStageCreateInfo, Rect2D,
+    ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, VertexInputAttributeDescription,
+    Viewport,
 };
 
 use super::super::{
-    vulkan_backend::VulkanError, vulkan_device::VulkanDevice, vulkan_pipeline::VulkanPipeline,
+    vulkan_backend::VulkanError, vulkan_command_buffer::VulkanCommandBuffer,
+    vulkan_device::VulkanDevice, vulkan_pipeline::VulkanPipeline,
     vulkan_renderpass::VulkanRenderPass,
 };
 use crate::application::basic::{
@@ -150,6 +150,20 @@ impl<'a> VulkanObjectShader<'a> {
             shader_mod: shader_module,
             shader_stage_create_info: pipeline_shader_stage_create_info,
         })
+    }
+
+    pub fn use_shader(
+        &self,
+        device: &VulkanDevice,
+        command_buffer: &VulkanCommandBuffer,
+        image_index: u32,
+    ) {
+        self.pipeline.bind(
+            device,
+            command_buffer,
+            image_index as usize,
+            PipelineBindPoint::GRAPHICS,
+        );
     }
 
     pub fn destroy(&self, device: &VulkanDevice) {

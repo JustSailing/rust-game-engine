@@ -53,15 +53,12 @@ impl VulkanImage {
         };
 
         let memory_requirements = unsafe { device.device.get_image_memory_requirements(image) };
-        let memory_type = match VulkanContext::find_memory_index(
+        let memory_type = VulkanContext::find_memory_index(
             instance,
             &device,
             memory_requirements.memory_type_bits,
             memory_flags,
-        ) {
-            Ok(i) => i,
-            Err(e) => return Err(e),
-        };
+        );
 
         if memory_type == -1 {
             return Err(VulkanError::OperationFailed(

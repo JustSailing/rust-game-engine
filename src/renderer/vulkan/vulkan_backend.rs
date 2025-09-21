@@ -5,8 +5,8 @@ use ash::{
         xlib_surface,
     },
     vk::{
-        self, Extent2D, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Rect2D, SubmitInfo,
-        SurfaceKHR, Viewport,
+        self, BufferUsageFlags, Extent2D, MemoryPropertyFlags, Offset2D, PipelineStageFlags,
+        Rect2D, SubmitInfo, SurfaceKHR, Viewport,
     },
 };
 #[cfg(feature = "debug")]
@@ -18,6 +18,7 @@ use std::{ffi::CString, os::raw::c_void, u64};
 
 use super::{
     super::vulkan::shaders::vulkan_object_shader::VulkanObjectShader,
+    vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
     vulkan_framebuffer::VulkanFramebuffer,
@@ -25,7 +26,7 @@ use super::{
     vulkan_swapchain::VulkanSwapchain,
     vulkan_sync_objects::{InFlightFrames, SyncObjects},
 };
-use crate::application::basic::window::Window;
+use crate::application::basic::{math::vec3::Vector3D, window::Window};
 
 pub enum VulkanError {
     OperationFailed(&'static str),
@@ -38,6 +39,10 @@ pub struct VulkanContext<'a> {
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    geometry_vertex_offset: u64,
+    geometry_index_offset: u64,
+    object_index_buffer: VulkanBuffer,
+    object_vertex_buffer: VulkanBuffer,
     object_shader: VulkanObjectShader<'a>,
     images_in_flight: Vec<Option<&'a SyncObjects>>,
     in_fligh_frames: InFlightFrames,
@@ -246,11 +251,16 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
-        let object_shader = match VulkanObjectShader::create(&dev, &rend_pass, window.width, window.height) {
-            Ok(o) => o,
+        let object_shader =
+            match VulkanObjectShader::create(&dev, &rend_pass, window.width, window.height) {
+                Ok(o) => o,
+                Err(e) => return Err(e),
+            };
+
+        let (vertex_buffer, index_buffer) = match Self::create_buffers(&instance, &dev) {
+            Ok((v, i)) => (v, i),
             Err(e) => return Err(e),
         };
-
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -274,6 +284,10 @@ impl<'a> VulkanContext<'a> {
             };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    geometry_vertex_offset: 0,
+                    geometry_index_offset: 0,
+                    object_index_buffer: index_buffer,
+                    object_vertex_buffer: vertex_buffer,
                     object_shader: object_shader,
                     images_in_flight: images_in_flight,
                     image_index: 0,
@@ -301,6 +315,10 @@ impl<'a> VulkanContext<'a> {
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    geometry_vertex_offset: 0,
+                    geometry_index_offset: 0,
+                    object_index_buffer: index_buffer,
+                    object_vertex_buffer: vertex_buffer,
                     object_shader: object_shader,
                     images_in_flight: images_in_flight,
                     image_index: 0,
@@ -571,7 +589,7 @@ impl<'a> VulkanContext<'a> {
         dev: &VulkanDevice,
         type_filter: u32,
         property_flags: MemoryPropertyFlags,
-    ) -> Result<i32, VulkanError> {
+    ) -> i32 {
         let memory_props =
             unsafe { instance.get_physical_device_memory_properties(dev.physical_device) };
         for i in 0..memory_props.memory_type_count {
@@ -579,10 +597,10 @@ impl<'a> VulkanContext<'a> {
             let memory_type = memory_props.memory_types[i as usize];
 
             if suitable && memory_type.property_flags.contains(property_flags) {
-                return Ok(i as i32);
+                return i as i32;
             }
         }
-        Ok(-1)
+        -1
     }
 
     pub fn recreate_swapchain() -> Result<(), VulkanError> {
@@ -689,6 +707,46 @@ impl<'a> VulkanContext<'a> {
         }
         Ok(swap_framebuffers)
     }
+
+    fn create_buffers(
+        instance: &Instance,
+        device: &VulkanDevice,
+    ) -> Result<(VulkanBuffer, VulkanBuffer), VulkanError> {
+        let memory_property_flag = MemoryPropertyFlags::DEVICE_LOCAL;
+
+        const VERTEX_BUFFER_SIZE: usize = size_of::<Vector3D>() * 1024;
+
+        let vertex_buffer = match VulkanBuffer::create(
+            instance,
+            device,
+            VERTEX_BUFFER_SIZE as u64,
+            BufferUsageFlags::VERTEX_BUFFER
+                | BufferUsageFlags::TRANSFER_DST
+                | BufferUsageFlags::TRANSFER_SRC,
+            memory_property_flag,
+            true,
+        ) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+
+        const INDEX_BUFFER_SIZE: usize = size_of::<u32>() * 1024;
+
+        let index_buffer = match VulkanBuffer::create(
+            instance,
+            device,
+            INDEX_BUFFER_SIZE as u64,
+            BufferUsageFlags::INDEX_BUFFER
+                | BufferUsageFlags::TRANSFER_DST
+                | BufferUsageFlags::TRANSFER_SRC,
+            memory_property_flag,
+            true,
+        ) {
+            Ok(v) => v,
+            Err(e) => return Err(e),
+        };
+        Ok((vertex_buffer, index_buffer))
+    }
 }
 
 impl<'a> Drop for VulkanContext<'a> {
@@ -697,6 +755,8 @@ impl<'a> Drop for VulkanContext<'a> {
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 let _ = state.device.device.device_wait_idle();
+                state.object_index_buffer.destroy(&state.device);
+                state.object_vertex_buffer.destroy(&state.device);
                 for frame in &state.swapchain_framebuffers {
                     frame.destroy(&state.device);
                 }
@@ -720,6 +780,8 @@ impl<'a> Drop for VulkanContext<'a> {
         unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 let _ = state.device.device.device_wait_idle();
+                state.object_index_buffer.destroy(&state.device);
+                state.object_vertex_buffer.destroy(&state.device);
                 for frame in &state.swapchain_framebuffers {
                     frame.destroy(&state.device);
                 }

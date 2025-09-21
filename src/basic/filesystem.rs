@@ -53,11 +53,6 @@ impl FileHandle {
         }
     }
 
-    // not sure if i need close
-    pub fn close(&self) {
-        drop(&self.file)
-    }
-
     pub fn read_line(&self) -> Result<String, FileError> {
         let mut reader = BufReader::new(&self.file);
         let mut line = String::new();
