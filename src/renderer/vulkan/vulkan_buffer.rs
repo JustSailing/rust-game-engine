@@ -1,5 +1,5 @@
 use std::ffi::c_void;
-use std::ptr;
+use std::ptr::copy_nonoverlapping as memcpy;
 
 use super::{
     vulkan_backend::VulkanContext, vulkan_backend::VulkanError,
@@ -11,7 +11,7 @@ use ash::vk::{
     Fence, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, Queue, SharingMode,
 };
 pub struct VulkanBuffer {
-    buffer: Buffer,
+    pub buffer: Buffer,
     size: u64,
     usage_flags: BufferUsageFlags,
     is_locked: bool,
@@ -75,7 +75,10 @@ impl VulkanBuffer {
             memory_property_flags: memory_property_flags,
         };
         if bind_on_create {
-            vk_buffer.bind(device, 0);
+            match vk_buffer.bind(device, 0) {
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
         }
 
         Ok(vk_buffer)
@@ -187,13 +190,13 @@ impl VulkanBuffer {
         }
     }
 
-    pub fn load_data(
+    pub fn load_data<T: Copy>(
         &self,
         device: &VulkanDevice,
         offset: u64,
         size: u64,
         flags: MemoryMapFlags,
-        data: *const c_void,
+        data: &[T],
     ) -> Result<(), VulkanError> {
         let data_ptr = unsafe {
             match device.device.map_memory(self.memory, offset, size, flags) {
@@ -201,18 +204,16 @@ impl VulkanBuffer {
                 Err(_) => return Err(VulkanError::OperationFailed("could not map memory")),
             }
         };
-        unsafe {
-            ptr::copy_nonoverlapping(data as *const u8, data_ptr as *mut u8, size as usize);
-        }
 
         unsafe {
+            memcpy(data.as_ptr(), data_ptr.cast(), data.len());
             device.device.unmap_memory(self.memory);
         }
 
         Ok(())
     }
 
-    fn copy_to(
+    pub fn copy_to(
         device: &VulkanDevice,
         pool: CommandPool,
         _fence: Fence,
@@ -223,6 +224,7 @@ impl VulkanBuffer {
         dst_offset: u64,
         size: u64,
     ) -> Result<(), VulkanError> {
+        let _ = unsafe { device.device.queue_wait_idle(queue) };
         let mut command_buffer =
             match VulkanCommandBuffer::allocate_and_begin_single_use(device, pool) {
                 Ok(c) => c,
@@ -239,7 +241,7 @@ impl VulkanBuffer {
                 command_buffer.command_buffer[0],
                 source,
                 dst,
-                std::slice::from_ref(&copy_region),
+                &[copy_region],
             );
         }
 

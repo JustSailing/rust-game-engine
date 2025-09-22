@@ -66,7 +66,7 @@ impl VulkanRenderPass {
             .stencil_store_op(AttachmentStoreOp::DONT_CARE)
             .initial_layout(ImageLayout::UNDEFINED)
             .final_layout(ImageLayout::PRESENT_SRC_KHR)
-            .flags(AttachmentDescriptionFlags::default());
+            .flags(AttachmentDescriptionFlags::empty());
 
         attachment_descriptions[0] = color_attachment;
 
@@ -99,18 +99,18 @@ impl VulkanRenderPass {
             .src_subpass(SUBPASS_EXTERNAL)
             .dst_subpass(0)
             .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(AccessFlags::default())
+            .src_access_mask(AccessFlags::empty())
             .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
             .dst_access_mask(
                 AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE,
             )
-            .dependency_flags(DependencyFlags::default());
-        let dependencies = [dependency];
-        let subpasses = [subpass];
+            .dependency_flags(DependencyFlags::empty());
+       
         let renderpass_create_info = RenderPassCreateInfo::default()
             .attachments(&attachment_descriptions)
-            .dependencies(&dependencies)
-            .subpasses(&subpasses);
+            .dependencies(std::slice::from_ref(&dependency))
+            .subpasses(std::slice::from_ref(&subpass));
+
         let renderpass = unsafe {
             match device
                 .device
@@ -189,7 +189,12 @@ impl VulkanRenderPass {
         command_buffer.state = CommandBufferState::InRenderPass
     }
 
-    pub fn end(&self, device: &VulkanDevice, command_buffer: &mut VulkanCommandBuffer, index: usize) {
+    pub fn end(
+        &self,
+        device: &VulkanDevice,
+        command_buffer: &mut VulkanCommandBuffer,
+        index: usize,
+    ) {
         unsafe {
             device
                 .device

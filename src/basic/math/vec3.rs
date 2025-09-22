@@ -195,6 +195,7 @@ impl PartialEq for Vec3 {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Vector3D {
     pub position: Vec3,
 }

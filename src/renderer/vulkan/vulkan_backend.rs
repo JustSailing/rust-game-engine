@@ -5,16 +5,18 @@ use ash::{
         xlib_surface,
     },
     vk::{
-        self, BufferUsageFlags, Extent2D, MemoryPropertyFlags, Offset2D, PipelineStageFlags,
-        Rect2D, SubmitInfo, SurfaceKHR, Viewport,
+        self, BufferUsageFlags, CommandPool, DeviceSize, Extent2D, Fence, IndexType,
+        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue, Rect2D,
+        SubmitInfo, SurfaceKHR, Viewport,
     },
 };
 #[cfg(feature = "debug")]
 use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
 #[cfg(feature = "debug")]
 use std::{borrow::Cow, ffi};
-
-use std::{ffi::CString, os::raw::c_void, u64};
+use std::{
+    ffi::{CString, c_void}
+};
 
 use super::{
     super::vulkan::shaders::vulkan_object_shader::VulkanObjectShader,
@@ -26,7 +28,10 @@ use super::{
     vulkan_swapchain::VulkanSwapchain,
     vulkan_sync_objects::{InFlightFrames, SyncObjects},
 };
-use crate::application::basic::{math::vec3::Vector3D, window::Window};
+use crate::application::basic::{
+    math::vec3::{Vec3, Vector3D},
+    window::Window,
+};
 
 pub enum VulkanError {
     OperationFailed(&'static str),
@@ -261,6 +266,54 @@ impl<'a> VulkanContext<'a> {
             Ok((v, i)) => (v, i),
             Err(e) => return Err(e),
         };
+
+        const VERT_COUNT: usize = 4;
+        let verts: [Vector3D; VERT_COUNT] = [
+            Vector3D {
+                position: Vec3::new(0.0, -0.5, 0.0),
+            },
+            Vector3D {
+                position: Vec3::new(0.5, 0.5, 0.0),
+            },
+            Vector3D {
+                position: Vec3::new(0.0, 0.5, 0.0),
+            },
+            Vector3D {
+                position: Vec3::new(0.5, -0.5, 0.0),
+            },
+        ];
+
+        match Self::upload_data_range(
+            &instance,
+            &dev,
+            dev.graphics_command_pool,
+            Fence::null(),
+            dev.graphics_queue,
+            &vertex_buffer,
+            0,
+            &verts,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        };
+
+        const INDEX_COUNT: usize = 6;
+        let indices: [u32; INDEX_COUNT] = [0, 1, 2, 0, 3, 1];
+
+        match Self::upload_data_range(
+            &instance,
+            &dev,
+            dev.graphics_command_pool,
+            Fence::null(),
+            dev.graphics_queue,
+            &index_buffer,
+            0,
+            &indices,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        };
+
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -452,14 +505,14 @@ impl<'a> VulkanContext<'a> {
         let viewport = Viewport::default()
             .x(0.0)
             .y(state.framebuffer_height as f32)
-            .height(state.framebuffer_height as f32)
+            .height(-(state.framebuffer_height as f32))
             .width(state.framebuffer_width as f32)
             .min_depth(0.0)
             .max_depth(1.0);
         let scissor = Rect2D::default()
             .extent(
                 Extent2D::default()
-                    .height(state.frame_buffer_last_generation)
+                    .height(state.framebuffer_height)
                     .width(state.framebuffer_width),
             )
             .offset(Offset2D::default());
@@ -488,6 +541,34 @@ impl<'a> VulkanContext<'a> {
             state.swapchain_framebuffers[state.image_index as usize].framebuffer,
         );
 
+        state
+            .object_shader
+            .use_shader(&state.device, &state.graphics_cmd_bufs, state.image_index);
+        let offsets: [DeviceSize; 1] = [0];
+        unsafe {
+            state.device.device.cmd_bind_vertex_buffers(
+                state.graphics_cmd_bufs.command_buffer[state.image_index as usize],
+                0,
+                &[state.object_vertex_buffer.buffer],
+                &offsets,
+            );
+
+            state.device.device.cmd_bind_index_buffer(
+                state.graphics_cmd_bufs.command_buffer[state.image_index as usize],
+                state.object_index_buffer.buffer,
+                0,
+                IndexType::UINT32,
+            );
+
+            state.device.device.cmd_draw_indexed(
+                state.graphics_cmd_bufs.command_buffer[state.image_index as usize],
+                6,
+                1,
+                0,
+                0,
+                0,
+            );
+        }
         Ok(true)
     }
     pub fn end_frame(delta: f32) -> Result<(), VulkanError> {
@@ -505,6 +586,7 @@ impl<'a> VulkanContext<'a> {
         state
             .main_renderpass
             .end(&state.device, &mut command_buff, image_index as usize);
+
         match command_buff.end(&state.device, image_index as usize) {
             Ok(_) => {}
             Err(e) => return Err(e),
@@ -525,15 +607,7 @@ impl<'a> VulkanContext<'a> {
             Ok(_) => {}
             Err(e) => return Err(e),
         }
-        // ensure the last frame is not acquiring image from swap
-        // let last_current_frame = (state.in_fligh_frames.current_frame + 1)
-        //     % state.swapchain.max_frames_in_flight as usize;
-        // match state.in_fligh_frames.sync_objs[last_current_frame]
-        //     .fence_wait(&state.device, u64::MAX)
-        // {
-        //     Ok(_) => {}
-        //     Err(e) => return Err(e),
-        // }
+
         match state.in_fligh_frames.sync_objs[state.in_fligh_frames.current_frame]
             .reset_fence(&state.device)
         {
@@ -746,6 +820,59 @@ impl<'a> VulkanContext<'a> {
             Err(e) => return Err(e),
         };
         Ok((vertex_buffer, index_buffer))
+    }
+
+    fn upload_data_range<T: Copy>(
+        instance: &Instance,
+        device: &VulkanDevice,
+        pool: CommandPool,
+        fence: Fence,
+        queue: Queue,
+        buffer: &VulkanBuffer,
+        offset: u64,
+        data: &[T],
+    ) -> Result<(), VulkanError> {
+        let memory_flags = MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT;
+        let staging_buffer = match VulkanBuffer::create(
+            instance,
+            device,
+            size_of_val(data) as u64,
+            BufferUsageFlags::TRANSFER_SRC,
+            memory_flags,
+            true,
+        ) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+
+        match staging_buffer.load_data::<T>(
+            device,
+            offset,
+            size_of_val(data) as u64,
+            MemoryMapFlags::empty(),
+            data,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+        match VulkanBuffer::copy_to(
+            device,
+            pool,
+            fence,
+            queue,
+            staging_buffer.buffer,
+            0,
+            buffer.buffer,
+            offset,
+            size_of_val(data) as u64,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        staging_buffer.destroy(device);
+
+        Ok(())
     }
 }
 

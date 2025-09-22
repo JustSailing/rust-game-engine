@@ -61,6 +61,8 @@ impl VulkanSwapchain {
                 && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
             {
                 format_ = format;
+                found = true;
+                break;
             }
         }
         if !found {
@@ -72,8 +74,10 @@ impl VulkanSwapchain {
         let mut mode_: &PresentModeKHR = &PresentModeKHR::default();
         found = false;
         for mode in &device.swapchain_support.present_modes {
-            if mode.as_raw() == vk::PresentModeKHR::MAILBOX.as_raw() {
+            if *mode == vk::PresentModeKHR::MAILBOX {
                 mode_ = mode;
+                found = true;
+                break;
             }
         }
         if !found {
@@ -195,7 +199,7 @@ impl VulkanSwapchain {
             let view_create_info = ImageViewCreateInfo::default()
                 .image(images[i])
                 .format(format_.format)
-                .view_type(ImageViewType::TYPE_2D_ARRAY)
+                .view_type(ImageViewType::TYPE_2D)
                 .subresource_range(sub);
             views.push(unsafe {
                 match device.device.create_image_view(&view_create_info, None) {
@@ -229,7 +233,7 @@ impl VulkanSwapchain {
             max_frames_in_flight,
             swapchain: swap,
             swapchain_loader: swapchain_loader,
-            image_count: image_count,
+            image_count: images.len() as u32,
             images: images,
             views: views,
             depth_attachment: depth_attachment,

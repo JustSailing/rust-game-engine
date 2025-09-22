@@ -18,7 +18,7 @@ impl VulkanFramebuffer {
         width: u32,
         attachments: &Vec<ImageView>,
     ) -> Result<Self, VulkanError> {
-        let attachments = attachments.clone();
+        //let attachments = attachments.clone();
         let framebuffer_create_info = FramebufferCreateInfo::default()
             .render_pass(renderpass.renderpass)
             .attachments(&attachments)
@@ -35,12 +35,15 @@ impl VulkanFramebuffer {
                 Err(_) => return Err(VulkanError::OperationFailed("could not create framebuffer")),
             }
         };
-        Ok(VulkanFramebuffer { framebuffer: framebuffer, attachments: attachments})
+        Ok(VulkanFramebuffer {
+            framebuffer: framebuffer,
+            attachments: attachments.clone(),
+        })
     }
 
     pub fn destroy(&self, device: &VulkanDevice) {
-      unsafe{
-        device.device.destroy_framebuffer(self.framebuffer, None);
-      }
+        unsafe {
+            device.device.destroy_framebuffer(self.framebuffer, None);
+        }
     }
 }

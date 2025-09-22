@@ -56,6 +56,7 @@ impl VulkanPipeline {
             .depth_bias_constant_factor(0.0)
             .depth_bias_clamp(0.0)
             .depth_bias_slope_factor(0.0);
+
         let multisampling_create_info = PipelineMultisampleStateCreateInfo::default()
             .sample_shading_enable(false)
             .rasterization_samples(SampleCountFlags::TYPE_1)
@@ -83,6 +84,7 @@ impl VulkanPipeline {
         let color_blend_state_create_info = PipelineColorBlendStateCreateInfo::default()
             .logic_op_enable(false)
             .logic_op(LogicOp::COPY)
+            .blend_constants([0.0, 0.0, 0.0, 0.0])
             .attachments(std::slice::from_ref(&color_blend_attachement));
 
         let dynamic_states = [
@@ -133,6 +135,7 @@ impl VulkanPipeline {
             .dynamic_state(&dynamic_state_create_info)
             .layout(pipeline_layout)
             .render_pass(renderpass.renderpass)
+            .base_pipeline_handle(Pipeline::null())
             .base_pipeline_index(-1);
 
         let pipeline = unsafe {
