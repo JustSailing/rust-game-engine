@@ -12,11 +12,9 @@ use ash::{
 };
 #[cfg(feature = "debug")]
 use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
+use std::ffi::{CString, c_void};
 #[cfg(feature = "debug")]
 use std::{borrow::Cow, ffi};
-use std::{
-    ffi::{CString, c_void}
-};
 
 use super::{
     super::vulkan::shaders::vulkan_object_shader::VulkanObjectShader,
@@ -29,7 +27,11 @@ use super::{
     vulkan_sync_objects::{InFlightFrames, SyncObjects},
 };
 use crate::application::basic::{
-    math::vec3::{Vec3, Vector3D},
+    math::{
+        matrix4::Matrix4,
+        vec3::{Vec3, Vector3D},
+        vec4::Vec4,
+    },
     window::Window,
 };
 
@@ -256,30 +258,36 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
-        let object_shader =
-            match VulkanObjectShader::create(&dev, &rend_pass, window.width, window.height) {
-                Ok(o) => o,
-                Err(e) => return Err(e),
-            };
+        let object_shader = match VulkanObjectShader::create(
+            &instance,
+            &dev,
+            &rend_pass,
+            window.width,
+            window.height,
+            swap.max_frames_in_flight as u32,
+        ) {
+            Ok(o) => o,
+            Err(e) => return Err(e),
+        };
 
         let (vertex_buffer, index_buffer) = match Self::create_buffers(&instance, &dev) {
             Ok((v, i)) => (v, i),
             Err(e) => return Err(e),
         };
-
+        const FACTOR: f32 = 1.0;
         const VERT_COUNT: usize = 4;
         let verts: [Vector3D; VERT_COUNT] = [
             Vector3D {
-                position: Vec3::new(0.0, -0.5, 0.0),
+                position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
             },
             Vector3D {
-                position: Vec3::new(0.5, 0.5, 0.0),
+                position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
             },
             Vector3D {
-                position: Vec3::new(0.0, 0.5, 0.0),
+                position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
             },
             Vector3D {
-                position: Vec3::new(0.5, -0.5, 0.0),
+                position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
             },
         ];
 
@@ -463,6 +471,7 @@ impl<'a> VulkanContext<'a> {
         }
         let sync = &state.in_fligh_frames.sync_objs;
         let current_frame = state.in_fligh_frames.current_frame;
+
         match sync[current_frame].fence_wait(&state.device, u64::MAX) {
             Ok(b) => {
                 if !b {
@@ -544,6 +553,43 @@ impl<'a> VulkanContext<'a> {
         state
             .object_shader
             .use_shader(&state.device, &state.graphics_cmd_bufs, state.image_index);
+
+        Ok(true)
+    }
+
+    pub fn update_global_state(
+        projection: Matrix4,
+        view: Matrix4,
+        _view_position: Vec3,
+        _ambient_colour: Vec4,
+        _mode: i32,
+    ) -> Result<(), VulkanError> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context not initialized",
+                ));
+            }
+        };
+        state
+            .object_shader
+            .use_shader(&state.device, &state.graphics_cmd_bufs, state.image_index);
+
+        state.object_shader.global_ubo.projection = projection;
+        state.object_shader.global_ubo.view = view;
+
+        match state.object_shader.update_global_state(
+            &state.device,
+            &state.graphics_cmd_bufs,
+            state.image_index,
+            state.in_fligh_frames.current_frame as u32,
+        ) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
         let offsets: [DeviceSize; 1] = [0];
         unsafe {
             state.device.device.cmd_bind_vertex_buffers(
@@ -569,8 +615,9 @@ impl<'a> VulkanContext<'a> {
                 0,
             );
         }
-        Ok(true)
+        Ok(())
     }
+
     pub fn end_frame(delta: f32) -> Result<(), VulkanError> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
@@ -845,7 +892,7 @@ impl<'a> VulkanContext<'a> {
             Err(e) => return Err(e),
         };
 
-        match staging_buffer.load_data::<T>(
+        match staging_buffer.load_data(
             device,
             offset,
             size_of_val(data) as u64,

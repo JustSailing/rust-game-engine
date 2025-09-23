@@ -27,15 +27,15 @@ impl Matrix4 {
     pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) -> Self {
         // 'f' is a scaling factor based on the vertical field of view (fovy).
         // A smaller fovy results in a larger scaling factor (more zoomed in).
-        let f = 1.0 / (fovy_rad / 2.0).tan();
+        let half_tan_fov = (fovy_rad * 0.5).tan();
 
-        let mut mat = Self::identity();
-        mat.data[0] = f / aspect;
-        mat.data[5] = f;
-        mat.data[10] = (far + near) / (near - far);
+        let mut mat = Self::new_zeros();
+        mat.data[0] = 1.0 / (aspect * half_tan_fov);
+        mat.data[5] = 1.0 / half_tan_fov;
+        mat.data[10] = -((far + near) / (far - near));
         mat.data[11] = -1.0;
-        mat.data[14] = (2.0 * far * near) / (near - far);
-        mat.data[15] = 0.0;
+        mat.data[14] = -((2.0 * far * near) / (far - near));
+
         mat
     }
     pub fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
@@ -148,7 +148,7 @@ impl Matrix4 {
         let t23 = m[4] * m[1];
 
         let mut out_matrix = Matrix4::new_zeros();
-        let mut o = &mut out_matrix.data;
+        let o = &mut out_matrix.data;
 
         o[0] = (t0 * m[5] + t3 * m[9] + t4 * m[13]) - (t1 * m[5] + t2 * m[9] + t5 * m[13]);
         o[1] = (t1 * m[1] + t6 * m[9] + t9 * m[13]) - (t0 * m[1] + t7 * m[9] + t8 * m[13]);
@@ -183,6 +183,14 @@ impl Matrix4 {
             d * ((t22 * m[10] + t16 * m[2] + t21 * m[6]) - (t20 * m[6] + t23 * m[10] + t17 * m[2]));
 
         return out_matrix;
+    }
+
+    pub fn translation(position: Vec3) -> Self {
+        let mut out = Matrix4::identity();
+        out.data[12] = position.data[0];
+        out.data[13] = position.data[1];
+        out.data[14] = position.data[2];
+        out
     }
 }
 

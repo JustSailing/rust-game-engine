@@ -17,6 +17,12 @@ impl Vec4 {
             data: [first, second, third, fourth],
         }
     }
+    pub fn new_zeroes() -> Self {
+        Self {
+            data: [0.0, 0.0, 0.0, 0.0],
+        }
+    }
+
     pub fn new_ones() -> Self {
         Self {
             data: [1.0, 1.0, 1.0, 1.0],

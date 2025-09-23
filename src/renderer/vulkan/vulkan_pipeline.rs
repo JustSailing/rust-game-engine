@@ -19,7 +19,7 @@ use super::{
 
 pub struct VulkanPipeline {
     pipeline: Pipeline,
-    layout: PipelineLayout,
+    pub layout: PipelineLayout,
 }
 
 impl VulkanPipeline {
@@ -27,7 +27,7 @@ impl VulkanPipeline {
         device: &VulkanDevice,
         renderpass: &VulkanRenderPass,
         attributes: &[VertexInputAttributeDescription],
-        descriptor_set_layout: Option<&[DescriptorSetLayout]>,
+        descriptor_set_layout: &[DescriptorSetLayout],
         stages: &[PipelineShaderStageCreateInfo],
         viewport: Viewport,
         scissor: Rect2D,
@@ -107,7 +107,8 @@ impl VulkanPipeline {
         let input_assembly = PipelineInputAssemblyStateCreateInfo::default()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
-        let pipeline_layout_create_info = PipelineLayoutCreateInfo::default(); //.set_layouts(descriptor_set_layout);
+        let pipeline_layout_create_info =
+            PipelineLayoutCreateInfo::default().set_layouts(descriptor_set_layout);
 
         let pipeline_layout = unsafe {
             match device

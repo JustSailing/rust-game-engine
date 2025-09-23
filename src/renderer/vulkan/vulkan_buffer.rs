@@ -8,7 +8,8 @@ use super::{
 use ash::Instance;
 use ash::vk::{
     Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, CommandPool, DeviceMemory, DeviceSize,
-    Fence, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, Queue, SharingMode,
+    Fence, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, Queue,
+    SharingMode,
 };
 pub struct VulkanBuffer {
     pub buffer: Buffer,
@@ -204,9 +205,19 @@ impl VulkanBuffer {
                 Err(_) => return Err(VulkanError::OperationFailed("could not map memory")),
             }
         };
-
+        // let range = MappedMemoryRange::default()
+        //     .memory(self.memory)
+        //     .offset(offset)
+        //     .size(size);
         unsafe {
             memcpy(data.as_ptr(), data_ptr.cast(), data.len());
+            // match device
+            //     .device
+            //     .flush_mapped_memory_ranges(std::slice::from_ref(&range))
+            // {
+            //     Ok(_) => {}
+            //     Err(_) => return Err(VulkanError::OperationFailed("could not flush memory")),
+            // }
             device.device.unmap_memory(self.memory);
         }
 

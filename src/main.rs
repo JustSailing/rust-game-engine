@@ -6,8 +6,8 @@ fn main() -> Result<(), AppError> {
     let init = ApplicationState::create(&AppConfig {
         start_pos_x: 0,
         start_pos_y: 0,
-        start_width: 1000,
-        start_height: 800,
+        start_width: 1280,
+        start_height: 720,
         name: "Hello William",
     });
     println!("{:?}", init);
