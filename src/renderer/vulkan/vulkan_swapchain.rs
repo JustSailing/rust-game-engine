@@ -54,7 +54,7 @@ impl VulkanSwapchain {
         let mut swapchain_extent = Extent2D { width, height };
         let mut found = false;
         let mut format_: &SurfaceFormatKHR = &SurfaceFormatKHR::default();
-        let max_frames_in_flight = 2;
+        let max_frames_in_flight = 3;
         for format in &device.swapchain_support.formats {
             if format.format == vk::Format::B8G8R8A8_UNORM
                 && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR

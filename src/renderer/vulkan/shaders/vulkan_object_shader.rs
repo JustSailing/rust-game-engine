@@ -183,7 +183,11 @@ impl<'a> VulkanObjectShader<'a> {
             Err(e) => return Err(e),
         };
 
-        let global_layouts = [global_descritpor_set_layout, global_descritpor_set_layout];
+        let global_layouts = [
+            global_descritpor_set_layout,
+            global_descritpor_set_layout,
+            global_descritpor_set_layout,
+        ];
 
         let descritor_allocate_info = DescriptorSetAllocateInfo::default()
             .descriptor_pool(global_descriptor_pool)
@@ -281,7 +285,7 @@ impl<'a> VulkanObjectShader<'a> {
         command_buffer: &VulkanCommandBuffer,
         image_index: u32,
         model: Matrix4,
-    )  {
+    ) {
         let cmd_buf = command_buffer.command_buffer[image_index as usize];
         unsafe {
             device.device.cmd_push_constants(
@@ -301,10 +305,9 @@ impl<'a> VulkanObjectShader<'a> {
         &self,
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
-        image_index: u32,
         current_frame: u32,
     ) -> Result<(), VulkanError> {
-        let cmd_buf = command_buffer.command_buffer[image_index as usize];
+        let cmd_buf = command_buffer.command_buffer[current_frame as usize];
         let global_descriptor = self.global_descriptor_sets[current_frame as usize];
 
         let range = size_of::<GlobalUniformObj>();
