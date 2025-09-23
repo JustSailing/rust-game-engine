@@ -275,6 +275,28 @@ impl<'a> VulkanObjectShader<'a> {
         );
     }
 
+    pub fn update_object(
+        &self,
+        device: &VulkanDevice,
+        command_buffer: &VulkanCommandBuffer,
+        image_index: u32,
+        model: Matrix4,
+    )  {
+        let cmd_buf = command_buffer.command_buffer[image_index as usize];
+        unsafe {
+            device.device.cmd_push_constants(
+                cmd_buf,
+                self.pipeline.layout,
+                ShaderStageFlags::VERTEX,
+                0,
+                std::slice::from_raw_parts(
+                    &model as *const Matrix4 as *const u8,
+                    size_of::<Matrix4>(),
+                ),
+            );
+        }
+    }
+
     pub fn update_global_state(
         &self,
         device: &VulkanDevice,
@@ -286,7 +308,7 @@ impl<'a> VulkanObjectShader<'a> {
         let global_descriptor = self.global_descriptor_sets[current_frame as usize];
 
         let range = size_of::<GlobalUniformObj>();
-        let offset = 128; //(size_of::<GlobalUniformObj>() * (current_frame as usize)) as u64;
+        let offset = (size_of::<GlobalUniformObj>() * (current_frame as usize)) as u64;
 
         match self.global_uniform_buffer.load_data(
             device,

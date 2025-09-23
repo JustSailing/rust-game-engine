@@ -1,7 +1,6 @@
 use super::{
     vulkan_backend::{VulkanContext, VulkanError},
     vulkan_device::VulkanDevice,
-    vulkan_framebuffer::VulkanFramebuffer,
     vulkan_image::VulkanImage,
 };
 use ash::{

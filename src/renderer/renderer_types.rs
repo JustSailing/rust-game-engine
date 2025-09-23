@@ -4,7 +4,7 @@ mod vulkan;
 use vulkan::vulkan_backend::{VulkanContext, VulkanError};
 
 use crate::application::basic::{
-    math::{consts::deg_to_rad, matrix4::Matrix4, vec3::Vec3, vec4::Vec4},
+    math::{consts::deg_to_rad, matrix4::Matrix4, vec3::Vec3, vec4::Quat, vec4::Vec4},
     window::Window,
 };
 pub enum RendererBackendType {
@@ -38,6 +38,7 @@ pub struct RendererBackend {
         ambient_colour: Vec4,
         mode: i32,
     ) -> Result<(), VulkanError>,
+    update_object: fn(model: Matrix4) -> Result<(), VulkanError>,
     end_frame: fn(delta_time: f32) -> Result<(), VulkanError>,
 }
 
@@ -140,8 +141,9 @@ impl FrontendRenderer {
             Err(e) => return Err(e),
         }
 
-        static mut Z: f32 = -1.0;
-        unsafe { Z -= 0.0005 }
+        static mut Z: f32 = 1.0;
+        unsafe { Z -= 0.01 }
+
         let projection = Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 1000.0);
 
         let view = unsafe { Matrix4::translation(Vec3::new(0.0, 0.0, Z)) };
@@ -153,6 +155,16 @@ impl FrontendRenderer {
             Vec4::new_zeroes(),
             0,
         ) {
+            Ok(_) => {}
+            Err(e) => return Err(FrontendRendererError::from(e)),
+        }
+
+        static mut ANGLE: f32 = 0.01;
+        unsafe { ANGLE += 0.001 }
+
+        let rotation = unsafe { Quat::from_axis_angle(Vec3::new_forward(), ANGLE, false) };
+        let model = Quat::to_rotation_matrix(rotation, Vec3::new_zeroes());
+        match (state.update_object)(model) {
             Ok(_) => {}
             Err(e) => return Err(FrontendRendererError::from(e)),
         }
@@ -182,7 +194,7 @@ impl FrontendRenderer {
         Ok(())
     }
 
-    fn create_renderer_backend(type_: &RendererBackendType) -> Result<(), FrontendRendererError> {
+    fn create_renderer_backend(_type_: &RendererBackendType) -> Result<(), FrontendRendererError> {
         unsafe {
             if let Some(ref mut _state) = RENDERER_BACKEND {
                 return Err(FrontendRendererError::AlreadyInitialized);
@@ -195,6 +207,7 @@ impl FrontendRenderer {
                     begin_frame: VulkanContext::begin_frame,
                     end_frame: VulkanContext::end_frame,
                     update_global_state: VulkanContext::update_global_state,
+                    update_object: VulkanContext::update_object,
                 })
             }
         }

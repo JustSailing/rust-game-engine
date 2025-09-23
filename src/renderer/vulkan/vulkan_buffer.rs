@@ -66,7 +66,7 @@ impl VulkanBuffer {
             }
         };
 
-        let mut vk_buffer = Self {
+        let vk_buffer = Self {
             buffer,
             size: size,
             usage_flags: usage,

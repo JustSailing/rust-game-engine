@@ -34,7 +34,7 @@ impl FileHandle {
         path.exists()
     }
 
-    pub fn open(path: &str, modes: FileModes, binary: bool) -> Result<Self, FileError> {
+    pub fn open(path: &str, modes: FileModes, _binary: bool) -> Result<Self, FileError> {
         let current_dir = env::current_dir().unwrap();
         println!("current dir: {:?}", current_dir);
         let mut options = OpenOptions::new();

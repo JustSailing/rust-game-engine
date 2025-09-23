@@ -6,11 +6,12 @@ use ash::vk::{
     PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
     PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
     PipelineShaderStageCreateInfo, PipelineVertexInputStateCreateInfo,
-    PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Rect2D, SampleCountFlags,
-    VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate, Viewport,
+    PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Rect2D,
+    SampleCountFlags, ShaderStageFlags, VertexInputAttributeDescription,
+    VertexInputBindingDescription, VertexInputRate, Viewport,
 };
 
-use crate::application::basic::math::vec3::Vector3D;
+use crate::application::basic::math::{matrix4::Matrix4, vec3::Vector3D};
 
 use super::{
     vulkan_backend::VulkanError, vulkan_command_buffer::VulkanCommandBuffer,
@@ -107,8 +108,18 @@ impl VulkanPipeline {
         let input_assembly = PipelineInputAssemblyStateCreateInfo::default()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
-        let pipeline_layout_create_info =
+
+        let mut pipeline_layout_create_info =
             PipelineLayoutCreateInfo::default().set_layouts(descriptor_set_layout);
+
+        let push_constant = PushConstantRange::default()
+            .stage_flags(ShaderStageFlags::VERTEX)
+            .size((size_of::<Matrix4>() * 2) as u32)
+            .offset(0);
+
+        pipeline_layout_create_info.p_push_constant_ranges =
+            std::slice::from_ref(&push_constant).as_ptr();
+        pipeline_layout_create_info.push_constant_range_count = 1;
 
         let pipeline_layout = unsafe {
             match device

@@ -103,6 +103,7 @@ impl<'a> VulkanContext<'a> {
             .engine_name(c"IronOxide")
             .engine_version(0);
 
+        #[allow(unused_mut)] //debug purpose
         let mut layers_names_raw: [*const i8; 1] = [c"".as_ptr()];
         let mut extensions = Vec::new();
         extensions.push(surface::NAME.as_ptr());
@@ -274,7 +275,7 @@ impl<'a> VulkanContext<'a> {
             Ok((v, i)) => (v, i),
             Err(e) => return Err(e),
         };
-        const FACTOR: f32 = 1.0;
+        const FACTOR: f32 = 10.0;
         const VERT_COUNT: usize = 4;
         let verts: [Vector3D; VERT_COUNT] = [
             Vector3D {
@@ -418,7 +419,7 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
     pub fn on_resize(width: i32, height: i32) -> Result<(), VulkanError> {
-        let mut state = unsafe {
+        let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
@@ -439,7 +440,7 @@ impl<'a> VulkanContext<'a> {
 
         Ok(())
     }
-    pub fn begin_frame(delta: f32) -> Result<bool, VulkanError> {
+    pub fn begin_frame(_delta: f32) -> Result<bool, VulkanError> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
@@ -590,6 +591,27 @@ impl<'a> VulkanContext<'a> {
             Err(e) => return Err(e),
         }
 
+        Ok(())
+    }
+
+    pub fn update_object(model: Matrix4) -> Result<(), VulkanError> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanError::OperationFailed(
+                    "Vulkan Context not initialized",
+                ));
+            }
+        };
+
+        state.object_shader.update_object(
+            &state.device,
+            &state.graphics_cmd_bufs,
+            state.image_index,
+            model,
+        );
+
         let offsets: [DeviceSize; 1] = [0];
         unsafe {
             state.device.device.cmd_bind_vertex_buffers(
@@ -615,16 +637,17 @@ impl<'a> VulkanContext<'a> {
                 0,
             );
         }
+
         Ok(())
     }
 
-    pub fn end_frame(delta: f32) -> Result<(), VulkanError> {
+    pub fn end_frame(_delta: f32) -> Result<(), VulkanError> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
                 return Err(VulkanError::OperationFailed(
-                    "Vulkan Context already destroyed",
+                    "Vulkan Context not initialized",
                 ));
             }
         };
