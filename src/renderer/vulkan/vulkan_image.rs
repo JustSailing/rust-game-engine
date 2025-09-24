@@ -52,7 +52,7 @@ impl VulkanImage {
                 Ok(i) => i,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create image".into()).into(),
+                        VulkanError::OperationFailed("could not create image").into(),
                     );
                 }
             }
@@ -68,7 +68,7 @@ impl VulkanImage {
 
         if memory_type == -1 {
             return Err(VulkanError::OperationFailed(
-                "required memory type not found. Image not valid.".into(),
+                "required memory type not found. Image not valid.",
             )
             .into());
         }
@@ -81,7 +81,7 @@ impl VulkanImage {
                 Ok(dm) => dm,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not allocate memory for image".into(),
+                        "could not allocate memory for image",
                     )
                     .into());
                 }
@@ -92,7 +92,7 @@ impl VulkanImage {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not bind memory for image".into(),
+                        "could not bind memory for image",
                     )
                     .into());
                 }
@@ -141,7 +141,7 @@ impl VulkanImage {
             match device.device.create_image_view(&view_create_info, None) {
                 Ok(v) => Ok(v),
                 Err(_) => {
-                    Err(VulkanError::OperationFailed("could not create image view".into()).into())
+                    Err(VulkanError::OperationFailed("could not create image view").into())
                 }
             }
         }

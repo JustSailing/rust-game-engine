@@ -46,7 +46,7 @@ impl VulkanSwapchain {
 
         if !device.detect_depth_format(instance) {
             return Err(
-                VulkanError::OperationFailed("could not detect depth format".into()).into(),
+                VulkanError::OperationFailed("could not detect depth format").into(),
             );
         }
 
@@ -173,7 +173,7 @@ impl VulkanSwapchain {
                 Ok(s) => s,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create swapchain".into()).into(),
+                        VulkanError::OperationFailed("could not create swapchain").into(),
                     );
                 }
             }
@@ -184,7 +184,7 @@ impl VulkanSwapchain {
                 Ok(i) => i,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not get swapchain images".into(),
+                        "could not get swapchain images",
                     )
                     .into());
                 }
@@ -209,7 +209,7 @@ impl VulkanSwapchain {
                     Ok(v) => v,
                     Err(_) => {
                         return Err(VulkanError::OperationFailed(
-                            "could not create image views".into(),
+                            "could not create image views",
                         )
                         .into());
                     }
@@ -277,7 +277,7 @@ impl VulkanSwapchain {
             }
             _ => {
                 return Err(VulkanError::OperationFailed(
-                    "present queue did not work properly".into(),
+                    "present queue did not work properly",
                 )
                 .into());
             }
@@ -294,16 +294,13 @@ impl VulkanSwapchain {
                 .acquire_next_image(self.swapchain, timeout, semaphore, fence)
         };
         match res {
-            Ok((index, suboptimal)) => return Ok((suboptimal, index)),
-            // should recreate swapchain
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                println!("swapchain out of date");
-                VulkanContext::recreate_swapchain()?;
-                return Ok((false, 0));
-            }
+            Ok((index, suboptimal)) => {
+                return Ok((suboptimal, index))
+            },
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {return Ok((true, 0))},
             Err(_) => {
                 return Err(
-                    VulkanError::OperationFailed("failure to acqurie next image".into()).into(),
+                    VulkanError::OperationFailed("failure to acqurie next image").into(),
                 );
             }
         };

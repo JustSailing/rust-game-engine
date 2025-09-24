@@ -2,7 +2,6 @@ use std::ffi::CString;
 use std::fmt;
 use std::mem;
 use std::ptr;
-use std::ptr::null_mut;
 
 use std::os::raw::*;
 use x11::keysym::*;
@@ -10,9 +9,8 @@ use x11::xlib::Display as Display_;
 use x11::xlib::Window as Window_;
 use x11::xlib::*;
 
-use crate::application::renderer::renderer_types::FrontendRenderer;
+use crate::application::basic::event::{EventCodes, EventCtx, EventState};
 
-use super::event::{EventCodes, EventCtx, EventState};
 use super::input::InputState;
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
@@ -40,7 +38,7 @@ pub struct Display {
 
 impl Display {
     pub fn open() -> Result<Self> {
-        let display = unsafe { XOpenDisplay(null_mut()) };
+        let display = unsafe { XOpenDisplay(ptr::null_mut()) };
         if display.is_null() {
             return Err(Error::OperationFailed("failed to open display").into());
         }
@@ -184,38 +182,27 @@ impl Window {
                         if event.client_message.message_type as Atom == self.wm_protocols
                             && event.client_message.data.as_longs()[0] as Atom == self.wm_delete
                         {
-                            // HACK
+                            let ctx = EventCtx::None;
+                            EventState::fire_event(
+                                EventCodes::ApplicationQuit as usize,
+                                ptr::null(),
+                                &ctx,
+                            )?;
                             return Ok(false);
-                            // let ctx = EventCtx::None;
-                            // EventState::fire_event(
-                            //     EventCodes::ApplicationQuit as usize,
-                            //     ptr::null(),
-                            //     &ctx,
-                            // )?;
                         }
                     }
                     ConfigureNotify => {
-                        println!(
-                            "width {} height {} x {} y {}",
+                        let ctx = EventCtx::I32([
                             event.configure.width,
                             event.configure.height,
                             event.configure.x,
-                            event.configure.y
-                        );
-                        // Hack
-                        FrontendRenderer::on_resize(event.configure.width, event.configure.height)?;
-
-                        // let ctx = EventCtx::I32([
-                        //     event.configure.width,
-                        //     event.configure.height,
-                        //     event.configure.x,
-                        //     event.configure.y,
-                        // ]);
-                        // EventState::fire_event(
-                        //     EventCodes::WindowResized as usize,
-                        //     ptr::null(),
-                        //     &ctx,
-                        // )?;
+                            event.configure.y,
+                        ]);
+                        EventState::fire_event(
+                            EventCodes::WindowResized as usize,
+                            ptr::null(),
+                            &ctx,
+                        )?;
                     }
                     KeyPress => {
                         let key_sym =

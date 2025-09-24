@@ -22,7 +22,7 @@ impl SyncObjects {
                 Ok(f) => f,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create fence".into()).into(),
+                        VulkanError::OperationFailed("could not create fence").into(),
                     );
                 }
             }
@@ -33,7 +33,7 @@ impl SyncObjects {
                 Ok(s) => s,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create semaphore".into()).into(),
+                        VulkanError::OperationFailed("could not create semaphore").into(),
                     );
                 }
             }
@@ -44,7 +44,7 @@ impl SyncObjects {
                 Ok(s) => s,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create semaphore".into()).into(),
+                        VulkanError::OperationFailed("could not create semaphore").into(),
                     );
                 }
             }
@@ -69,16 +69,16 @@ impl SyncObjects {
                     Ok(false)
                 }
                 Err(vk::Result::ERROR_DEVICE_LOST) => {
-                    Err(VulkanError::OperationFailed("fence: device lost".into()).into())
+                    Err(VulkanError::OperationFailed("fence: device lost").into())
                 }
                 Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
-                    Err(VulkanError::OperationFailed("fence: out of host memory".into()).into())
+                    Err(VulkanError::OperationFailed("fence: out of host memory").into())
                 }
                 Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
-                    Err(VulkanError::OperationFailed("fence: out of device memory".into()).into())
+                    Err(VulkanError::OperationFailed("fence: out of device memory").into())
                 }
                 Err(_) => {
-                    Err(VulkanError::OperationFailed("fence: unknown error occured".into()).into())
+                    Err(VulkanError::OperationFailed("fence: unknown error occured").into())
                 }
             }
         }
@@ -91,7 +91,7 @@ impl SyncObjects {
                 .reset_fences(std::slice::from_ref(&self.fence))
             {
                 Ok(_) => Ok(()),
-                Err(_) => Err(VulkanError::OperationFailed("could not reset fence".into()).into()),
+                Err(_) => Err(VulkanError::OperationFailed("could not reset fence").into()),
             }
         }
     }

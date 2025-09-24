@@ -41,7 +41,7 @@ impl VulkanBuffer {
                 Ok(b) => b,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create buffer".into()).into(),
+                        VulkanError::OperationFailed("could not create buffer").into(),
                     );
                 }
             }
@@ -57,7 +57,7 @@ impl VulkanBuffer {
         );
 
         if memory_index == -1 {
-            return Err(VulkanError::OperationFailed("could not find memory index".into()).into());
+            return Err(VulkanError::OperationFailed("could not find memory index").into());
         }
 
         let allocate_info = MemoryAllocateInfo::default()
@@ -69,7 +69,7 @@ impl VulkanBuffer {
                 Ok(m) => m,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not allocate memory".into()).into(),
+                        VulkanError::OperationFailed("could not allocate memory").into(),
                     );
                 }
             }
@@ -118,7 +118,7 @@ impl VulkanBuffer {
                 Ok(b) => b,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("failed to create buffer".into()).into(),
+                        VulkanError::OperationFailed("failed to create buffer").into(),
                     );
                 }
             }
@@ -135,7 +135,7 @@ impl VulkanBuffer {
                 Ok(m) => m,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not allocate memory".into()).into(),
+                        VulkanError::OperationFailed("could not allocate memory").into(),
                     );
                 }
             }
@@ -146,7 +146,7 @@ impl VulkanBuffer {
                 Ok(_) => {}
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not bind new memory".into()).into(),
+                        VulkanError::OperationFailed("could not bind new memory").into(),
                     );
                 }
             }
@@ -185,7 +185,7 @@ impl VulkanBuffer {
         } {
             Ok(_) => Ok(()),
             Err(_) => {
-                Err(VulkanError::OperationFailed("could not bind buffer memory".into()).into())
+                Err(VulkanError::OperationFailed("could not bind buffer memory").into())
             }
         }
     }
@@ -200,7 +200,7 @@ impl VulkanBuffer {
         unsafe {
             match device.device.map_memory(self.memory, offset, size, flags) {
                 Ok(d) => Ok(d),
-                Err(_) => Err(VulkanError::OperationFailed("could not map memory".into()).into()),
+                Err(_) => Err(VulkanError::OperationFailed("could not map memory").into()),
             }
         }
     }
@@ -223,7 +223,7 @@ impl VulkanBuffer {
             match device.device.map_memory(self.memory, offset, size, flags) {
                 Ok(d) => d,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not map memory".into()).into());
+                    return Err(VulkanError::OperationFailed("could not map memory").into());
                 }
             }
         };

@@ -121,7 +121,7 @@ impl VulkanRenderPass {
                 Ok(r) => r,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create renderpass".into()).into(),
+                        VulkanError::OperationFailed("could not create renderpass").into(),
                     );
                 }
             }

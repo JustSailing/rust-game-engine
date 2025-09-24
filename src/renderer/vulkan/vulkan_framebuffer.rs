@@ -36,9 +36,10 @@ impl VulkanFramebuffer {
             {
                 Ok(f) => f,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create framebuffer".into()).into(),
-                    );
+                    return Err(VulkanError::OperationFailed(
+                        "could not create framebuffer",
+                    )
+                    .into());
                 }
             }
         };

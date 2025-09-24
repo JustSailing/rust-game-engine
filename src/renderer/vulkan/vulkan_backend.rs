@@ -41,7 +41,7 @@ type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 #[derive(Debug)]
 pub enum Error {
-    OperationFailed(String),
+    OperationFailed(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -90,10 +90,9 @@ impl<'a> VulkanContext<'a> {
     pub fn initialize(name: &str, window: &Window) -> Result<()> {
         unsafe {
             if let Some(ref _state) = VULKAN_STATE {
-                return Err(Error::OperationFailed(
-                    "Vulkan Context was already initialized".into(),
-                )
-                .into());
+                return Err(
+                    Error::OperationFailed("Vulkan Context was already initialized").into(),
+                );
             }
         }
 
@@ -345,9 +344,7 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref _state) = VULKAN_STATE {
                 VULKAN_STATE = None;
             } else {
-                return Err(
-                    Error::OperationFailed("Vulkan Context already destroyed".into()).into(),
-                );
+                return Err(Error::OperationFailed("Vulkan Context already destroyed").into());
             }
         }
 
@@ -358,9 +355,7 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(
-                    Error::OperationFailed("Vulkan Context already destroyed".into()).into(),
-                );
+                return Err(Error::OperationFailed("Vulkan Context already destroyed").into());
             }
         };
 
@@ -380,16 +375,14 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(
-                    Error::OperationFailed("Vulkan Context already destroyed".into()).into(),
-                );
+                return Err(Error::OperationFailed("Vulkan Context already destroyed").into());
             }
         };
         if state.recreating_swapchain {
             match unsafe { state.device.device.device_wait_idle() } {
                 Ok(_) => return Ok(false),
                 Err(_) => {
-                    return Err(Error::OperationFailed("could not wait on device".into()).into());
+                    return Err(Error::OperationFailed("could not wait on device").into());
                 }
             }
         }
@@ -401,7 +394,7 @@ impl<'a> VulkanContext<'a> {
                     Err(e) => return Err(e),
                 },
                 Err(_) => {
-                    return Err(Error::OperationFailed("could not wait on device".into()).into());
+                    return Err(Error::OperationFailed("could not wait on device").into());
                 }
             }
         }
@@ -505,7 +498,7 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
             }
         };
         state.object_shader.use_shader(
@@ -531,7 +524,7 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
             }
         };
 
@@ -579,7 +572,7 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
             }
         };
         let image_index = state.image_index;
@@ -672,7 +665,7 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
             }
         };
         println!("recreating swapchain");

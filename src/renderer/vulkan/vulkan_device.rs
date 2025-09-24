@@ -64,7 +64,7 @@ impl VulkanDevice {
                 Ok(devs) => devs,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "Could not enumerate physical devices".into(),
+                        "Could not enumerate physical devices",
                     )
                     .into());
                 }
@@ -160,7 +160,7 @@ impl VulkanDevice {
                     Ok(dev) => dev,
                     Err(_) => {
                         return Err(VulkanError::OperationFailed(
-                            "could not create logical device".into(),
+                            "could not create logical device",
                         )
                         .into());
                     }
@@ -180,7 +180,7 @@ impl VulkanDevice {
                     Ok(g) => g,
                     Err(_) => {
                         return Err(VulkanError::OperationFailed(
-                            "could not create graphics command pool".into(),
+                            "could not create graphics command pool",
                         )
                         .into());
                     }
@@ -203,7 +203,7 @@ impl VulkanDevice {
                 depth_format: Format::default(),
             });
         }
-        return Err(VulkanError::OperationFailed("Could not find suitable device".into()).into());
+        return Err(VulkanError::OperationFailed("Could not find suitable device").into());
     }
 
     pub fn query_swapchain_support(
@@ -217,7 +217,7 @@ impl VulkanDevice {
                 Ok(c) => c,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not get surface capabilities".into(),
+                        "could not get surface capabilities",
                     )
                     .into());
                 }
@@ -228,7 +228,7 @@ impl VulkanDevice {
                 Ok(f) => f,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not get surface formats".into(),
+                        "could not get surface formats",
                     )
                     .into());
                 }
@@ -239,7 +239,7 @@ impl VulkanDevice {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not get present modes".into()).into(),
+                        VulkanError::OperationFailed("could not get present modes").into(),
                     );
                 }
             }
@@ -302,7 +302,7 @@ impl VulkanDevice {
                     Ok(b) => b,
                     Err(_) => {
                         return Err(VulkanError::OperationFailed(
-                            "Failed to get physical device surface support".into(),
+                            "Failed to get physical device surface support",
                         )
                         .into());
                     }
@@ -315,7 +315,9 @@ impl VulkanDevice {
         let name = match dev_properties.device_name_as_c_str() {
             Ok(s) => s.to_str().unwrap_or("could not convert cstr to str"),
             Err(_) => {
-                return Err(VulkanError::OperationFailed("Could not get device name".into()).into());
+                return Err(
+                    VulkanError::OperationFailed("Could not get device name").into(),
+                );
             }
         };
         println!(
@@ -355,7 +357,7 @@ impl VulkanDevice {
                 Ok(ext) => ext,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not get extension properties".into(),
+                        "could not get extension properties",
                     )
                     .into());
                 }
@@ -369,7 +371,7 @@ impl VulkanDevice {
                     Ok(e) => e,
                     Err(_) => {
                         return Err(VulkanError::OperationFailed(
-                            "could not get extension name".into(),
+                            "could not get extension name",
                         )
                         .into());
                     }

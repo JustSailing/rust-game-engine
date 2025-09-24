@@ -35,6 +35,22 @@ pub enum EventCodes {
     MaxCodes,
 }
 
+impl From<usize> for EventCodes {
+    fn from(value: usize) -> Self {
+        match value {
+            0x01 => EventCodes::ApplicationQuit,
+            0x02 => EventCodes::KeyPressed,
+            0x03 => EventCodes::KeyReleased,
+            0x04 => EventCodes::ButtonPressed,
+            0x05 => EventCodes::ButtonReleased,
+            0x06 => EventCodes::MouseMoved,
+            0x07 => EventCodes::MouseWheel,
+            0x08 => EventCodes::WindowResized,
+            _ => EventCodes::MaxCodes,
+        }
+    }
+}
+
 type PfnOnEvent =
     fn(code: usize, sender: *const c_void, listener: *const c_void, data: &EventCtx) -> bool;
 

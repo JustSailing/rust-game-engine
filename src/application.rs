@@ -1,18 +1,17 @@
 #[path = "./basic/mod.rs"]
-mod basic;
+pub mod basic;
 #[path = "./renderer/mod.rs"]
-mod renderer;
+pub mod renderer;
 
 use basic::event::EventState;
 use basic::input::InputState;
-use basic::math::{matrix4::Matrix4, vec3::Vec3};
 use basic::window::Window;
 use renderer::renderer_types::{FrontendRenderer, RendererPacket};
 
-use crate::application::basic::math::consts;
-use crate::application::basic::window::Key;
+use crate::Game;
+use crate::application::basic::event::{EventCodes, EventCtx};
 
-use std::fmt;
+use std::{ffi::c_void, fmt, ptr};
 
 pub struct AppConfig {
     pub start_pos_x: i32,
@@ -28,7 +27,6 @@ pub enum Error {
     NotInitialized,
     AlreadyInitialized,
     AlreadyShutdown,
-    OperationFailed(String),
 }
 
 impl std::fmt::Display for Error {
@@ -66,9 +64,6 @@ impl std::fmt::Display for Error {
                     line!()
                 )
             }
-            Error::OperationFailed(e) => {
-                write!(f, "{e} {}  {}", file!(), line!())
-            }
         }
     }
 }
@@ -90,24 +85,40 @@ pub struct ApplicationState {
 }
 
 impl ApplicationState {
-    pub fn create(config: &AppConfig) -> Result<()> {
+    pub fn create(game: &Game) -> Result<()> {
         unsafe {
             if let Some(ref _a) = APP_STATE {
                 return Err(Error::AlreadyInitialized.into());
             }
         }
-
-        let window = match Window::create(
+        let config = &game.config;
+        let window = Window::create(
             config.start_pos_x,
             config.start_pos_y,
             config.start_width,
             config.start_height,
-        ) {
-            Ok(w) => w,
-            Err(_) => return Err(Error::CouldNotCreateWindow.into()),
-        };
+        )?;
+
         window.set_title(config.name);
         window.show();
+
+        InputState::initialize()?;
+
+        EventState::initialize()?;
+
+        EventState::register_event(
+            EventCodes::ApplicationQuit as usize,
+            ptr::null(),
+            application_on_event,
+        )?;
+
+        EventState::register_event(
+            EventCodes::WindowResized as usize,
+            ptr::null(),
+            application_on_resize,
+        )?;
+
+        FrontendRenderer::initialize(config.name, &window)?;
 
         unsafe {
             APP_STATE = Some(ApplicationState {
@@ -119,53 +130,6 @@ impl ApplicationState {
                 width: config.start_width,
                 height: config.start_height,
             });
-        }
-
-        let state = unsafe {
-            if let Some(ref st) = APP_STATE {
-                st
-            } else {
-                return Err(
-                    Error::OperationFailed("Could not get Application State".into()).into(),
-                );
-            }
-        };
-        // for the error parts if initialization returns error not sure if I need if let part
-        // may just APP_STATE= None would suffice
-        match InputState::initialize() {
-            Ok(_) => (),
-            Err(e) => {
-                unsafe {
-                    if let Some(ref mut _state) = APP_STATE {
-                        APP_STATE = None;
-                    }
-                }
-                return Err(e);
-            }
-        }
-
-        match EventState::initialize() {
-            Ok(_) => (),
-            Err(e) => {
-                unsafe {
-                    if let Some(ref mut _state) = APP_STATE {
-                        APP_STATE = None;
-                    }
-                }
-                return Err(e);
-            }
-        };
-
-        match FrontendRenderer::initialize(config.name, &state.window) {
-            Ok(_) => (),
-            Err(e) => {
-                unsafe {
-                    if let Some(ref mut _state) = APP_STATE {
-                        APP_STATE = None;
-                    }
-                }
-                return Err(e);
-            }
         }
 
         Ok(())
@@ -219,70 +183,48 @@ impl Drop for ApplicationState {
     }
 }
 
-pub struct GameState {
-    delta_time: f32,
-    view: Matrix4,
-    camera_position: Vec3,
-    camera_euler: Vec3,
-    view_dirty: bool,
-}
-
-pub struct Game {
-    config: AppConfig,
-    state: GameState,
-    initialize: fn(game: &Game) -> bool,
-    update: fn(game: &Game, delta: f32) -> bool,
-    render: fn(game: &Game, delta: f32) -> bool,
-    on_resize: fn(game: &Game, width: u32, height: u32) -> bool,
-}
-
-pub fn game_initialize(game: &mut Game) -> bool {
-    game.state.camera_position = Vec3::new(0.0, 0.0, -30.0);
-    game.state.view = Matrix4::translation(&game.state.camera_position);
-    return true;
-}
-
-pub fn game_update(game: &mut Game, delta: f32) -> bool {
-    if InputState::is_key_down(Key::A).unwrap() {
-        camera_yaw(&mut game.state, 1.0 * delta);
-    }
-
-    if InputState::is_key_down(Key::D).unwrap() {
-        camera_yaw(&mut game.state, -1.0 * delta);
-    }
-
-    recalculate_view(&mut game.state);
-    return true;
-}
-
-pub fn game_render(game: &Game, delta: f32) -> bool {
-    return true;
-}
-
-pub fn game_on_resize(game: &Game, width: u32, height: u32) {}
-
-fn recalculate_view(state: &mut GameState) {
-    if state.view_dirty {
-        let rotation = Matrix4::euler_xyz(
-            state.camera_euler.data[0],
-            state.camera_euler.data[1],
-            state.camera_euler.data[2],
-        );
-
-        let translation = Matrix4::translation(&state.camera_position);
-        state.view = rotation * translation;
-        state.view_dirty = false;
+fn application_on_event(
+    code: usize,
+    _sender: *const c_void,
+    _listener_inst: *const c_void,
+    _context: &EventCtx,
+) -> bool {
+    match EventCodes::from(code) {
+        EventCodes::ApplicationQuit => unsafe {
+            if let Some(ref mut state) = APP_STATE {
+                println!("in application on event");
+                state.is_running = false;
+                return true;
+            } else {
+                return false;
+            }
+        },
+        _ => return false,
     }
 }
 
-fn camera_yaw(state: &mut GameState, amount: f32) {
-    state.camera_euler.data[1] += amount; // y axis
-    state.view_dirty = true;
-}
+fn application_on_resize(
+    code: usize,
+    _sender: *const c_void,
+    _listener_inst: *const c_void,
+    context: &EventCtx,
+) -> bool {
+    match EventCodes::from(code) {
+        EventCodes::WindowResized => {
+            let arr = match context {
+                EventCtx::I32(arr) => arr,
+                _ => return false,
+            };
+            println!(
+                "in application on resize: width {} height {} x {} y {}",
+                arr[0], arr[1], arr[2], arr[3]
+            );
 
-fn camera_pitch(state: &mut GameState, amount: f32) {
-    state.camera_euler.data[0] += amount;
-    let limit = consts::deg_to_rad(89.0);
-    state.camera_euler.data[0] = state.camera_euler.data[0].min(limit).max(-limit);
-    state.view_dirty = true;
+            match FrontendRenderer::on_resize(arr[0], arr[1]) {
+                Ok(_) => true,
+                Err(_) => false,
+            }
+        }
+        _ => return false,
+    }
 }
