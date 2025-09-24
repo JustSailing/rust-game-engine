@@ -6,9 +6,11 @@ use ash::vk::{
     SUBPASS_EXTERNAL, SampleCountFlags, SubpassContents, SubpassDependency, SubpassDescription,
 };
 
-use super::vulkan_backend::VulkanError;
+use super::vulkan_backend::Error as VulkanError;
 use super::vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer};
 use super::vulkan_device::VulkanDevice;
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum RenderPassState {
     Ready,
@@ -49,7 +51,7 @@ impl VulkanRenderPass {
         device: &VulkanDevice,
         format: Format,
         depth_format: Format,
-    ) -> Result<Self, VulkanError> {
+    ) -> Result<Self> {
         let mut subpass =
             SubpassDescription::default().pipeline_bind_point(PipelineBindPoint::GRAPHICS);
 
@@ -105,7 +107,7 @@ impl VulkanRenderPass {
                 AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE,
             )
             .dependency_flags(DependencyFlags::empty());
-       
+
         let renderpass_create_info = RenderPassCreateInfo::default()
             .attachments(&attachment_descriptions)
             .dependencies(std::slice::from_ref(&dependency))
@@ -117,7 +119,11 @@ impl VulkanRenderPass {
                 .create_render_pass(&renderpass_create_info, None)
             {
                 Ok(r) => r,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create renderpass")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create renderpass".into()).into(),
+                    );
+                }
             }
         };
         Ok(VulkanRenderPass {

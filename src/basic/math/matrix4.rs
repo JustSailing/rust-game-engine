@@ -186,12 +186,63 @@ impl Matrix4 {
         return out_matrix;
     }
 
-    pub fn translation(position: Vec3) -> Self {
+    pub fn translation(position: &Vec3) -> Self {
         let mut out = Matrix4::identity();
         out.data[12] = position.data[0];
         out.data[13] = position.data[1];
         out.data[14] = position.data[2];
         out
+    }
+
+    pub fn scale(scale: Vec3) -> Matrix4 {
+        let mut out_matrix = Matrix4::identity();
+        out_matrix.data[0] = scale.data[0];
+        out_matrix.data[5] = scale.data[1];
+        out_matrix.data[10] = scale.data[2];
+        return out_matrix;
+    }
+
+    pub fn euler_x(angle_radians: f32) -> Matrix4 {
+        let mut out_matrix = Matrix4::identity();
+        let c = angle_radians.cos();
+        let s = angle_radians.sin();
+
+        out_matrix.data[5] = c;
+        out_matrix.data[6] = s;
+        out_matrix.data[9] = -s;
+        out_matrix.data[10] = c;
+        return out_matrix;
+    }
+    pub fn euler_y(angle_radians: f32) -> Matrix4 {
+        let mut out_matrix = Matrix4::identity();
+        let c = angle_radians.cos();
+        let s = angle_radians.sin();
+
+        out_matrix.data[0] = c;
+        out_matrix.data[2] = -s;
+        out_matrix.data[8] = s;
+        out_matrix.data[10] = c;
+        return out_matrix;
+    }
+    pub fn euler_z(angle_radians: f32) -> Matrix4 {
+        let mut out_matrix = Matrix4::identity();
+
+        let c = angle_radians.cos();
+        let s = angle_radians.sin();
+
+        out_matrix.data[0] = c;
+        out_matrix.data[1] = s;
+        out_matrix.data[4] = -s;
+        out_matrix.data[5] = c;
+        return out_matrix;
+    }
+    pub fn euler_xyz(x_radians: f32, y_radians: f32, z_radians: f32) -> Matrix4 {
+        let rx = Matrix4::euler_x(x_radians);
+        let ry = Matrix4::euler_y(y_radians);
+        let rz = Matrix4::euler_z(z_radians);
+        let mut out_matrix = rx * ry;
+        out_matrix = out_matrix * rz;
+        return out_matrix;
     }
 }
 

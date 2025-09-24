@@ -1,4 +1,6 @@
-use std::os::raw::c_void;
+use std::{fmt, os::raw::c_void};
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum EventCtx {
     I64([i64; 2]),
@@ -16,6 +18,8 @@ pub enum EventCtx {
     U8([u8; 16]),
 
     Char([char; 16]),
+
+    None,
 }
 
 pub enum EventCodes {
@@ -45,11 +49,35 @@ struct EventCodeEntry {
     events: Vec<RegisteredEvent>,
 }
 
-pub enum EventError {
+#[derive(Debug)]
+pub enum Error {
     AlreadyInitialized,
     NotInitialized,
     AlreadyShutdown,
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::AlreadyInitialized => {
+                write!(
+                    f,
+                    "Event State Already Initialized {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
+            Error::NotInitialized => {
+                write!(f, "Event State Not Initialized {}  {}", file!(), line!())
+            }
+            Error::AlreadyShutdown => {
+                write!(f, "Event State Already Shutdown {}  {}", file!(), line!())
+            }
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 static mut EVENT_STATE: Option<EventState> = None;
 
@@ -58,10 +86,10 @@ pub struct EventState {
 }
 
 impl EventState {
-    pub fn initialize() -> Result<(), EventError> {
+    pub fn initialize() -> Result<()> {
         unsafe {
             if let Some(ref _a) = EVENT_STATE {
-                return Err(EventError::AlreadyInitialized);
+                return Err(Error::AlreadyInitialized.into());
             }
         };
 
@@ -79,7 +107,7 @@ impl EventState {
         Ok(())
     }
 
-    pub fn shutdown() -> Result<(), EventError> {
+    pub fn shutdown() -> Result<()> {
         unsafe {
             if let Some(ref mut state) = EVENT_STATE {
                 for elem in &mut state.registered {
@@ -87,7 +115,7 @@ impl EventState {
                 }
                 EVENT_STATE = None;
             } else {
-                return Err(EventError::AlreadyShutdown);
+                return Err(Error::AlreadyShutdown.into());
             }
         };
 
@@ -98,12 +126,12 @@ impl EventState {
         code: usize,
         listener: *const c_void,
         on_event: PfnOnEvent,
-    ) -> Result<(), EventError> {
+    ) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut s) = EVENT_STATE {
                 s
             } else {
-                return Err(EventError::NotInitialized);
+                return Err(Error::NotInitialized.into());
             }
         };
 
@@ -125,12 +153,12 @@ impl EventState {
         code: usize,
         listener: *const c_void,
         on_event: PfnOnEvent,
-    ) -> Result<(), EventError> {
+    ) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut s) = EVENT_STATE {
                 s
             } else {
-                return Err(EventError::NotInitialized);
+                return Err(Error::NotInitialized.into());
             }
         };
 
@@ -152,16 +180,12 @@ impl EventState {
         Ok(())
     }
 
-    pub fn fire_event(
-        code: usize,
-        sender: *const c_void,
-        ctx: &EventCtx,
-    ) -> Result<(), EventError> {
+    pub fn fire_event(code: usize, sender: *const c_void, ctx: &EventCtx) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut s) = EVENT_STATE {
                 s
             } else {
-                return Err(EventError::NotInitialized);
+                return Err(Error::NotInitialized.into());
             }
         };
         for reg in &state.registered[code].events {

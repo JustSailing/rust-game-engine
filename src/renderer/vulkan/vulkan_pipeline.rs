@@ -14,9 +14,11 @@ use ash::vk::{
 use crate::application::basic::math::{matrix4::Matrix4, vec3::Vector3D};
 
 use super::{
-    vulkan_backend::VulkanError, vulkan_command_buffer::VulkanCommandBuffer,
+    vulkan_backend::Error as VulkanError, vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice, vulkan_renderpass::VulkanRenderPass,
 };
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct VulkanPipeline {
     pipeline: Pipeline,
@@ -33,7 +35,7 @@ impl VulkanPipeline {
         viewport: Viewport,
         scissor: Rect2D,
         is_wireframe: bool,
-    ) -> Result<VulkanPipeline, VulkanError> {
+    ) -> Result<VulkanPipeline> {
         //view state
         let viewport_state_create_info = PipelineViewportStateCreateInfo::default()
             .viewports(std::slice::from_ref(&viewport))
@@ -129,8 +131,9 @@ impl VulkanPipeline {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not create pipeline layout",
-                    ));
+                        "could not create pipeline layout".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -157,7 +160,11 @@ impl VulkanPipeline {
                 None,
             ) {
                 Ok(p) => p,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create pipeline")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create pipeline".into()).into(),
+                    );
+                }
             }
         };
         Ok(VulkanPipeline {

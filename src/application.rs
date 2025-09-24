@@ -3,13 +3,16 @@ mod basic;
 #[path = "./renderer/mod.rs"]
 mod renderer;
 
-use basic::event::{EventError, EventState};
-use basic::input::{InputError, InputState};
-use basic::window::{Event, Window};
-use renderer::renderer_types::{FrontendRenderer, FrontendRendererError};
+use basic::event::EventState;
+use basic::input::InputState;
+use basic::math::{matrix4::Matrix4, vec3::Vec3};
+use basic::window::Window;
+use renderer::renderer_types::{FrontendRenderer, RendererPacket};
 
+use crate::application::basic::math::consts;
+use crate::application::basic::window::Key;
 
-use crate::application::renderer::renderer_types::RendererPacket;
+use std::fmt;
 
 pub struct AppConfig {
     pub start_pos_x: i32,
@@ -20,55 +23,59 @@ pub struct AppConfig {
 }
 
 #[derive(Debug)]
-pub enum AppError {
+pub enum Error {
     CouldNotCreateWindow,
     NotInitialized,
     AlreadyInitialized,
-    FrontendRendererAlreadyInitialized,
-    FrontendRendererAlreadyShutdown,
-    FrontendRendererNotInitialized,
-    EventAlreadyInitialized,
-    EventNotInitialized,
-    EventAlreadyShutdown,
-    InputAlreadyInitialized,
-    InputNotInitialized,
-    InputAlreadyShutdown,
     AlreadyShutdown,
-    OperationFailed(&'static str),
+    OperationFailed(String),
 }
 
-impl From<FrontendRendererError> for AppError {
-    fn from(value: FrontendRendererError) -> Self {
-        match value {
-            FrontendRendererError::AlreadyInitialized => {
-                AppError::FrontendRendererAlreadyInitialized
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::AlreadyInitialized => {
+                write!(
+                    f,
+                    "Application State Already Initialized {}  {}",
+                    file!(),
+                    line!()
+                )
             }
-            FrontendRendererError::AlreadyShutdown => AppError::FrontendRendererAlreadyShutdown,
-            FrontendRendererError::NotInitialized => AppError::FrontendRendererNotInitialized,
-            FrontendRendererError::OperationFailed(v) => AppError::OperationFailed(v),
+            Error::NotInitialized => {
+                write!(
+                    f,
+                    "Application State Not Initialized {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
+            Error::AlreadyShutdown => {
+                write!(
+                    f,
+                    "Application State Already Shutdown {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
+            Error::CouldNotCreateWindow => {
+                write!(
+                    f,
+                    "Application state could not create window {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
+            Error::OperationFailed(e) => {
+                write!(f, "{e} {}  {}", file!(), line!())
+            }
         }
     }
 }
 
-impl From<EventError> for AppError {
-    fn from(value: EventError) -> Self {
-        match value {
-            EventError::AlreadyInitialized => AppError::EventAlreadyInitialized,
-            EventError::NotInitialized => AppError::EventNotInitialized,
-            EventError::AlreadyShutdown => AppError::EventAlreadyShutdown,
-        }
-    }
-}
+impl std::error::Error for Error {}
 
-impl From<InputError> for AppError {
-    fn from(value: InputError) -> Self {
-        match value {
-            InputError::AlreadyInitialized => AppError::InputAlreadyInitialized,
-            InputError::AlreadyShutdown => AppError::InputAlreadyShutdown,
-            InputError::NotInitialized => AppError::InputNotInitialized,
-        }
-    }
-}
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 static mut APP_STATE: Option<ApplicationState> = None;
 
@@ -83,10 +90,10 @@ pub struct ApplicationState {
 }
 
 impl ApplicationState {
-    pub fn create(config: &AppConfig) -> Result<(), AppError> {
+    pub fn create(config: &AppConfig) -> Result<()> {
         unsafe {
             if let Some(ref _a) = APP_STATE {
-                return Err(AppError::AlreadyInitialized);
+                return Err(Error::AlreadyInitialized.into());
             }
         }
 
@@ -97,7 +104,7 @@ impl ApplicationState {
             config.start_height,
         ) {
             Ok(w) => w,
-            Err(_) => return Err(AppError::CouldNotCreateWindow),
+            Err(_) => return Err(Error::CouldNotCreateWindow.into()),
         };
         window.set_title(config.name);
         window.show();
@@ -118,7 +125,9 @@ impl ApplicationState {
             if let Some(ref st) = APP_STATE {
                 st
             } else {
-                return Err(AppError::OperationFailed("Could not get Application State"));
+                return Err(
+                    Error::OperationFailed("Could not get Application State".into()).into(),
+                );
             }
         };
         // for the error parts if initialization returns error not sure if I need if let part
@@ -131,7 +140,7 @@ impl ApplicationState {
                         APP_STATE = None;
                     }
                 }
-                return Err(AppError::from(e));
+                return Err(e);
             }
         }
 
@@ -143,7 +152,7 @@ impl ApplicationState {
                         APP_STATE = None;
                     }
                 }
-                return Err(AppError::from(e));
+                return Err(e);
             }
         };
 
@@ -155,19 +164,19 @@ impl ApplicationState {
                         APP_STATE = None;
                     }
                 }
-                return Err(AppError::from(e));
+                return Err(e);
             }
         }
 
         Ok(())
     }
 
-    pub fn run() -> Result<(), AppError> {
+    pub fn run() -> Result<()> {
         let app_state = unsafe {
             if let Some(ref mut app) = APP_STATE {
                 app
             } else {
-                return Err(AppError::NotInitialized);
+                return Err(Error::NotInitialized.into());
             }
         };
 
@@ -175,48 +184,23 @@ impl ApplicationState {
         app_state.is_suspended = false;
 
         loop {
-            if let Some(event) = app_state.window.get_event() {
-                match event {
-                    Event::Key { key: _ } => continue,
-                    Event::Button { button: _ } => continue,
-                    Event::MousePos { x: _, y: _ } => continue,
-                    Event::ConfigureNotify {
-                        x,
-                        y,
-                        width,
-                        height,
-                    } => {
-                        app_state.height = height;
-                        app_state.width = width;
-                        app_state.pos_x = x;
-                        app_state.pos_y = y;
-                        match FrontendRenderer::on_resize(width, height) {
-                            Ok(_) => {},
-                            Err(e) => return  Err(AppError::from(e)),
-                        }
-                    }
-                    Event::CloseWindow => {
-                        app_state.is_running = false;
-                        app_state.is_suspended = false;
-                        return Ok(());
-                    }
-                }
-            }
-            let render_packet = RendererPacket { delta_time: 1.0 };
-            match FrontendRenderer::draw_frame(&render_packet) {
-                Ok(_) => (),
-                Err(e) => return Err(AppError::from(e)),
+            if app_state.window.get_event()? {
+                let render_packet = RendererPacket { delta_time: 1.0 };
+                FrontendRenderer::draw_frame(&render_packet)?;
+            } else {
+                break;
             }
         }
+        Ok(())
     }
 
-    pub fn shutdown() -> Result<(), AppError> {
+    pub fn shutdown() -> Result<()> {
         unsafe {
             if let Some(ref mut _state) = APP_STATE {
                 APP_STATE = None;
                 return Ok(());
             } else {
-                return Err(AppError::AlreadyShutdown);
+                return Err(Error::AlreadyShutdown.into());
             }
         }
     }
@@ -233,4 +217,72 @@ impl Drop for ApplicationState {
             }
         }
     }
+}
+
+pub struct GameState {
+    delta_time: f32,
+    view: Matrix4,
+    camera_position: Vec3,
+    camera_euler: Vec3,
+    view_dirty: bool,
+}
+
+pub struct Game {
+    config: AppConfig,
+    state: GameState,
+    initialize: fn(game: &Game) -> bool,
+    update: fn(game: &Game, delta: f32) -> bool,
+    render: fn(game: &Game, delta: f32) -> bool,
+    on_resize: fn(game: &Game, width: u32, height: u32) -> bool,
+}
+
+pub fn game_initialize(game: &mut Game) -> bool {
+    game.state.camera_position = Vec3::new(0.0, 0.0, -30.0);
+    game.state.view = Matrix4::translation(&game.state.camera_position);
+    return true;
+}
+
+pub fn game_update(game: &mut Game, delta: f32) -> bool {
+    if InputState::is_key_down(Key::A).unwrap() {
+        camera_yaw(&mut game.state, 1.0 * delta);
+    }
+
+    if InputState::is_key_down(Key::D).unwrap() {
+        camera_yaw(&mut game.state, -1.0 * delta);
+    }
+
+    recalculate_view(&mut game.state);
+    return true;
+}
+
+pub fn game_render(game: &Game, delta: f32) -> bool {
+    return true;
+}
+
+pub fn game_on_resize(game: &Game, width: u32, height: u32) {}
+
+fn recalculate_view(state: &mut GameState) {
+    if state.view_dirty {
+        let rotation = Matrix4::euler_xyz(
+            state.camera_euler.data[0],
+            state.camera_euler.data[1],
+            state.camera_euler.data[2],
+        );
+
+        let translation = Matrix4::translation(&state.camera_position);
+        state.view = rotation * translation;
+        state.view_dirty = false;
+    }
+}
+
+fn camera_yaw(state: &mut GameState, amount: f32) {
+    state.camera_euler.data[1] += amount; // y axis
+    state.view_dirty = true;
+}
+
+fn camera_pitch(state: &mut GameState, amount: f32) {
+    state.camera_euler.data[0] += amount;
+    let limit = consts::deg_to_rad(89.0);
+    state.camera_euler.data[0] = state.camera_euler.data[0].min(limit).max(-limit);
+    state.view_dirty = true;
 }

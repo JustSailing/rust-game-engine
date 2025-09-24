@@ -1,5 +1,7 @@
 use std::ffi::CString;
+use std::fmt;
 use std::mem;
+use std::ptr;
 use std::ptr::null_mut;
 
 use std::os::raw::*;
@@ -8,20 +10,39 @@ use x11::xlib::Display as Display_;
 use x11::xlib::Window as Window_;
 use x11::xlib::*;
 
+use crate::application::renderer::renderer_types::FrontendRenderer;
+
+use super::event::{EventCodes, EventCtx, EventState};
+use super::input::InputState;
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+
 #[derive(Debug)]
-pub enum X11Error {
+pub enum Error {
     OperationFailed(&'static str),
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Error::OperationFailed(e) => {
+                write!(f, "{e} {}  {}", file!(), line!())
+            }
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 pub struct Display {
     pub raw: *mut Display_,
 }
 
 impl Display {
-    pub fn open() -> Result<Self, X11Error> {
+    pub fn open() -> Result<Self> {
         let display = unsafe { XOpenDisplay(null_mut()) };
         if display.is_null() {
-            return Err(X11Error::OperationFailed("failed to open display"));
+            return Err(Error::OperationFailed("failed to open display").into());
         }
         Ok(Display { raw: display })
     }
@@ -49,10 +70,10 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn create(x: i32, y: i32, width: i32, height: i32) -> Result<Self, X11Error> {
+    pub fn create(x: i32, y: i32, width: i32, height: i32) -> Result<Self> {
         let display = match Display::open() {
             Ok(d) => d,
-            Err(_) => return Err(X11Error::OperationFailed("Could not open display")),
+            Err(_) => return Err(Error::OperationFailed("Could not open display").into()),
         };
         let screen_num = unsafe { XDefaultScreen(display.raw) };
         let root_win_id = unsafe { XRootWindow(display.raw, screen_num) };
@@ -70,7 +91,7 @@ impl Window {
             )
         };
         if window_id == 0 {
-            return Err(X11Error::OperationFailed("failed to create simple window"));
+            return Err(Error::OperationFailed("failed to create simple window").into());
         }
         let wm_protocols;
         let wm_delete_window;
@@ -149,11 +170,11 @@ impl Window {
         }
     }
 
-    pub fn get_event(&self) -> Option<Event> {
+    pub fn get_event(&self) -> Result<bool> {
         let mut event: XEvent = unsafe { mem::zeroed() };
         let num_of_events = unsafe { XPending(self.display.raw) };
         if num_of_events == 0 {
-            return None;
+            return Ok(true);
         } else {
             unsafe {
                 XNextEvent(self.display.raw, &mut event);
@@ -163,7 +184,14 @@ impl Window {
                         if event.client_message.message_type as Atom == self.wm_protocols
                             && event.client_message.data.as_longs()[0] as Atom == self.wm_delete
                         {
-                            return Some(Event::CloseWindow);
+                            // HACK
+                            return Ok(false);
+                            // let ctx = EventCtx::None;
+                            // EventState::fire_event(
+                            //     EventCodes::ApplicationQuit as usize,
+                            //     ptr::null(),
+                            //     &ctx,
+                            // )?;
                         }
                     }
                     ConfigureNotify => {
@@ -174,26 +202,34 @@ impl Window {
                             event.configure.x,
                             event.configure.y
                         );
-                        return Some(Event::ConfigureNotify {
-                            x: event.configure.x,
-                            y: event.configure.y,
-                            width: event.configure.width,
-                            height: event.configure.height,
-                        });
+                        // Hack
+                        FrontendRenderer::on_resize(event.configure.width, event.configure.height)?;
+
+                        // let ctx = EventCtx::I32([
+                        //     event.configure.width,
+                        //     event.configure.height,
+                        //     event.configure.x,
+                        //     event.configure.y,
+                        // ]);
+                        // EventState::fire_event(
+                        //     EventCodes::WindowResized as usize,
+                        //     ptr::null(),
+                        //     &ctx,
+                        // )?;
                     }
                     KeyPress => {
                         let key_sym =
                             XkbKeycodeToKeysym(self.display.raw, event.key.keycode as u8, 0, 0);
                         let key = Window::keysym_to_key(key_sym);
                         println!("key press {:?}", key);
-                        return Some(Event::Key { key: key });
+                        InputState::process_key(key, true)?;
                     }
                     KeyRelease => {
                         let key_sym =
                             XkbKeycodeToKeysym(self.display.raw, event.key.keycode as u8, 0, 0);
                         let key = Window::keysym_to_key(key_sym);
                         println!("key release {:?}", key);
-                        return Some(Event::Key { key: key });
+                        InputState::process_key(key, false)?;
                     }
                     ButtonPress => {
                         let mut button = Button::MaxButtons;
@@ -205,7 +241,7 @@ impl Window {
                         };
 
                         println!("button press {:?}", button);
-                        return Some(Event::Button { button: button });
+                        InputState::process_button(button, true)?;
                     }
                     ButtonRelease => {
                         let mut button = Button::MaxButtons;
@@ -217,14 +253,14 @@ impl Window {
                         };
 
                         println!("button release {:?}", button);
-                        return Some(Event::Button { button: button });
+                        InputState::process_button(button, true)?;
                     }
 
-                    _ => return None,
+                    _ => {} //return Ok(false),
                 };
             };
         }
-        None
+        Ok(true)
     }
 
     pub fn keysym_to_key(key_sym: u64) -> Key {

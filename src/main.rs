@@ -1,5 +1,5 @@
 mod application;
-use application::{AppConfig, AppError, ApplicationState};
+use application::{AppConfig, Error as AppError, ApplicationState};
 
 fn main() -> Result<(), AppError> {
     println!("Hello, world!");

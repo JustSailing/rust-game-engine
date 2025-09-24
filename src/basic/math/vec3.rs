@@ -12,7 +12,7 @@ impl Vec3 {
             data: [first, second, third],
         }
     }
-     pub fn new_zeroes() -> Self {
+    pub fn new_zeroes() -> Self {
         Self {
             data: [0.0, 0.0, 0.0],
         }

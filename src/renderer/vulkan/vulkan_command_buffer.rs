@@ -1,9 +1,11 @@
 use ash::vk::{
-    CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo,
-    CommandBufferLevel, CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
+    CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
+    CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
 };
 
-use super::{vulkan_backend::VulkanError, vulkan_device::VulkanDevice};
+use super::{vulkan_backend::Error as VulkanError, vulkan_device::VulkanDevice};
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum CommandBufferState {
     Ready,
@@ -25,7 +27,7 @@ impl VulkanCommandBuffer {
         is_primary: bool,
         pool: CommandPool,
         buffer_count: u32,
-    ) -> Result<VulkanCommandBuffer, VulkanError> {
+    ) -> Result<VulkanCommandBuffer> {
         let allocate_info = CommandBufferAllocateInfo::default()
             .command_pool(pool)
             .level(if is_primary {
@@ -39,8 +41,9 @@ impl VulkanCommandBuffer {
                 Ok(c) => c,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not allocate command buffer",
-                    ));
+                        "could not allocate command buffer".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -67,7 +70,7 @@ impl VulkanCommandBuffer {
         renderpass_continue: bool,
         simultaneous_use: bool,
         buffer_index: usize,
-    ) -> Result<(), VulkanError> {
+    ) -> Result<()> {
         let mut begin_info = CommandBufferBeginInfo::default();
         if single_use {
             begin_info.flags |= CommandBufferUsageFlags::ONE_TIME_SUBMIT;
@@ -86,15 +89,16 @@ impl VulkanCommandBuffer {
                 Ok(_) => self.state = CommandBufferState::Recording,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not begin command buffer",
-                    ));
+                        "could not begin command buffer".into(),
+                    )
+                    .into());
                 }
             }
         }
         Ok(())
     }
 
-    pub fn end(&mut self, device: &VulkanDevice, buffer_index: usize) -> Result<(), VulkanError> {
+    pub fn end(&mut self, device: &VulkanDevice, buffer_index: usize) -> Result<()> {
         unsafe {
             match device
                 .device
@@ -103,7 +107,11 @@ impl VulkanCommandBuffer {
                 Ok(_) => {
                     self.state = CommandBufferState::RecordingEnded;
                 }
-                Err(_) => return Err(VulkanError::OperationFailed("ending command buffer failed")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("ending command buffer failed".into()).into(),
+                    );
+                }
             }
         }
 
@@ -113,16 +121,10 @@ impl VulkanCommandBuffer {
     pub fn allocate_and_begin_single_use(
         device: &VulkanDevice,
         pool: CommandPool,
-    ) -> Result<VulkanCommandBuffer, VulkanError> {
-        let mut cmd_buf = match Self::allocate(device, true, pool, 1) {
-            Ok(c) => c,
-            Err(e) => return Err(e),
-        };
+    ) -> Result<VulkanCommandBuffer> {
+        let mut cmd_buf = Self::allocate(device, true, pool, 1)?;
 
-        match cmd_buf.begin(device, true, false, false, 0) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        cmd_buf.begin(device, true, false, false, 0)?;
         Ok(cmd_buf)
     }
 
@@ -131,11 +133,8 @@ impl VulkanCommandBuffer {
         device: &VulkanDevice,
         pool: CommandPool,
         queue: Queue,
-    ) -> Result<(), VulkanError> {
-        match self.end(device, 0) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+    ) -> Result<()> {
+        self.end(device, 0)?;
 
         let submit_info = SubmitInfo::default().command_buffers(&self.command_buffer);
         let submit_infos = [submit_info];
@@ -144,13 +143,21 @@ impl VulkanCommandBuffer {
                 .device
                 .queue_submit(queue, &submit_infos, Fence::null())
             {
-                Ok(_) => {},
-                Err(_) => return Err(VulkanError::OperationFailed("could not submit queue")),
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not submit queue".into()).into(),
+                    );
+                }
             }
 
             match device.device.queue_wait_idle(queue) {
                 Ok(_) => {}
-                Err(_) => return Err(VulkanError::OperationFailed("could not wait for queue")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not wait for queue".into()).into(),
+                    );
+                }
             }
         }
         self.free(device, pool);

@@ -1,7 +1,8 @@
 use ash::vk::{self, Fence, FenceCreateFlags, FenceCreateInfo, Semaphore, SemaphoreCreateInfo};
 
-use super::{vulkan_backend::VulkanError, vulkan_device::VulkanDevice};
+use super::{vulkan_backend::Error as VulkanError, vulkan_device::VulkanDevice};
 
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 #[derive(Clone, Copy)]
 pub struct SyncObjects {
     pub image_avail_semaphore: Semaphore,
@@ -10,7 +11,7 @@ pub struct SyncObjects {
 }
 
 impl SyncObjects {
-    pub fn create(device: &VulkanDevice, signaled: bool) -> Result<Self, VulkanError> {
+    pub fn create(device: &VulkanDevice, signaled: bool) -> Result<Self> {
         let fence_create_info = FenceCreateInfo::default().flags(if signaled {
             FenceCreateFlags::SIGNALED
         } else {
@@ -19,21 +20,33 @@ impl SyncObjects {
         let fence = unsafe {
             match device.device.create_fence(&fence_create_info, None) {
                 Ok(f) => f,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create fence")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create fence".into()).into(),
+                    );
+                }
             }
         };
         let sema1 = unsafe {
             let sema_info = SemaphoreCreateInfo::default();
             match device.device.create_semaphore(&sema_info, None) {
                 Ok(s) => s,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create semaphore")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create semaphore".into()).into(),
+                    );
+                }
             }
         };
         let sema2 = unsafe {
             let sema_info = SemaphoreCreateInfo::default();
             match device.device.create_semaphore(&sema_info, None) {
                 Ok(s) => s,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create semaphore")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create semaphore".into()).into(),
+                    );
+                }
             }
         };
         Ok(SyncObjects {
@@ -43,7 +56,7 @@ impl SyncObjects {
         })
     }
 
-    pub fn fence_wait(&self, device: &VulkanDevice, time_out: u64) -> Result<bool, VulkanError> {
+    pub fn fence_wait(&self, device: &VulkanDevice, time_out: u64) -> Result<bool> {
         unsafe {
             match device
                 .device
@@ -56,27 +69,29 @@ impl SyncObjects {
                     Ok(false)
                 }
                 Err(vk::Result::ERROR_DEVICE_LOST) => {
-                    Err(VulkanError::OperationFailed("fence: device lost"))
+                    Err(VulkanError::OperationFailed("fence: device lost".into()).into())
                 }
                 Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
-                    Err(VulkanError::OperationFailed("fence: out of host memory"))
+                    Err(VulkanError::OperationFailed("fence: out of host memory".into()).into())
                 }
                 Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
-                    Err(VulkanError::OperationFailed("fence: out of device memory"))
+                    Err(VulkanError::OperationFailed("fence: out of device memory".into()).into())
                 }
-                Err(_) => Err(VulkanError::OperationFailed("fence: unknown error occured")),
+                Err(_) => {
+                    Err(VulkanError::OperationFailed("fence: unknown error occured".into()).into())
+                }
             }
         }
     }
 
-    pub fn reset_fence(&self, device: &VulkanDevice) -> Result<(), VulkanError> {
+    pub fn reset_fence(&self, device: &VulkanDevice) -> Result<()> {
         unsafe {
             match device
                 .device
                 .reset_fences(std::slice::from_ref(&self.fence))
             {
                 Ok(_) => Ok(()),
-                Err(_) => Err(VulkanError::OperationFailed("could not reset fence")),
+                Err(_) => Err(VulkanError::OperationFailed("could not reset fence".into()).into()),
             }
         }
     }

@@ -11,7 +11,7 @@ use ash::{
 };
 
 use super::super::{
-    vulkan_backend::VulkanError, vulkan_buffer::VulkanBuffer,
+    vulkan_backend::Error as VulkanError, vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
     vulkan_pipeline::VulkanPipeline, vulkan_renderpass::VulkanRenderPass,
 };
@@ -20,6 +20,8 @@ use crate::application::basic::{
     math::{matrix4::Matrix4, vec3::Vec3},
 };
 use crate::application::renderer::renderer_types::GlobalUniformObj;
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 struct VulkanShaderStage<'a> {
     //create_info: ShaderModuleCreateInfo<'a>,
@@ -47,22 +49,19 @@ impl<'a> VulkanObjectShader<'a> {
         width: u32,
         height: u32,
         max_frames: u32,
-    ) -> Result<Self, VulkanError> {
+    ) -> Result<Self> {
         let stage_type_strs = ["vert", "frag"];
         let mut shader_stages: [VulkanShaderStage; OBJECT_SHADER_STAGE_COUNT] =
             unsafe { std::mem::zeroed() };
         let stage_flags: [ShaderStageFlags; 2] =
             [ShaderStageFlags::VERTEX, ShaderStageFlags::FRAGMENT];
         for i in 0..OBJECT_SHADER_STAGE_COUNT {
-            let shader_stage = match Self::create_shader_module(
+            let shader_stage = Self::create_shader_module(
                 device,
                 BUILT_IN_NAME,
                 stage_type_strs[i],
                 stage_flags[i],
-            ) {
-                Ok(shader_stage) => shader_stage,
-                Err(e) => return Err(e),
-            };
+            )?;
             shader_stages[i] = shader_stage;
         }
 
@@ -85,8 +84,9 @@ impl<'a> VulkanObjectShader<'a> {
                 Ok(d) => d,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not create global descriptor set layout",
-                    ));
+                        "could not create global descriptor set layout".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -107,8 +107,9 @@ impl<'a> VulkanObjectShader<'a> {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not create descritpor pool",
-                    ));
+                        "could not create descritpor pool".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -155,7 +156,7 @@ impl<'a> VulkanObjectShader<'a> {
             *info = shader_stages[size].shader_stage_create_info;
         }
 
-        let pipeline = match VulkanPipeline::create(
+        let pipeline = VulkanPipeline::create(
             device,
             renderpass,
             &attribute_descriptions,
@@ -164,12 +165,9 @@ impl<'a> VulkanObjectShader<'a> {
             viewport,
             scissor,
             false,
-        ) {
-            Ok(p) => p,
-            Err(e) => return Err(e),
-        };
+        )?;
 
-        let global_buffer = match VulkanBuffer::create(
+        let global_buffer = VulkanBuffer::create(
             instance,
             device,
             (size_of::<GlobalUniformObj>() as u64) * max_frames as u64,
@@ -178,10 +176,7 @@ impl<'a> VulkanObjectShader<'a> {
                 | MemoryPropertyFlags::HOST_VISIBLE
                 | MemoryPropertyFlags::HOST_COHERENT,
             true,
-        ) {
-            Ok(b) => b,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         let global_layouts = [
             global_descritpor_set_layout,
@@ -201,8 +196,9 @@ impl<'a> VulkanObjectShader<'a> {
                 Ok(gd) => gd,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not allocate descriptor sets",
-                    ));
+                        "could not allocate descriptor sets".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -227,16 +223,20 @@ impl<'a> VulkanObjectShader<'a> {
         name: &str,
         stage_type_str: &str,
         stage_flag: ShaderStageFlags,
-    ) -> Result<VulkanShaderStage<'a>, VulkanError> {
+    ) -> Result<VulkanShaderStage<'a>> {
         let file_name = format!("bin/assets/shaders/{}.{}.spv", name, stage_type_str);
         println!("file name: {}", file_name);
         let mut file_handle = match FileHandle::open(&file_name, FileModes::READ, false) {
             Ok(f) => f,
-            Err(_) => return Err(VulkanError::OperationFailed("could not open file")),
+            Err(_) => return Err(VulkanError::OperationFailed("could not open file".into()).into()),
         };
         let code = match ash::util::read_spv(&mut file_handle.file) {
             Ok(c) => c,
-            Err(_) => return Err(VulkanError::OperationFailed("could not read spirv file")),
+            Err(_) => {
+                return Err(
+                    VulkanError::OperationFailed("could not read spirv file".into()).into(),
+                );
+            }
         };
 
         let module_create_info = ShaderModuleCreateInfo::default().code(&code);
@@ -248,8 +248,9 @@ impl<'a> VulkanObjectShader<'a> {
                 Ok(s) => s,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not create shader module",
-                    ));
+                        "could not create shader module".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -306,23 +307,20 @@ impl<'a> VulkanObjectShader<'a> {
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
         current_frame: u32,
-    ) -> Result<(), VulkanError> {
+    ) -> Result<()> {
         let cmd_buf = command_buffer.command_buffer[current_frame as usize];
         let global_descriptor = self.global_descriptor_sets[current_frame as usize];
 
         let range = size_of::<GlobalUniformObj>();
         let offset = (size_of::<GlobalUniformObj>() * (current_frame as usize)) as u64;
 
-        match self.global_uniform_buffer.load_data(
+        self.global_uniform_buffer.load_data(
             device,
             offset,
             range as u64, //size_of_val(&arr) as u64,
             MemoryMapFlags::empty(),
             std::slice::from_ref(&self.global_ubo),
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        )?;
 
         let buffer_info = DescriptorBufferInfo::default()
             .buffer(self.global_uniform_buffer.buffer)

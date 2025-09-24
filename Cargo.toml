@@ -3,6 +3,9 @@ name = "game"
 version = "0.1.0"
 edition = "2024"
 
+[lints.rust]
+dead_code ="allow"
+
 [dependencies]
 ash = {version = "0.38.0", features = ["linked"]}
 bitflags = "2.9.4"

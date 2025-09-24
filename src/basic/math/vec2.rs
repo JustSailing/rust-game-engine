@@ -20,15 +20,11 @@ impl Vec2 {
     }
 
     pub fn new_left() -> Self {
-        Self {
-            data: [-1.0, 0.0],
-        }
+        Self { data: [-1.0, 0.0] }
     }
 
     pub fn new_down() -> Self {
-        Self {
-            data: [0.0, -1.0],
-        }
+        Self { data: [0.0, -1.0] }
     }
 
     pub fn new_up() -> Self {
@@ -44,11 +40,7 @@ impl Vec2 {
     }
 
     pub fn distance(&self, other: &Self) -> f32 {
-        Vec2::new(
-            self.data[0] - other.data[1],
-            self.data[1] - other.data[1],
-        )
-        .length()
+        Vec2::new(self.data[0] - other.data[1], self.data[1] - other.data[1]).length()
     }
 
     pub fn normalize(&mut self) {
@@ -76,10 +68,7 @@ impl Add for Vec2 {
 
     fn add(self, rhs: Self) -> Self::Output {
         Self {
-            data: [
-                self.data[0] + rhs.data[0],
-                self.data[1] + rhs.data[1],
-            ],
+            data: [self.data[0] + rhs.data[0], self.data[1] + rhs.data[1]],
         }
     }
 }
@@ -89,10 +78,7 @@ impl Sub for Vec2 {
 
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
-            data: [
-                self.data[0] - rhs.data[0],
-                self.data[1] - rhs.data[1],
-            ],
+            data: [self.data[0] - rhs.data[0], self.data[1] - rhs.data[1]],
         }
     }
 }
@@ -102,10 +88,7 @@ impl Mul for Vec2 {
 
     fn mul(self, rhs: Self) -> Self::Output {
         Self {
-            data: [
-                self.data[0] * rhs.data[0],
-                self.data[1] * rhs.data[1],
-            ],
+            data: [self.data[0] * rhs.data[0], self.data[1] * rhs.data[1]],
         }
     }
 }
@@ -115,10 +98,7 @@ impl Div for Vec2 {
 
     fn div(self, rhs: Self) -> Self::Output {
         Self {
-            data: [
-                self.data[0] / rhs.data[0],
-                self.data[1] / rhs.data[1],
-            ],
+            data: [self.data[0] / rhs.data[0], self.data[1] / rhs.data[1]],
         }
     }
 }

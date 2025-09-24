@@ -1,5 +1,5 @@
 use super::{
-    vulkan_backend::{VulkanContext, VulkanError},
+    vulkan_backend::{Error as VulkanError, VulkanContext},
     vulkan_device::VulkanDevice,
 };
 use ash::{
@@ -11,6 +11,8 @@ use ash::{
         SampleCountFlags, SharingMode,
     },
 };
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct VulkanImage {
     image: Image,
@@ -33,7 +35,7 @@ impl VulkanImage {
         create_view: bool,
         view_aspect_flags: ImageAspectFlags,
         device: &VulkanDevice,
-    ) -> Result<Self, VulkanError> {
+    ) -> Result<Self> {
         let image_create_info = ImageCreateInfo::default()
             .image_type(image_type)
             .extent(Extent3D::default().height(height).width(width).depth(1))
@@ -48,7 +50,11 @@ impl VulkanImage {
         let image = unsafe {
             match device.device.create_image(&image_create_info, None) {
                 Ok(i) => i,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create image")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create image".into()).into(),
+                    );
+                }
             }
         };
 
@@ -62,8 +68,9 @@ impl VulkanImage {
 
         if memory_type == -1 {
             return Err(VulkanError::OperationFailed(
-                "required memory type not found. Image not valid.",
-            ));
+                "required memory type not found. Image not valid.".into(),
+            )
+            .into());
         }
         let memory_allocate_info = MemoryAllocateInfo::default()
             .allocation_size(memory_requirements.size)
@@ -74,8 +81,9 @@ impl VulkanImage {
                 Ok(dm) => dm,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not allocate memory for image",
-                    ));
+                        "could not allocate memory for image".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -84,17 +92,15 @@ impl VulkanImage {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not bind memory for image",
-                    ));
+                        "could not bind memory for image".into(),
+                    )
+                    .into());
                 }
             }
         };
         let mut image_view: Option<ImageView> = None;
         if create_view {
-            image_view = match Self::create_view(device, image, format, view_aspect_flags) {
-                Ok(iv) => Some(iv),
-                Err(e) => return Err(e),
-            };
+            image_view = Some(Self::create_view(device, image, format, view_aspect_flags)?);
             return Ok(VulkanImage {
                 image: image,
                 memory: device_memory,
@@ -118,7 +124,7 @@ impl VulkanImage {
         image: Image,
         format: Format,
         aspect_flags: ImageAspectFlags,
-    ) -> Result<ImageView, VulkanError> {
+    ) -> Result<ImageView> {
         let view_create_info = ImageViewCreateInfo::default()
             .image(image)
             .view_type(ImageViewType::TYPE_2D)
@@ -134,7 +140,9 @@ impl VulkanImage {
         unsafe {
             match device.device.create_image_view(&view_create_info, None) {
                 Ok(v) => Ok(v),
-                Err(_) => Err(VulkanError::OperationFailed("could not create image view")),
+                Err(_) => {
+                    Err(VulkanError::OperationFailed("could not create image view".into()).into())
+                }
             }
         }
     }

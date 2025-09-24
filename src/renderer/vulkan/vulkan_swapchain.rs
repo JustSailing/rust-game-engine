@@ -1,5 +1,5 @@
 use super::{
-    vulkan_backend::{VulkanContext, VulkanError},
+    vulkan_backend::{Error as VulkanError, VulkanContext},
     vulkan_device::VulkanDevice,
     vulkan_image::VulkanImage,
 };
@@ -14,6 +14,8 @@ use ash::{
         SwapchainKHR,
     },
 };
+
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct VulkanSwapchain {
     pub image_format: SurfaceFormatKHR,
@@ -34,21 +36,18 @@ impl VulkanSwapchain {
         surface_loader: &surface::Instance,
         width: u32,
         height: u32,
-    ) -> Result<Self, VulkanError> {
-        match VulkanDevice::query_swapchain_support(
+    ) -> Result<Self> {
+        VulkanDevice::query_swapchain_support(
             &device.physical_device,
             surface,
             surface_loader,
             &mut device.swapchain_support,
-        ) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        }
+        )?;
 
         if !device.detect_depth_format(instance) {
-            return Err(VulkanError::OperationFailed(
-                "could not detect depth format",
-            ));
+            return Err(
+                VulkanError::OperationFailed("could not detect depth format".into()).into(),
+            );
         }
 
         let mut swapchain_extent = Extent2D { width, height };
@@ -172,7 +171,11 @@ impl VulkanSwapchain {
         let swap = unsafe {
             match swapchain_loader.create_swapchain(&swapchain_create_info, None) {
                 Ok(s) => s,
-                Err(_) => return Err(VulkanError::OperationFailed("could not create swapchain")),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create swapchain".into()).into(),
+                    );
+                }
             }
         };
 
@@ -181,8 +184,9 @@ impl VulkanSwapchain {
                 Ok(i) => i,
                 Err(_) => {
                     return Err(VulkanError::OperationFailed(
-                        "could not get swapchain images",
-                    ));
+                        "could not get swapchain images".into(),
+                    )
+                    .into());
                 }
             }
         };
@@ -204,13 +208,16 @@ impl VulkanSwapchain {
                 match device.device.create_image_view(&view_create_info, None) {
                     Ok(v) => v,
                     Err(_) => {
-                        return Err(VulkanError::OperationFailed("could not create image views"));
+                        return Err(VulkanError::OperationFailed(
+                            "could not create image views".into(),
+                        )
+                        .into());
                     }
                 }
             });
         }
 
-        let depth_attachment = match VulkanImage::create(
+        let depth_attachment = VulkanImage::create(
             instance,
             ImageType::TYPE_2D,
             swapchain_extent.width,
@@ -222,10 +229,7 @@ impl VulkanSwapchain {
             true,
             ImageAspectFlags::DEPTH,
             device,
-        ) {
-            Ok(da) => da,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         Ok(VulkanSwapchain {
             image_format: *format_,
@@ -255,7 +259,7 @@ impl VulkanSwapchain {
         present_queue: &Queue,
         render_complete_semaphore: &Semaphore,
         present_image_index: u32,
-    ) -> Result<(), VulkanError> {
+    ) -> Result<()> {
         let present_info = PresentInfoKHR::default()
             .wait_semaphores(std::slice::from_ref(render_complete_semaphore))
             .swapchains(std::slice::from_ref(&self.swapchain))
@@ -268,16 +272,14 @@ impl VulkanSwapchain {
             Ok(_) => return Ok(()),
             // recreate swapchain
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
-                match VulkanContext::recreate_swapchain() {
-                    Ok(_) => {}
-                    Err(e) => return Err(e),
-                };
+                VulkanContext::recreate_swapchain()?;
                 return Ok(());
             }
             _ => {
                 return Err(VulkanError::OperationFailed(
-                    "present queue did not work properly",
-                ));
+                    "present queue did not work properly".into(),
+                )
+                .into());
             }
         }
     }
@@ -286,7 +288,7 @@ impl VulkanSwapchain {
         timeout: u64,
         semaphore: Semaphore,
         fence: Fence,
-    ) -> Result<(bool, u32), VulkanError> {
+    ) -> Result<(bool, u32)> {
         let res = unsafe {
             self.swapchain_loader
                 .acquire_next_image(self.swapchain, timeout, semaphore, fence)
@@ -296,16 +298,13 @@ impl VulkanSwapchain {
             // should recreate swapchain
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                 println!("swapchain out of date");
-                match VulkanContext::recreate_swapchain() {
-                    Ok(_) => {}
-                    Err(e) => return Err(e),
-                };
+                VulkanContext::recreate_swapchain()?;
                 return Ok((false, 0));
             }
             Err(_) => {
-                return Err(VulkanError::OperationFailed(
-                    "failure to acqurie next image",
-                ));
+                return Err(
+                    VulkanError::OperationFailed("failure to acqurie next image".into()).into(),
+                );
             }
         };
     }

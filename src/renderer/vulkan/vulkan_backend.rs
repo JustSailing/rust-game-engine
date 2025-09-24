@@ -1,21 +1,3 @@
-use ash::{
-    Entry, Instance,
-    khr::{
-        surface::{self, Instance as SurfaceInstance},
-        xlib_surface,
-    },
-    vk::{
-        self, BufferUsageFlags, CommandPool, DeviceSize, Extent2D, Fence, IndexType,
-        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue, Rect2D,
-        SubmitInfo, SurfaceKHR, Viewport,
-    },
-};
-#[cfg(feature = "debug")]
-use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
-use std::ffi::{CString, c_void};
-#[cfg(feature = "debug")]
-use std::{borrow::Cow, ffi};
-
 use super::{
     super::vulkan::shaders::vulkan_object_shader::VulkanObjectShader,
     vulkan_buffer::VulkanBuffer,
@@ -34,10 +16,45 @@ use crate::application::basic::{
     },
     window::Window,
 };
+use ash::{
+    Entry, Instance,
+    khr::{
+        surface::{self, Instance as SurfaceInstance},
+        xlib_surface,
+    },
+    vk::{
+        self, BufferUsageFlags, CommandPool, DeviceSize, Extent2D, Fence, IndexType,
+        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue, Rect2D,
+        SubmitInfo, SurfaceKHR, Viewport,
+    },
+};
+#[cfg(feature = "debug")]
+use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
+#[cfg(feature = "debug")]
+use std::{borrow::Cow, ffi};
+use std::{
+    ffi::{CString, c_void},
+    fmt,
+};
 
-pub enum VulkanError {
-    OperationFailed(&'static str),
+type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+
+#[derive(Debug)]
+pub enum Error {
+    OperationFailed(String),
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::OperationFailed(e) => {
+                write!(f, "{e} {}  {}", file!(), line!())
+            }
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 static mut VULKAN_STATE: Option<VulkanContext> = None;
 
@@ -70,32 +87,20 @@ pub struct VulkanContext<'a> {
 }
 
 impl<'a> VulkanContext<'a> {
-    pub fn initialize(name: &str, window: &Window) -> Result<(), VulkanError> {
+    pub fn initialize(name: &str, window: &Window) -> Result<()> {
         unsafe {
             if let Some(ref _state) = VULKAN_STATE {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context was already initialized",
-                ));
+                return Err(Error::OperationFailed(
+                    "Vulkan Context was already initialized".into(),
+                )
+                .into());
             }
         }
 
-        let entry = unsafe {
-            match Entry::load() {
-                Ok(e) => e,
-                Err(_) => return Err(VulkanError::OperationFailed("Could not load entry")),
-            }
-        };
+        let entry = unsafe { Entry::load()? };
 
-        let app_name = match CString::new(name) {
-            Ok(e) => e,
-            //this error is temporary
-            // TODO: change
-            Err(_) => {
-                return Err(VulkanError::OperationFailed(
-                    "Could not turn application name to CStr",
-                ));
-            }
-        };
+        let app_name = CString::new(name)?;
+
         let app_info = vk::ApplicationInfo::default()
             .api_version(vk::make_api_version(0, 1, 3, 0))
             .application_name(app_name.as_c_str())
@@ -114,31 +119,13 @@ impl<'a> VulkanContext<'a> {
             let layer_names = c"VK_LAYER_KHRONOS_validation";
             layers_names_raw[0] = layer_names.as_ptr();
 
-            let exts = unsafe {
-                match entry.enumerate_instance_extension_properties(None) {
-                    Ok(l) => l,
-                    Err(_) => {
-                        return Err(VulkanError::OperationFailed(
-                            "Could not enumerate extension properties",
-                        ));
-                    }
-                }
-            };
+            let exts = unsafe { entry.enumerate_instance_extension_properties(None)? };
 
             for ex in exts {
                 println!("{:?} ", ex.extension_name_as_c_str())
             }
 
-            let layers = unsafe {
-                match entry.enumerate_instance_layer_properties() {
-                    Ok(l) => l,
-                    Err(_) => {
-                        return Err(VulkanError::OperationFailed(
-                            "Could not enumerate layer properties",
-                        ));
-                    }
-                }
-            };
+            let layers = unsafe { entry.enumerate_instance_layer_properties()? };
 
             for l in layers {
                 println!("{:?} ", l.layer_name_as_c_str())
@@ -151,56 +138,31 @@ impl<'a> VulkanContext<'a> {
         if cfg!(feature = "debug") {
             create_info = create_info.enabled_layer_names(&layers_names_raw);
         }
-        let instance = unsafe {
-            match entry.create_instance(&create_info, None) {
-                Ok(instance) => instance,
-                Err(e) => {
-                    println!("{:?}", e);
-                    return Err(VulkanError::OperationFailed(
-                        "Could not create instance [fn] VulkanContext::initialize",
-                    ));
-                }
-            }
-        };
+        let instance = unsafe { entry.create_instance(&create_info, None)? };
 
         // create xlib surface
         let xlib_surface_info = vk::XlibSurfaceCreateInfoKHR::default()
             .dpy(window.display.raw as *mut c_void)
             .window(window.window_id);
         let xlib_surface_loader = xlib_surface::Instance::new(&entry, &instance);
-        let surface = unsafe {
-            match xlib_surface_loader.create_xlib_surface(&xlib_surface_info, None) {
-                Ok(res) => res,
-                Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "Could not create Xlib surface",
-                    ));
-                }
-            }
-        };
+        let surface = unsafe { xlib_surface_loader.create_xlib_surface(&xlib_surface_info, None)? };
         let surface_loader = surface::Instance::new(&entry, &instance);
 
         //create device
-        let mut dev = match VulkanDevice::new(&instance, &surface, &surface_loader) {
-            Ok(dev) => dev,
-            Err(e) => return Err(e),
-        };
+        let mut dev = VulkanDevice::new(&instance, &surface, &surface_loader)?;
 
         // create swapchain
-        let swap = match VulkanSwapchain::create(
+        let swap = VulkanSwapchain::create(
             &instance,
             &mut dev,
             &surface,
             &surface_loader,
             window.width,
             window.height,
-        ) {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         // create renderpass
-        let rend_pass = match VulkanRenderPass::create(
+        let rend_pass = VulkanRenderPass::create(
             0.0,
             0.0,
             window.width as f32,
@@ -214,43 +176,30 @@ impl<'a> VulkanContext<'a> {
             &dev,
             swap.image_format.format,
             dev.depth_format,
-        ) {
-            Ok(r) => r,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         let mut swap_framebuffers = Vec::new();
         for i in 0..swap.views.len() {
             let mut swap_attachments = Vec::new();
             swap_attachments.push(swap.views[i]);
             swap_attachments.push(swap.depth_attachment.view.unwrap());
-            let buf = match VulkanFramebuffer::create(
+            let buf = VulkanFramebuffer::create(
                 &dev,
                 &rend_pass,
                 window.height,
                 window.width,
                 &swap_attachments,
-            ) {
-                Ok(f) => f,
-                Err(e) => return Err(e),
-            };
+            )?;
             swap_framebuffers.push(buf);
         }
         // creating command buffer
-        let graph_cmd_buf =
-            match Self::create_command_buffer(&dev, swap.max_frames_in_flight as usize) {
-                Ok(g) => g,
-                Err(e) => return Err(e),
-            };
+        let graph_cmd_buf = Self::create_command_buffer(&dev, swap.max_frames_in_flight as usize)?;
 
         // creating sync objects
         let mut sync_objects = Vec::with_capacity(swap.max_frames_in_flight as usize);
         let mut images_in_flight = Vec::with_capacity(swap.max_frames_in_flight as usize);
         for _ in 0..swap.max_frames_in_flight {
-            let obj = match SyncObjects::create(&dev, true) {
-                Ok(o) => o,
-                Err(e) => return Err(e),
-            };
+            let obj = SyncObjects::create(&dev, true)?;
             sync_objects.push(obj);
         }
 
@@ -260,22 +209,16 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
-        let object_shader = match VulkanObjectShader::create(
+        let object_shader = VulkanObjectShader::create(
             &instance,
             &dev,
             &rend_pass,
             window.width,
             window.height,
             swap.max_frames_in_flight as u32,
-        ) {
-            Ok(o) => o,
-            Err(e) => return Err(e),
-        };
+        )?;
 
-        let (vertex_buffer, index_buffer) = match Self::create_buffers(&instance, &dev) {
-            Ok((v, i)) => (v, i),
-            Err(e) => return Err(e),
-        };
+        let (vertex_buffer, index_buffer) = Self::create_buffers(&instance, &dev)?;
         const FACTOR: f32 = 10.0;
         const VERT_COUNT: usize = 4;
         let verts: [Vector3D; VERT_COUNT] = [
@@ -293,7 +236,7 @@ impl<'a> VulkanContext<'a> {
             },
         ];
 
-        match Self::upload_data_range(
+        Self::upload_data_range(
             &instance,
             &dev,
             dev.graphics_command_pool,
@@ -302,15 +245,12 @@ impl<'a> VulkanContext<'a> {
             &vertex_buffer,
             0,
             &verts,
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        };
+        )?;
 
         const INDEX_COUNT: usize = 6;
         let indices: [u32; INDEX_COUNT] = [0, 1, 2, 0, 3, 1];
 
-        match Self::upload_data_range(
+        Self::upload_data_range(
             &instance,
             &dev,
             dev.graphics_command_pool,
@@ -319,10 +259,7 @@ impl<'a> VulkanContext<'a> {
             &index_buffer,
             0,
             &indices,
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        };
+        )?;
 
         #[cfg(feature = "debug")]
         {
@@ -340,11 +277,8 @@ impl<'a> VulkanContext<'a> {
                 .pfn_user_callback(Some(vulkan_debug_callback));
 
             let debug_utils_loader = debug_utils::Instance::new(&entry, &instance);
-            let debug_messenger = unsafe {
-                debug_utils_loader
-                    .create_debug_utils_messenger(&debug_info, None)
-                    .unwrap()
-            };
+            let debug_messenger =
+                unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
                     geometry_vertex_offset: 0,
@@ -406,27 +340,27 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
-    pub fn shutdown() -> Result<(), VulkanError> {
+    pub fn shutdown() -> Result<()> {
         unsafe {
             if let Some(ref _state) = VULKAN_STATE {
                 VULKAN_STATE = None;
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context already destroyed",
-                ));
+                return Err(
+                    Error::OperationFailed("Vulkan Context already destroyed".into()).into(),
+                );
             }
         }
 
         Ok(())
     }
-    pub fn on_resize(width: i32, height: i32) -> Result<(), VulkanError> {
+    pub fn on_resize(width: i32, height: i32) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context already destroyed",
-                ));
+                return Err(
+                    Error::OperationFailed("Vulkan Context already destroyed".into()).into(),
+                );
             }
         };
 
@@ -441,52 +375,44 @@ impl<'a> VulkanContext<'a> {
 
         Ok(())
     }
-    pub fn begin_frame(_delta: f32) -> Result<bool, VulkanError> {
+    pub fn begin_frame(_delta: f32) -> Result<bool> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context already destroyed",
-                ));
+                return Err(
+                    Error::OperationFailed("Vulkan Context already destroyed".into()).into(),
+                );
             }
         };
         if state.recreating_swapchain {
             match unsafe { state.device.device.device_wait_idle() } {
                 Ok(_) => return Ok(false),
-                Err(_) => return Err(VulkanError::OperationFailed("could not wait on device")),
+                Err(_) => {
+                    return Err(Error::OperationFailed("could not wait on device".into()).into());
+                }
             }
         }
 
         if state.frame_buffer_last_generation != state.frame_buffer_size_generation {
             match unsafe { state.device.device.device_wait_idle() } {
-                Ok(_) =>
-                //{}
-                {
-                    match Self::recreate_swapchain() {
-                        Ok(()) => return Ok(false),
-                        Err(e) => return Err(e),
-                    }
+                Ok(_) => match Self::recreate_swapchain() {
+                    Ok(()) => return Ok(false),
+                    Err(e) => return Err(e),
+                },
+                Err(_) => {
+                    return Err(Error::OperationFailed("could not wait on device".into()).into());
                 }
-                Err(_) => return Err(VulkanError::OperationFailed("could not wait on device")),
             }
         }
         let sync = &state.in_flight_frames.sync_objs;
         let current_frame = state.in_flight_frames.current_frame;
 
-        match sync[current_frame].fence_wait(&state.device, u64::MAX) {
-            Ok(b) => {
-                if !b {
-                    return Ok(false);
-                }
-            }
-            Err(e) => return Err(e),
+        if !sync[current_frame].fence_wait(&state.device, u64::MAX)? {
+            return Ok(false);
         }
 
-        match sync[current_frame].reset_fence(&state.device) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        sync[current_frame].reset_fence(&state.device)?;
 
         state.image_index = match state.swapchain.acquire_next_image_index(
             u64::MAX,
@@ -495,7 +421,10 @@ impl<'a> VulkanContext<'a> {
         ) {
             Ok((suboptimal, index)) => {
                 if suboptimal {
-                    return Ok(false);
+                    match Self::recreate_swapchain() {
+                        Ok(()) => return Ok(false),
+                        Err(e) => return Err(e),
+                    }
                 } else {
                     index
                 }
@@ -504,26 +433,18 @@ impl<'a> VulkanContext<'a> {
         };
 
         if let Some(s) = state.images_in_flight[state.image_index as usize] {
-            //if s.fence != Fence::null() {
-            match s.fence_wait(&state.device, u64::MAX) {
-                Ok(b) => {
-                    if !b {
-                        return Ok(false);
-                    }
+            if s.fence != Fence::null() {
+                if !s.fence_wait(&state.device, u64::MAX)? {
+                    return Ok(false);
                 }
-                Err(e) => return Err(e),
             }
-            //}
         }
 
         state.images_in_flight[state.image_index as usize] =
             Some(&state.in_flight_frames.sync_objs[current_frame as usize]);
 
         let command_buffer = &mut state.graphics_cmd_bufs;
-        match command_buffer.begin(&state.device, false, false, false, current_frame as usize) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        command_buffer.begin(&state.device, false, false, false, current_frame as usize)?;
 
         let viewport = Viewport::default()
             .x(0.0)
@@ -579,14 +500,12 @@ impl<'a> VulkanContext<'a> {
         _view_position: Vec3,
         _ambient_colour: Vec4,
         _mode: i32,
-    ) -> Result<(), VulkanError> {
+    ) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context not initialized",
-                ));
+                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
             }
         };
         state.object_shader.use_shader(
@@ -598,26 +517,21 @@ impl<'a> VulkanContext<'a> {
         state.object_shader.global_ubo.projection = projection;
         state.object_shader.global_ubo.view = view;
 
-        match state.object_shader.update_global_state(
+        state.object_shader.update_global_state(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        )?;
 
         Ok(())
     }
 
-    pub fn update_object(model: Matrix4) -> Result<(), VulkanError> {
+    pub fn update_object(model: Matrix4) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context not initialized",
-                ));
+                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
             }
         };
 
@@ -660,14 +574,12 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
-    pub fn end_frame(_delta: f32) -> Result<(), VulkanError> {
+    pub fn end_frame(_delta: f32) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context not initialized",
-                ));
+                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
             }
         };
         let image_index = state.image_index;
@@ -678,10 +590,7 @@ impl<'a> VulkanContext<'a> {
             state.in_flight_frames.current_frame as usize,
         );
 
-        match command_buff.end(&state.device, state.in_flight_frames.current_frame as usize) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        command_buff.end(&state.device, state.in_flight_frames.current_frame as usize)?;
 
         if let Some(sync_obj) = state.images_in_flight[state.image_index as usize] {
             match sync_obj.fence_wait(&state.device, u64::MAX) {
@@ -692,23 +601,17 @@ impl<'a> VulkanContext<'a> {
         state.images_in_flight[image_index as usize] =
             Some(&state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame]);
 
-        match state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame]
-            .fence_wait(&state.device, u64::MAX)
-        {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        // should handle bool here
+        state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame]
+            .fence_wait(&state.device, u64::MAX)?;
 
-        match state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame]
-            .reset_fence(&state.device)
-        {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame]
+            .reset_fence(&state.device)?;
 
         let submit_info = SubmitInfo::default()
             .command_buffers(std::slice::from_ref(
-                &state.graphics_cmd_bufs.command_buffer[state.in_flight_frames.current_frame as usize],
+                &state.graphics_cmd_bufs.command_buffer
+                    [state.in_flight_frames.current_frame as usize],
             ))
             .signal_semaphores(std::slice::from_ref(
                 &state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame as usize]
@@ -723,27 +626,22 @@ impl<'a> VulkanContext<'a> {
             ));
 
         unsafe {
-            match state.device.device.queue_submit(
+            state.device.device.queue_submit(
                 state.device.graphics_queue,
                 std::slice::from_ref(&submit_info),
                 state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame as usize]
                     .fence,
-            ) {
-                Ok(_) => {}
-                Err(_) => return Err(VulkanError::OperationFailed("could not submit to queue")),
-            }
+            )?;
         }
 
-        match state.swapchain.present(
+        state.swapchain.present(
             &state.device.graphics_queue,
             &state.device.present_queue,
             &state.in_flight_frames.sync_objs[state.in_flight_frames.current_frame]
                 .render_finished_semaphore,
             state.image_index,
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        )?;
+
         state.in_flight_frames.current_frame = (state.in_flight_frames.current_frame + 1)
             % state.swapchain.max_frames_in_flight as usize;
 
@@ -769,14 +667,12 @@ impl<'a> VulkanContext<'a> {
         -1
     }
 
-    pub fn recreate_swapchain() -> Result<(), VulkanError> {
+    pub fn recreate_swapchain() -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanError::OperationFailed(
-                    "Vulkan Context not initialized",
-                ));
+                return Err(Error::OperationFailed("Vulkan Context not initialized".into()).into());
             }
         };
         println!("recreating swapchain");
@@ -784,19 +680,24 @@ impl<'a> VulkanContext<'a> {
         for i in 0..state.swapchain.image_count as usize {
             state.images_in_flight[i] = None;
         }
+
+        state.in_flight_frames.destroy(&state.device);
+        let mut sync_objs = Vec::new();
+        for _ in 0..state.swapchain.max_frames_in_flight {
+            sync_objs.push(SyncObjects::create(&state.device, true)?);
+        }
+        state.in_flight_frames = InFlightFrames::new(sync_objs);
+
         state.recreating_swapchain = true;
         state.swapchain.destroy(&state.device);
-        state.swapchain = match VulkanSwapchain::create(
+        state.swapchain = VulkanSwapchain::create(
             &state.instance,
             &mut state.device,
             &state.surface,
             &state.surface_loader,
             state.framebuffer_width,
             state.framebuffer_height,
-        ) {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         state.main_renderpass.w = state.framebuffer_width as f32;
         state.main_renderpass.h = state.framebuffer_height as f32;
@@ -811,44 +712,26 @@ impl<'a> VulkanContext<'a> {
             state.swapchain_framebuffers[i].destroy(&state.device);
         }
 
-        state.swapchain_framebuffers = match Self::regenerate_framebuffers(
+        state.swapchain_framebuffers = Self::regenerate_framebuffers(
             &state.device,
             &state.main_renderpass,
             &state.swapchain,
             state.framebuffer_height,
             state.framebuffer_width,
-        ) {
-            Ok(f) => f,
-            Err(e) => return Err(e),
-        };
+        )?;
 
-        state.graphics_cmd_bufs = match Self::create_command_buffer(
+        state.graphics_cmd_bufs = Self::create_command_buffer(
             &state.device,
             state.swapchain.max_frames_in_flight as usize,
-        ) {
-            Ok(c) => c,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         state.recreating_swapchain = false;
 
         Ok(())
     }
 
-    fn create_command_buffer(
-        device: &VulkanDevice,
-        frames: usize,
-    ) -> Result<VulkanCommandBuffer, VulkanError> {
-        let cmd_buf = match VulkanCommandBuffer::allocate(
-            device,
-            true,
-            device.graphics_command_pool,
-            frames as u32,
-        ) {
-            Ok(c) => Ok(c),
-            Err(e) => return Err(e),
-        };
-        cmd_buf
+    fn create_command_buffer(device: &VulkanDevice, frames: usize) -> Result<VulkanCommandBuffer> {
+        VulkanCommandBuffer::allocate(device, true, device.graphics_command_pool, frames as u32)
     }
 
     fn regenerate_framebuffers(
@@ -857,18 +740,14 @@ impl<'a> VulkanContext<'a> {
         swap: &VulkanSwapchain,
         height: u32,
         width: u32,
-    ) -> Result<Vec<VulkanFramebuffer>, VulkanError> {
+    ) -> Result<Vec<VulkanFramebuffer>> {
         let mut swap_framebuffers = Vec::new();
         for i in 0..swap.views.len() {
             let mut swap_attachments = Vec::new();
             swap_attachments.push(swap.views[i]);
             swap_attachments.push(swap.depth_attachment.view.unwrap());
             let buf =
-                match VulkanFramebuffer::create(&dev, &rend_pass, height, width, &swap_attachments)
-                {
-                    Ok(f) => f,
-                    Err(e) => return Err(e),
-                };
+                VulkanFramebuffer::create(&dev, &rend_pass, height, width, &swap_attachments)?;
             swap_framebuffers.push(buf);
         }
         Ok(swap_framebuffers)
@@ -877,12 +756,12 @@ impl<'a> VulkanContext<'a> {
     fn create_buffers(
         instance: &Instance,
         device: &VulkanDevice,
-    ) -> Result<(VulkanBuffer, VulkanBuffer), VulkanError> {
+    ) -> Result<(VulkanBuffer, VulkanBuffer)> {
         let memory_property_flag = MemoryPropertyFlags::DEVICE_LOCAL;
 
         const VERTEX_BUFFER_SIZE: usize = size_of::<Vector3D>() * 1024;
 
-        let vertex_buffer = match VulkanBuffer::create(
+        let vertex_buffer = VulkanBuffer::create(
             instance,
             device,
             VERTEX_BUFFER_SIZE as u64,
@@ -891,14 +770,11 @@ impl<'a> VulkanContext<'a> {
                 | BufferUsageFlags::TRANSFER_SRC,
             memory_property_flag,
             true,
-        ) {
-            Ok(v) => v,
-            Err(e) => return Err(e),
-        };
+        )?;
 
         const INDEX_BUFFER_SIZE: usize = size_of::<u32>() * 1024;
 
-        let index_buffer = match VulkanBuffer::create(
+        let index_buffer = VulkanBuffer::create(
             instance,
             device,
             INDEX_BUFFER_SIZE as u64,
@@ -907,10 +783,7 @@ impl<'a> VulkanContext<'a> {
                 | BufferUsageFlags::TRANSFER_SRC,
             memory_property_flag,
             true,
-        ) {
-            Ok(v) => v,
-            Err(e) => return Err(e),
-        };
+        )?;
         Ok((vertex_buffer, index_buffer))
     }
 
@@ -923,31 +796,26 @@ impl<'a> VulkanContext<'a> {
         buffer: &VulkanBuffer,
         offset: u64,
         data: &[T],
-    ) -> Result<(), VulkanError> {
+    ) -> Result<()> {
         let memory_flags = MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT;
-        let staging_buffer = match VulkanBuffer::create(
+        let staging_buffer = VulkanBuffer::create(
             instance,
             device,
             size_of_val(data) as u64,
             BufferUsageFlags::TRANSFER_SRC,
             memory_flags,
             true,
-        ) {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
+        )?;
 
-        match staging_buffer.load_data(
+        staging_buffer.load_data(
             device,
             offset,
             size_of_val(data) as u64,
             MemoryMapFlags::empty(),
             data,
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
-        match VulkanBuffer::copy_to(
+        )?;
+
+        VulkanBuffer::copy_to(
             device,
             pool,
             fence,
@@ -957,10 +825,7 @@ impl<'a> VulkanContext<'a> {
             buffer.buffer,
             offset,
             size_of_val(data) as u64,
-        ) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
+        )?;
 
         staging_buffer.destroy(device);
 
