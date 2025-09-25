@@ -23,9 +23,9 @@ use ash::{
         xlib_surface,
     },
     vk::{
-        self, BufferUsageFlags, CommandPool, DeviceSize, Extent2D, Fence, IndexType,
-        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue, Rect2D,
-        SubmitInfo, SurfaceKHR, Viewport,
+        self, BufferUsageFlags, CommandPool, CommandPoolResetFlags, DeviceSize, Extent2D, Fence,
+        IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue,
+        Rect2D, SubmitInfo, SurfaceKHR, Viewport,
     },
 };
 #[cfg(feature = "debug")]
@@ -437,6 +437,7 @@ impl<'a> VulkanContext<'a> {
             Some(&state.in_flight_frames.sync_objs[current_frame as usize]);
 
         let command_buffer = &mut state.graphics_cmd_bufs;
+        command_buffer.reset(&state.device, current_frame)?;
         command_buffer.begin(&state.device, false, false, false, current_frame as usize)?;
 
         let viewport = Viewport::default()
@@ -682,8 +683,8 @@ impl<'a> VulkanContext<'a> {
         state.in_flight_frames = InFlightFrames::new(sync_objs);
 
         state.recreating_swapchain = true;
-        state.swapchain.destroy(&state.device);
-        state.swapchain = VulkanSwapchain::create(
+        //state.swapchain.destroy(&state.device);
+        state.swapchain.recreate(
             &state.instance,
             &mut state.device,
             &state.surface,
@@ -697,9 +698,12 @@ impl<'a> VulkanContext<'a> {
 
         state.frame_buffer_last_generation = state.frame_buffer_size_generation;
 
-        state
-            .graphics_cmd_bufs
-            .free(&state.device, state.device.graphics_command_pool);
+        unsafe {
+            state.device.device.reset_command_pool(
+                state.device.graphics_command_pool,
+                CommandPoolResetFlags::empty(),
+            )?
+        }
 
         for i in 0..state.swapchain.image_count as usize {
             state.swapchain_framebuffers[i].destroy(&state.device);
@@ -711,11 +715,6 @@ impl<'a> VulkanContext<'a> {
             &state.swapchain,
             state.framebuffer_height,
             state.framebuffer_width,
-        )?;
-
-        state.graphics_cmd_bufs = Self::create_command_buffer(
-            &state.device,
-            state.swapchain.max_frames_in_flight as usize,
         )?;
 
         state.recreating_swapchain = false;

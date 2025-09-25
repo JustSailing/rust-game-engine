@@ -3,16 +3,17 @@ pub mod basic;
 #[path = "./renderer/mod.rs"]
 pub mod renderer;
 
-use basic::event::EventState;
+use crate::Game;
+
+use basic::event::{EventCodes, EventCtx, EventState};
 use basic::input::InputState;
 use basic::window::Window;
 use renderer::renderer_types::{FrontendRenderer, RendererPacket};
-
-use crate::Game;
-use crate::application::basic::event::{EventCodes, EventCtx};
-
+use std::thread;
+use std::time::{Duration, Instant};
 use std::{ffi::c_void, fmt, ptr};
 
+#[derive(Clone, Copy)]
 pub struct AppConfig {
     pub start_pos_x: i32,
     pub start_pos_y: i32,
@@ -27,6 +28,9 @@ pub enum Error {
     NotInitialized,
     AlreadyInitialized,
     AlreadyShutdown,
+    CouldNotInitializeGame,
+    CouldNotUpdateGame,
+    CouldNotRenderGame,
 }
 
 impl std::fmt::Display for Error {
@@ -64,6 +68,30 @@ impl std::fmt::Display for Error {
                     line!()
                 )
             }
+            Error::CouldNotInitializeGame => {
+                write!(
+                    f,
+                    "Application state could not intialize game {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
+            Error::CouldNotUpdateGame => {
+                write!(
+                    f,
+                    "Application state could not update game {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
+            Error::CouldNotRenderGame => {
+                write!(
+                    f,
+                    "Application state could not render game {}  {}",
+                    file!(),
+                    line!()
+                )
+            }
         }
     }
 }
@@ -75,6 +103,7 @@ type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 static mut APP_STATE: Option<ApplicationState> = None;
 
 pub struct ApplicationState {
+    game: Game,
     is_running: bool,
     is_suspended: bool,
     window: Window,
@@ -85,13 +114,13 @@ pub struct ApplicationState {
 }
 
 impl ApplicationState {
-    pub fn create(game: &Game) -> Result<()> {
+    pub fn create(game: &mut Game) -> Result<()> {
         unsafe {
             if let Some(ref _a) = APP_STATE {
                 return Err(Error::AlreadyInitialized.into());
             }
         }
-        let config = &game.config;
+        let config = game.config;
         let window = Window::create(
             config.start_pos_x,
             config.start_pos_y,
@@ -118,10 +147,27 @@ impl ApplicationState {
             application_on_resize,
         )?;
 
+        EventState::register_event(
+            EventCodes::KeyPressed as usize,
+            ptr::null(),
+            application_on_event,
+        )?;
+
+        EventState::register_event(
+            EventCodes::KeyReleased as usize,
+            ptr::null(),
+            application_on_resize,
+        )?;
+
         FrontendRenderer::initialize(config.name, &window)?;
+
+        if !(game.initialize)(game) {
+            return Err(Error::CouldNotInitializeGame.into());
+        }
 
         unsafe {
             APP_STATE = Some(ApplicationState {
+                game: *game,
                 is_running: false,
                 is_suspended: false,
                 window: window,
@@ -146,14 +192,34 @@ impl ApplicationState {
 
         app_state.is_running = true;
         app_state.is_suspended = false;
-
+        const FPS: u64 = 60;
+        const FRAME_DURATION: Duration = Duration::from_micros(1_000_000 / FPS);
+        let mut last_frame_time = Instant::now();
         loop {
+            let current_time = Instant::now();
+            let delta = current_time.duration_since(last_frame_time);
+            if !(app_state.game.update)(&mut app_state.game, delta.as_secs_f32()) {
+                return Err(Error::CouldNotUpdateGame.into());
+            }
+
+            if !(app_state.game.render)(&mut app_state.game, delta.as_secs_f32()) {
+                return Err(Error::CouldNotRenderGame.into());
+            }
+
             if app_state.window.get_event()? {
-                let render_packet = RendererPacket { delta_time: 1.0 };
+                let render_packet = RendererPacket {
+                    delta_time: delta.as_secs_f32(),
+                };
                 FrontendRenderer::draw_frame(&render_packet)?;
             } else {
                 break;
             }
+            let elapsed_since_last_frame = last_frame_time.elapsed();
+            if elapsed_since_last_frame < FRAME_DURATION {
+                thread::sleep(FRAME_DURATION - elapsed_since_last_frame);
+            }
+            InputState::update(delta.as_secs_f32())?;
+            last_frame_time = Instant::now();
         }
         Ok(())
     }

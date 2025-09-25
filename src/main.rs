@@ -5,6 +5,8 @@ use application::basic::{
 };
 use application::{AppConfig, ApplicationState, Error as AppError};
 
+use crate::application::renderer::renderer_types::FrontendRenderer;
+
 fn main() -> Result<(), AppError> {
     println!("Hello, world!");
     let app_config = AppConfig {
@@ -14,7 +16,7 @@ fn main() -> Result<(), AppError> {
         start_height: 720,
         name: "Hello William",
     };
-    let game = Game {
+    let mut game = Game {
         config: app_config,
         state: GameState {
             delta_time: 0.0,
@@ -28,7 +30,7 @@ fn main() -> Result<(), AppError> {
         render: game_render,
         on_resize: game_on_resize,
     };
-    let init = ApplicationState::create(&game);
+    let init = ApplicationState::create(&mut game);
     println!("{:?}", init);
     let r = ApplicationState::run();
     println!("{:?}", r);
@@ -37,6 +39,7 @@ fn main() -> Result<(), AppError> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 pub struct GameState {
     delta_time: f32,
     view: Matrix4,
@@ -45,6 +48,7 @@ pub struct GameState {
     view_dirty: bool,
 }
 
+#[derive(Clone, Copy)]
 pub struct Game {
     config: AppConfig,
     state: GameState,
@@ -61,16 +65,28 @@ pub fn game_initialize(game: &mut Game) -> bool {
 }
 
 pub fn game_update(game: &mut Game, delta: f32) -> bool {
+    let movement = 100000.0;
     if InputState::is_key_down(Key::A).unwrap() {
-        camera_yaw(&mut game.state, 1.0 * delta);
+        camera_yaw(&mut game.state, 1.0 * delta * movement);
     }
 
     if InputState::is_key_down(Key::D).unwrap() {
-        camera_yaw(&mut game.state, -1.0 * delta);
+        camera_yaw(&mut game.state, -1.0 * delta * movement);
+    }
+    if InputState::is_key_down(Key::W).unwrap() {
+        camera_pitch(&mut game.state, 1.0 * delta * movement);
+    }
+
+    if InputState::is_key_down(Key::S).unwrap() {
+        camera_pitch(&mut game.state, -1.0 * delta * movement);
     }
 
     recalculate_view(&mut game.state);
-    return true;
+
+    match FrontendRenderer::set_view(game.state.view) {
+        Ok(_) => return true,
+        Err(_) => return false,
+    }
 }
 
 pub fn game_render(_game: &Game, _delta: f32) -> bool {

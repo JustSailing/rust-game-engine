@@ -1,6 +1,6 @@
 use ash::vk::{
     CommandBuffer, CommandBufferAllocateInfo, CommandBufferBeginInfo, CommandBufferLevel,
-    CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
+    CommandBufferResetFlags, CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
 };
 
 use super::{vulkan_backend::Error as VulkanError, vulkan_device::VulkanDevice};
@@ -9,6 +9,7 @@ type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 pub enum CommandBufferState {
     Ready,
+    Reset,
     Recording,
     InRenderPass,
     RecordingEnded,
@@ -40,10 +41,9 @@ impl VulkanCommandBuffer {
             match device.device.allocate_command_buffers(&allocate_info) {
                 Ok(c) => c,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not allocate command buffer",
-                    )
-                    .into());
+                    return Err(
+                        VulkanError::OperationFailed("could not allocate command buffer").into(),
+                    );
                 }
             }
         };
@@ -88,14 +88,25 @@ impl VulkanCommandBuffer {
             {
                 Ok(_) => self.state = CommandBufferState::Recording,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not begin command buffer",
-                    )
-                    .into());
+                    return Err(
+                        VulkanError::OperationFailed("could not begin command buffer").into(),
+                    );
                 }
             }
         }
         Ok(())
+    }
+
+    pub fn reset(&mut self, device: &VulkanDevice, buffer_index: usize) -> Result<()> {
+        unsafe {
+            match device.device.reset_command_buffer(
+                self.command_buffer[buffer_index],
+                CommandBufferResetFlags::empty(),
+            ) {
+                Ok(_) => {self.state = CommandBufferState::Reset; Ok(())},
+                Err(_) => return Err(VulkanError::OperationFailed("could not reset command buffer").into()),
+            }
+        }
     }
 
     pub fn end(&mut self, device: &VulkanDevice, buffer_index: usize) -> Result<()> {
@@ -108,10 +119,7 @@ impl VulkanCommandBuffer {
                     self.state = CommandBufferState::RecordingEnded;
                 }
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "ending command buffer failed",
-                    )
-                    .into());
+                    return Err(VulkanError::OperationFailed("ending command buffer failed").into());
                 }
             }
         }
@@ -146,18 +154,14 @@ impl VulkanCommandBuffer {
             {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not submit queue").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not submit queue").into());
                 }
             }
 
             match device.device.queue_wait_idle(queue) {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not wait for queue").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not wait for queue").into());
                 }
             }
         }

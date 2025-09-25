@@ -168,7 +168,7 @@ impl FrontendRenderer {
 
         let rotation = unsafe { Quat::from_axis_angle(Vec3::new_forward(), ANGLE, false) };
         let model = Quat::to_rotation_matrix(rotation, Vec3::new_zeroes());
-
+        // let model = Matrix4::identity();
         (state.update_object)(model)?;
 
         FrontendRenderer::end_frame(packet.delta_time)?;
