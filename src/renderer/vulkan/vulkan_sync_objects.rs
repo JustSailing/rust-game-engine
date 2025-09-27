@@ -21,9 +21,7 @@ impl SyncObjects {
             match device.device.create_fence(&fence_create_info, None) {
                 Ok(f) => f,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create fence").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not create fence").into());
                 }
             }
         };
@@ -32,9 +30,7 @@ impl SyncObjects {
             match device.device.create_semaphore(&sema_info, None) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create semaphore").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not create semaphore").into());
                 }
             }
         };
@@ -43,9 +39,7 @@ impl SyncObjects {
             match device.device.create_semaphore(&sema_info, None) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create semaphore").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not create semaphore").into());
                 }
             }
         };
@@ -77,9 +71,7 @@ impl SyncObjects {
                 Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
                     Err(VulkanError::OperationFailed("fence: out of device memory").into())
                 }
-                Err(_) => {
-                    Err(VulkanError::OperationFailed("fence: unknown error occured").into())
-                }
+                Err(_) => Err(VulkanError::OperationFailed("fence: unknown error occured").into()),
             }
         }
     }

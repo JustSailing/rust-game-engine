@@ -10,12 +10,19 @@ use super::{
 };
 use crate::application::basic::{
     math::{
+        consts::INVALID_ID,
         matrix4::Matrix4,
         vec3::{Vec3, Vector3D},
         vec4::Vec4,
     },
     window::Window,
 };
+
+use crate::application::renderer::{
+    renderer_types::GeometryRenderData,
+    resources::resource_types::{Texture, TextureData},
+};
+
 use ash::{
     Entry, Instance,
     khr::{
@@ -23,9 +30,11 @@ use ash::{
         xlib_surface,
     },
     vk::{
-        self, BufferUsageFlags, CommandPool, CommandPoolResetFlags, DeviceSize, Extent2D, Fence,
-        IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue,
-        Rect2D, SubmitInfo, SurfaceKHR, Viewport,
+        self, BorderColor, BufferUsageFlags, CommandPool, CommandPoolResetFlags, CompareOp,
+        DeviceSize, Extent2D, Fence, Filter, Format, ImageAspectFlags, ImageLayout, ImageTiling,
+        ImageType, ImageUsageFlags, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
+        PipelineStageFlags, Queue, Rect2D, SamplerAddressMode, SamplerCreateInfo,
+        SamplerMipmapMode, SubmitInfo, SurfaceKHR, Viewport,
     },
 };
 #[cfg(feature = "debug")]
@@ -63,6 +72,7 @@ pub struct VulkanContext<'a> {
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    frame_delta_time: f32,
     geometry_vertex_offset: u64,
     geometry_index_offset: u64,
     object_index_buffer: VulkanBuffer,
@@ -208,7 +218,7 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
-        let object_shader = VulkanObjectShader::create(
+        let mut object_shader = VulkanObjectShader::create(
             &instance,
             &dev,
             &rend_pass,
@@ -260,6 +270,9 @@ impl<'a> VulkanContext<'a> {
             &indices,
         )?;
 
+        let mut object_id = 0;
+        object_shader.acquire_resources(&dev, &mut object_id)?;
+
         #[cfg(feature = "debug")]
         {
             let debug_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
@@ -280,6 +293,7 @@ impl<'a> VulkanContext<'a> {
                 unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    frame_delta_time: 0.0,
                     geometry_vertex_offset: 0,
                     geometry_index_offset: 0,
                     object_index_buffer: index_buffer,
@@ -311,6 +325,7 @@ impl<'a> VulkanContext<'a> {
         {
             unsafe {
                 VULKAN_STATE = Some(VulkanContext {
+                    frame_delta_time: 0.0,
                     geometry_vertex_offset: 0,
                     geometry_index_offset: 0,
                     object_index_buffer: index_buffer,
@@ -370,7 +385,7 @@ impl<'a> VulkanContext<'a> {
 
         Ok(())
     }
-    pub fn begin_frame(_delta: f32) -> Result<bool> {
+    pub fn begin_frame(delta: f32) -> Result<bool> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
@@ -378,6 +393,7 @@ impl<'a> VulkanContext<'a> {
                 return Err(Error::OperationFailed("Vulkan Context already destroyed").into());
             }
         };
+        state.frame_delta_time = delta;
         if state.recreating_swapchain {
             match unsafe { state.device.device.device_wait_idle() } {
                 Ok(_) => return Ok(false),
@@ -515,12 +531,13 @@ impl<'a> VulkanContext<'a> {
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
+            state.frame_delta_time,
         )?;
 
         Ok(())
     }
 
-    pub fn update_object(model: Matrix4) -> Result<()> {
+    pub fn update_object(data: GeometryRenderData) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
@@ -533,8 +550,9 @@ impl<'a> VulkanContext<'a> {
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
-            model,
-        );
+            data,
+            state.frame_delta_time,
+        )?;
 
         let offsets: [DeviceSize; 1] = [0];
         unsafe {
@@ -565,6 +583,154 @@ impl<'a> VulkanContext<'a> {
             );
         }
 
+        Ok(())
+    }
+
+    pub fn create_texture(
+        name: &str,
+        auto_realease: bool,
+        width: i32,
+        height: i32,
+        channel_count: i32,
+        pixels: &[u8],
+        has_transparency: bool,
+    ) -> Result<Texture> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+
+        let image_size: DeviceSize = (width * height * channel_count) as DeviceSize;
+        let image_format = Format::R8G8B8A8_UNORM;
+        let usage = BufferUsageFlags::TRANSFER_SRC;
+        let memory_property_flags =
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT;
+        let staging = VulkanBuffer::create(
+            &state.instance,
+            &state.device,
+            image_size,
+            usage,
+            memory_property_flags,
+            true,
+        )?;
+
+        staging.load_data(
+            &state.device,
+            0,
+            image_size,
+            MemoryMapFlags::empty(),
+            pixels,
+        )?;
+
+        let image = super::vulkan_image::VulkanImage::create(
+            &state.instance,
+            ImageType::TYPE_2D,
+            width as u32,
+            height as u32,
+            image_format,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::TRANSFER_SRC
+                | ImageUsageFlags::TRANSFER_DST
+                | ImageUsageFlags::SAMPLED
+                | ImageUsageFlags::COLOR_ATTACHMENT,
+            MemoryPropertyFlags::DEVICE_LOCAL,
+            true,
+            ImageAspectFlags::COLOR,
+            &state.device,
+        )?;
+
+        let mut temp_command_buffer = VulkanCommandBuffer::allocate_and_begin_single_use(
+            &state.device,
+            state.device.graphics_command_pool,
+        )?;
+
+        image.transition_layout(
+            &state.device,
+            &temp_command_buffer,
+            image_format,
+            ImageLayout::UNDEFINED,
+            ImageLayout::TRANSFER_DST_OPTIMAL,
+            0,
+        )?;
+
+        image.copy_from_buffer(&state.device, &staging, &temp_command_buffer, 0);
+
+        image.transition_layout(
+            &state.device,
+            &temp_command_buffer,
+            image_format,
+            ImageLayout::TRANSFER_DST_OPTIMAL,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            0,
+        )?;
+
+        temp_command_buffer.end_single_use(
+            &state.device,
+            state.device.graphics_command_pool,
+            state.device.graphics_queue,
+        )?;
+
+        staging.destroy(&state.device);
+
+        let sampler_info = SamplerCreateInfo::default()
+            .mag_filter(Filter::LINEAR)
+            .min_filter(Filter::LINEAR)
+            .address_mode_u(SamplerAddressMode::REPEAT)
+            .address_mode_v(SamplerAddressMode::REPEAT)
+            .address_mode_w(SamplerAddressMode::REPEAT)
+            .anisotropy_enable(true)
+            .max_anisotropy(16.0)
+            .border_color(BorderColor::INT_OPAQUE_BLACK)
+            .unnormalized_coordinates(false)
+            .compare_enable(false)
+            .compare_op(CompareOp::ALWAYS)
+            .mipmap_mode(SamplerMipmapMode::LINEAR)
+            .mip_lod_bias(0.0)
+            .min_lod(0.0)
+            .max_lod(0.0);
+
+        let sampler = unsafe {
+            match state.device.device.create_sampler(&sampler_info, None) {
+                Ok(s) => s,
+                Err(_) => return Err(Error::OperationFailed("could not create sampler").into()),
+            }
+        };
+
+        Ok(Texture {
+            id: INVALID_ID,
+            width: width as u32,
+            height: height as u32,
+            channel_count: channel_count as u8,
+            has_transparency,
+            generation: 1,
+            internal_data: Box::new(TextureData {
+                image: image,
+                sampler: sampler,
+            }),
+        })
+    }
+
+    pub fn destroy_texture(texture: &Texture) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+
+        let _ = unsafe { state.device.device.device_wait_idle() };
+
+        texture.internal_data.image.destroy(&state.device);
+        unsafe {
+            state
+                .device
+                .device
+                .destroy_sampler(texture.internal_data.sampler, None)
+        };
         Ok(())
     }
 

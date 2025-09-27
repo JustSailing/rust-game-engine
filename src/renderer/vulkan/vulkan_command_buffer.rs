@@ -103,8 +103,15 @@ impl VulkanCommandBuffer {
                 self.command_buffer[buffer_index],
                 CommandBufferResetFlags::empty(),
             ) {
-                Ok(_) => {self.state = CommandBufferState::Reset; Ok(())},
-                Err(_) => return Err(VulkanError::OperationFailed("could not reset command buffer").into()),
+                Ok(_) => {
+                    self.state = CommandBufferState::Reset;
+                    Ok(())
+                }
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not reset command buffer").into(),
+                    );
+                }
             }
         }
     }

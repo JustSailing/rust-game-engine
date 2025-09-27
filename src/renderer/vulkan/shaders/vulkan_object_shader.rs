@@ -17,11 +17,27 @@ use super::super::{
 };
 use crate::application::basic::{
     filesystem::{FileHandle, FileModes},
-    math::{matrix4::Matrix4, vec3::Vec3},
+    math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3, vec4::Vec4},
 };
-use crate::application::renderer::renderer_types::GlobalUniformObj;
+use crate::application::renderer::renderer_types::{
+    GeometryRenderData, GlobalUniformObj, UniformObject,
+};
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+
+const VULKAN_MAX_OBJECT_COUNT: usize = 1024;
+const VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT: usize = 1;
+
+#[derive(Clone, Copy)]
+struct VulkanDescriptorState {
+    generations: [usize; 3],
+}
+
+#[derive(Clone, Copy)]
+struct VulkanShaderObjectState {
+    descriptor_sets: [DescriptorSet; 3],
+    descriptor_states: [VulkanDescriptorState; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT],
+}
 
 struct VulkanShaderStage<'a> {
     //create_info: ShaderModuleCreateInfo<'a>,
@@ -39,6 +55,11 @@ pub struct VulkanObjectShader<'a> {
     global_descriptor_sets: Vec<DescriptorSet>,
     global_uniform_buffer: VulkanBuffer,
     pub global_ubo: GlobalUniformObj,
+    object_descriptor_pool: DescriptorPool,
+    object_descriptor_set_layout: DescriptorSetLayout,
+    object_uniform_buffer: VulkanBuffer,
+    object_uniform_buffer_index: u32,
+    object_states: [VulkanShaderObjectState; VULKAN_MAX_OBJECT_COUNT],
 }
 
 impl<'a> VulkanObjectShader<'a> {
@@ -114,6 +135,59 @@ impl<'a> VulkanObjectShader<'a> {
             }
         };
 
+        let descriptor_types: [DescriptorType; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] =
+            [DescriptorType::UNIFORM_BUFFER];
+
+        let mut bindings: [DescriptorSetLayoutBinding; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] =
+            unsafe { std::mem::zeroed() };
+
+        for i in 0..VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT {
+            bindings[i] = DescriptorSetLayoutBinding::default()
+                .binding(i as u32)
+                .descriptor_count(1)
+                .descriptor_type(descriptor_types[i])
+                .stage_flags(ShaderStageFlags::FRAGMENT);
+        }
+
+        let layout_info = DescriptorSetLayoutCreateInfo::default().bindings(&bindings);
+
+        let object_descriptor_layout = unsafe {
+            match device
+                .device
+                .create_descriptor_set_layout(&layout_info, None)
+            {
+                Ok(d) => d,
+                Err(_) => {
+                    return Err(VulkanError::OperationFailed(
+                        "could not create object descriptor layout",
+                    )
+                    .into());
+                }
+            }
+        };
+
+        let mut object_pool_sizes: [DescriptorPoolSize; 1] = [DescriptorPoolSize::default(); 1];
+        object_pool_sizes[0].descriptor_count = VULKAN_MAX_OBJECT_COUNT as u32;
+        object_pool_sizes[0].ty = DescriptorType::UNIFORM_BUFFER;
+
+        let object_pool_info = DescriptorPoolCreateInfo::default()
+            .pool_sizes(&object_pool_sizes)
+            .max_sets(VULKAN_MAX_OBJECT_COUNT as u32);
+
+        let object_descriptor_pool = unsafe {
+            match device
+                .device
+                .create_descriptor_pool(&object_pool_info, None)
+            {
+                Ok(p) => p,
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not create descriptor pool").into(),
+                    );
+                }
+            }
+        };
+
         let viewport = Viewport::default()
             .x(0.0)
             .y(height as f32)
@@ -145,9 +219,9 @@ impl<'a> VulkanObjectShader<'a> {
             offset += sizes[i];
         }
 
-        const DESCRIPTOR_SET_LAYOUT_COUNT: usize = 1;
+        const DESCRIPTOR_SET_LAYOUT_COUNT: usize = 2;
         let layouts: [DescriptorSetLayout; DESCRIPTOR_SET_LAYOUT_COUNT] =
-            [global_descritpor_set_layout];
+            [global_descritpor_set_layout, object_descriptor_layout];
 
         let mut stage_create_infos: [PipelineShaderStageCreateInfo; OBJECT_SHADER_STAGE_COUNT] =
             unsafe { std::mem::zeroed() };
@@ -208,6 +282,17 @@ impl<'a> VulkanObjectShader<'a> {
             padding: [Matrix4::identity(), Matrix4::identity()],
         };
 
+        let object_buffer = VulkanBuffer::create(
+            instance,
+            device,
+            (size_of::<UniformObject>() as u64) * max_frames as u64,
+            BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::UNIFORM_BUFFER,
+            MemoryPropertyFlags::DEVICE_LOCAL
+                | MemoryPropertyFlags::HOST_VISIBLE
+                | MemoryPropertyFlags::HOST_COHERENT,
+            true,
+        )?;
+
         Ok(Self {
             stages: shader_stages,
             pipeline: pipeline,
@@ -216,6 +301,16 @@ impl<'a> VulkanObjectShader<'a> {
             global_uniform_buffer: global_buffer,
             global_ubo: ubo,
             global_descriptor_set_layout: global_descritpor_set_layout,
+            object_descriptor_pool: object_descriptor_pool,
+            object_descriptor_set_layout: object_descriptor_layout,
+            object_uniform_buffer: object_buffer,
+            object_uniform_buffer_index: 0,
+            object_states: [VulkanShaderObjectState {
+                descriptor_sets: [DescriptorSet::default(); 3],
+                descriptor_states: [VulkanDescriptorState {
+                    generations: [INVALID_ID; 3],
+                }; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT],
+            }; VULKAN_MAX_OBJECT_COUNT],
         })
     }
     fn create_shader_module(
@@ -281,12 +376,13 @@ impl<'a> VulkanObjectShader<'a> {
     }
 
     pub fn update_object(
-        &self,
+        &mut self,
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
         image_index: u32,
-        model: Matrix4,
-    ) {
+        data: GeometryRenderData,
+        delta: f32,
+    ) -> Result<()> {
         let cmd_buf = command_buffer.command_buffer[image_index as usize];
         unsafe {
             device.device.cmd_push_constants(
@@ -295,11 +391,76 @@ impl<'a> VulkanObjectShader<'a> {
                 ShaderStageFlags::VERTEX,
                 0,
                 std::slice::from_raw_parts(
-                    &model as *const Matrix4 as *const u8,
+                    &data.model as *const Matrix4 as *const u8,
                     size_of::<Matrix4>(),
                 ),
             );
         }
+
+        let object_state = &mut self.object_states[data.object_id];
+        let object_descriptor = object_state.descriptor_sets[image_index as usize];
+
+        let mut descriptor_writes: [WriteDescriptorSet; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] =
+            [WriteDescriptorSet::default(); VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT];
+
+        //let mut descriptor_count = 0;
+        let descriptor_index = 0;
+
+        let range = size_of::<UniformObject>();
+        let offset = size_of::<UniformObject>() * data.object_id;
+        let mut obo = UniformObject {
+            diffuse_color: Vec4::new_zeroes(),
+            padding: [Vec4::new_zeroes(); 3],
+        };
+
+        static mut ACCUMULATOR: f32 = 0.0;
+        unsafe {
+            ACCUMULATOR += 0.01;
+        }
+        let s = unsafe { (ACCUMULATOR.sin() + 1.0) / 2.0 };
+        obo.diffuse_color = Vec4::new(s, s, s, 1.0);
+
+        self.object_uniform_buffer.load_data(
+            device,
+            offset as u64,
+            range as u64,
+            MemoryMapFlags::empty(),
+            std::slice::from_ref(&obo),
+        )?;
+
+        if object_state.descriptor_states[descriptor_index].generations[image_index as usize]
+            == INVALID_ID
+        {
+            let buffer_info = DescriptorBufferInfo::default()
+                .buffer(self.object_uniform_buffer.buffer)
+                .offset(offset as u64)
+                .range(range as u64);
+            let descriptor = WriteDescriptorSet::default()
+                .buffer_info(std::slice::from_ref(&buffer_info))
+                .dst_set(object_descriptor)
+                .dst_binding(descriptor_index as u32)
+                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1);
+            descriptor_writes[0] = descriptor;
+            //descriptor_count += 1;
+            object_state.descriptor_states[descriptor_index].generations[image_index as usize] = 1;
+            unsafe {
+                device
+                    .device
+                    .update_descriptor_sets(&descriptor_writes, &[]);
+            }
+        }
+        unsafe {
+            device.device.cmd_bind_descriptor_sets(
+                command_buffer.command_buffer[image_index as usize],
+                PipelineBindPoint::GRAPHICS,
+                self.pipeline.layout,
+                1,
+                std::slice::from_ref(&object_descriptor),
+                &[],
+            );
+        }
+        Ok(())
     }
 
     pub fn update_global_state(
@@ -307,6 +468,7 @@ impl<'a> VulkanObjectShader<'a> {
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
         current_frame: u32,
+        _delta: f32,
     ) -> Result<()> {
         let cmd_buf = command_buffer.command_buffer[current_frame as usize];
         let global_descriptor = self.global_descriptor_sets[current_frame as usize];
@@ -353,7 +515,66 @@ impl<'a> VulkanObjectShader<'a> {
         Ok(())
     }
 
+    pub fn acquire_resources(&mut self, device: &VulkanDevice, object_id: &mut u32) -> Result<()> {
+        *object_id = self.object_uniform_buffer_index;
+        self.object_uniform_buffer_index += 1;
+        let obj_id = *object_id;
+
+        let layouts = [self.object_descriptor_set_layout; 3];
+        let object_state = &mut self.object_states[obj_id as usize];
+        let alloc_info = DescriptorSetAllocateInfo::default()
+            .descriptor_pool(self.object_descriptor_pool)
+            .set_layouts(&layouts);
+        object_state.descriptor_sets = unsafe {
+            match device.device.allocate_descriptor_sets(&alloc_info) {
+                Ok(ds) => ds.as_slice().try_into().unwrap(),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not allocate descriptor sets").into(),
+                    );
+                }
+            }
+        };
+        Ok(())
+    }
+
+    pub fn release_resources(&mut self, device: &VulkanDevice, object_id: u32) -> Result<()> {
+        let object_state = &mut self.object_states[object_id as usize];
+
+        unsafe {
+            match device
+                .device
+                .free_descriptor_sets(self.object_descriptor_pool, &object_state.descriptor_sets)
+            {
+                Ok(_) => (),
+                Err(_) => {
+                    return Err(
+                        VulkanError::OperationFailed("could not free descriptor sets").into(),
+                    );
+                }
+            }
+        }
+
+        object_state.descriptor_states[object_id as usize]
+            .generations
+            .iter_mut()
+            .map(|i| *i = INVALID_ID)
+            .count();
+
+        Ok(())
+    }
+
     pub fn destroy(&self, device: &VulkanDevice) {
+        unsafe {
+            device
+                .device
+                .destroy_descriptor_pool(self.object_descriptor_pool, None);
+            device
+                .device
+                .destroy_descriptor_set_layout(self.object_descriptor_set_layout, None);
+        }
+        self.object_uniform_buffer.destroy(device);
+
         self.global_uniform_buffer.destroy(device);
         self.pipeline.destroy(device);
         unsafe {

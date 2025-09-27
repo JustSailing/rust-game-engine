@@ -40,9 +40,7 @@ impl VulkanBuffer {
             match device.device.create_buffer(&buffer_create_info, None) {
                 Ok(b) => b,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create buffer").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not create buffer").into());
                 }
             }
         };
@@ -68,9 +66,7 @@ impl VulkanBuffer {
             match device.device.allocate_memory(&allocate_info, None) {
                 Ok(m) => m,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not allocate memory").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not allocate memory").into());
                 }
             }
         };
@@ -117,9 +113,7 @@ impl VulkanBuffer {
             match device.device.create_buffer(&buffer_create_info, None) {
                 Ok(b) => b,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("failed to create buffer").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("failed to create buffer").into());
                 }
             }
         };
@@ -134,9 +128,7 @@ impl VulkanBuffer {
             match device.device.allocate_memory(&memory_info, None) {
                 Ok(m) => m,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not allocate memory").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not allocate memory").into());
                 }
             }
         };
@@ -145,9 +137,7 @@ impl VulkanBuffer {
             match device.device.bind_buffer_memory(new_buffer, new_memory, 0) {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not bind new memory").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not bind new memory").into());
                 }
             }
         }
@@ -184,9 +174,7 @@ impl VulkanBuffer {
                 .bind_buffer_memory(self.buffer, self.memory, offset)
         } {
             Ok(_) => Ok(()),
-            Err(_) => {
-                Err(VulkanError::OperationFailed("could not bind buffer memory").into())
-            }
+            Err(_) => Err(VulkanError::OperationFailed("could not bind buffer memory").into()),
         }
     }
 

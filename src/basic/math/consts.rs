@@ -14,6 +14,7 @@ pub const FLOAT_EPSILON: f32 = 1.192092896e-07;
 pub const INFINITY: f32 = 1e30;
 pub const SEC_TO_MS_MULTIPLIER: f32 = 1000.0;
 pub const MS_TO_SEC_MULTIPLIER: f32 = 0.001;
+pub const INVALID_ID: usize = usize::MAX;
 
 pub fn deg_to_rad(degrees: f32) -> f32 {
     degrees * DEG2RAD_MULTIPLIER

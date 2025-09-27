@@ -1,14 +1,17 @@
 use super::{
     vulkan_backend::{Error as VulkanError, VulkanContext},
+    vulkan_buffer::VulkanBuffer,
+    vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
 };
 use ash::{
     Instance,
     vk::{
-        DeviceMemory, Extent3D, Format, Image, ImageAspectFlags, ImageCreateInfo, ImageLayout,
+        AccessFlags, BufferImageCopy, DependencyFlags, DeviceMemory, Extent3D, Format, Image,
+        ImageAspectFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
         ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
         ImageViewCreateInfo, ImageViewType, MemoryAllocateInfo, MemoryPropertyFlags,
-        SampleCountFlags, SharingMode,
+        PipelineStageFlags, SampleCountFlags, SharingMode,
     },
 };
 
@@ -51,9 +54,7 @@ impl VulkanImage {
             match device.device.create_image(&image_create_info, None) {
                 Ok(i) => i,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create image").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not create image").into());
                 }
             }
         };
@@ -91,10 +92,9 @@ impl VulkanImage {
             match device.device.bind_image_memory(image, device_memory, 0) {
                 Ok(_) => (),
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not bind memory for image",
-                    )
-                    .into());
+                    return Err(
+                        VulkanError::OperationFailed("could not bind memory for image").into(),
+                    );
                 }
             }
         };
@@ -140,11 +140,106 @@ impl VulkanImage {
         unsafe {
             match device.device.create_image_view(&view_create_info, None) {
                 Ok(v) => Ok(v),
-                Err(_) => {
-                    Err(VulkanError::OperationFailed("could not create image view").into())
-                }
+                Err(_) => Err(VulkanError::OperationFailed("could not create image view").into()),
             }
         }
+    }
+
+    pub fn transition_layout(
+        &self,
+        device: &VulkanDevice,
+        command_buffer: &VulkanCommandBuffer,
+        format: Format,
+        old_layout: ImageLayout,
+        new_layout: ImageLayout,
+        index: usize,
+    ) -> Result<()> {
+        let mut barrier = ImageMemoryBarrier::default()
+            .old_layout(old_layout)
+            .new_layout(new_layout)
+            .src_queue_family_index(device.graphics_queue_index as u32)
+            .dst_queue_family_index(device.graphics_queue_index as u32)
+            .image(self.image)
+            .subresource_range(
+                ImageSubresourceRange::default()
+                    .aspect_mask(ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1),
+            );
+
+        let mut source_stage = PipelineStageFlags::empty();
+        let mut dest_stage = PipelineStageFlags::empty();
+
+        if old_layout == ImageLayout::UNDEFINED && new_layout == ImageLayout::TRANSFER_DST_OPTIMAL {
+            barrier.src_access_mask = AccessFlags::empty();
+            barrier.dst_access_mask = AccessFlags::TRANSFER_WRITE;
+
+            source_stage = PipelineStageFlags::TOP_OF_PIPE;
+
+            dest_stage = PipelineStageFlags::TRANSFER;
+        } else if old_layout == ImageLayout::TRANSFER_DST_OPTIMAL
+            && new_layout == ImageLayout::SHADER_READ_ONLY_OPTIMAL
+        {
+            barrier.src_access_mask = AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = AccessFlags::SHADER_READ;
+
+            source_stage = PipelineStageFlags::TRANSFER;
+            dest_stage = PipelineStageFlags::FRAGMENT_SHADER;
+        } else {
+            return Err(VulkanError::OperationFailed("unsupported transition").into());
+        }
+
+        unsafe {
+            device.device.cmd_pipeline_barrier(
+                command_buffer.command_buffer[index],
+                source_stage,
+                dest_stage,
+                DependencyFlags::empty(),
+                &[],
+                &[],
+                std::slice::from_ref(&barrier),
+            )
+        };
+
+        Ok(())
+    }
+
+    pub fn copy_from_buffer(
+        &self,
+        device: &VulkanDevice,
+        buffer: &VulkanBuffer,
+        command_buffer: &VulkanCommandBuffer,
+        index: usize,
+    ) {
+        let region = BufferImageCopy::default()
+            .buffer_offset(0)
+            .buffer_row_length(0)
+            .buffer_image_height(0)
+            .image_subresource(
+                ImageSubresourceLayers::default()
+                    .aspect_mask(ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(0),
+            )
+            .image_extent(
+                Extent3D::default()
+                    .width(self.width)
+                    .height(self.height)
+                    .depth(1),
+            );
+
+        unsafe {
+            device.device.cmd_copy_buffer_to_image(
+                command_buffer.command_buffer[index],
+                buffer.buffer,
+                self.image,
+                ImageLayout::TRANSFER_DST_OPTIMAL,
+                std::slice::from_ref(&region),
+            )
+        };
     }
 
     pub fn destroy(&self, device: &VulkanDevice) {

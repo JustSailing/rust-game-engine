@@ -1,13 +1,16 @@
-#[path = "./vulkan/mod.rs"]
-mod vulkan;
+use crate::application::{
+    basic::math::consts::INVALID_ID, renderer::vulkan::vulkan_backend::VulkanContext,
+};
+
+use super::resources::resource_types::Texture;
 
 use std::{error::Error, fmt};
-use vulkan::vulkan_backend::VulkanContext;
 
 use crate::application::basic::{
     math::{consts::deg_to_rad, matrix4::Matrix4, vec3::Vec3, vec4::Quat, vec4::Vec4},
     window::Window,
 };
+
 pub enum RendererBackendType {
     Vulkan,
     OpenGL,
@@ -20,6 +23,19 @@ pub struct GlobalUniformObj {
     pub projection: Matrix4,
     pub view: Matrix4,
     pub padding: [Matrix4; 2], // for NVidia cards
+}
+
+#[derive(Clone, Copy)]
+#[repr(C, align(16))]
+pub struct UniformObject {
+    pub diffuse_color: Vec4,
+    pub padding: [Vec4; 3],
+}
+
+pub struct GeometryRenderData<'a> {
+    pub object_id: usize,
+    pub model: Matrix4,
+    pub textures: [Option<&'a Texture>; 16],
 }
 
 pub struct RendererPacket {
@@ -40,8 +56,19 @@ pub struct RendererBackend {
         ambient_colour: Vec4,
         mode: i32,
     ) -> Result<()>,
-    update_object: fn(model: Matrix4) -> Result<()>,
+    update_object: fn(data: GeometryRenderData) -> Result<()>,
+    create_texture: fn(
+        name: &str,
+        auto_realease: bool,
+        width: i32,
+        height: i32,
+        channel_count: i32,
+        pixels: &[u8],
+        has_transparency: bool,
+    ) -> Result<Texture>,
+    destroy_texture: fn(texture: &Texture) -> Result<()>,
     end_frame: fn(delta_time: f32) -> Result<()>,
+
     projection: Matrix4,
     view: Matrix4,
     far_clip: f32,
@@ -131,6 +158,20 @@ impl FrontendRenderer {
         }
     }
 
+    pub fn create_texture(
+        name: &str,
+        auto_realease: bool,
+        width: i32,
+        height: i32,
+        channel_count: i32,
+        pixels: *const u8,
+        has_transparency: bool,
+    ) -> Result<Texture> {
+        Err(FrontendRendererError::OperationFailed("").into())
+    }
+
+    pub fn destroy_texture(texture: &Texture) {}
+
     pub fn end_frame(delta: f32) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
@@ -169,7 +210,12 @@ impl FrontendRenderer {
         let rotation = unsafe { Quat::from_axis_angle(Vec3::new_forward(), ANGLE, false) };
         let model = Quat::to_rotation_matrix(rotation, Vec3::new_zeroes());
         // let model = Matrix4::identity();
-        (state.update_object)(model)?;
+        let data = GeometryRenderData {
+            object_id: 0,
+            model,
+            textures: [None; 16],
+        };
+        (state.update_object)(data)?;
 
         FrontendRenderer::end_frame(packet.delta_time)?;
         Ok(())
@@ -221,6 +267,8 @@ impl FrontendRenderer {
                     view: Matrix4::translation(&Vec3::new(0.0, 0.0, -30.0)),
                     far_clip: 1000.0,
                     near_clip: 0.1,
+                    create_texture: VulkanContext::create_texture,
+                    destroy_texture: VulkanContext::destroy_texture,
                 })
             }
         }

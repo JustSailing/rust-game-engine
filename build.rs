@@ -1,3 +1,4 @@
+use core::panic;
 use std::process::Command;
 
 fn main() {
@@ -20,5 +21,6 @@ fn compile_shaders() {
     if !output.success() {
         eprintln!("Bash script execution failed!");
         // You might want to panic! here to stop the build
+        panic!()
     }
 }

@@ -216,10 +216,9 @@ impl VulkanDevice {
             match surface_loader.get_physical_device_surface_capabilities(*phys_dev, *surface) {
                 Ok(c) => c,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not get surface capabilities",
-                    )
-                    .into());
+                    return Err(
+                        VulkanError::OperationFailed("could not get surface capabilities").into(),
+                    );
                 }
             }
         };
@@ -227,10 +226,9 @@ impl VulkanDevice {
             match surface_loader.get_physical_device_surface_formats(*phys_dev, *surface) {
                 Ok(f) => f,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not get surface formats",
-                    )
-                    .into());
+                    return Err(
+                        VulkanError::OperationFailed("could not get surface formats").into(),
+                    );
                 }
             }
         };
@@ -238,9 +236,7 @@ impl VulkanDevice {
             match surface_loader.get_physical_device_surface_present_modes(*phys_dev, *surface) {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not get present modes").into(),
-                    );
+                    return Err(VulkanError::OperationFailed("could not get present modes").into());
                 }
             }
         };
@@ -315,9 +311,7 @@ impl VulkanDevice {
         let name = match dev_properties.device_name_as_c_str() {
             Ok(s) => s.to_str().unwrap_or("could not convert cstr to str"),
             Err(_) => {
-                return Err(
-                    VulkanError::OperationFailed("Could not get device name").into(),
-                );
+                return Err(VulkanError::OperationFailed("Could not get device name").into());
             }
         };
         println!(
@@ -356,10 +350,9 @@ impl VulkanDevice {
             match instance.enumerate_device_extension_properties(*phys_dev) {
                 Ok(ext) => ext,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not get extension properties",
-                    )
-                    .into());
+                    return Err(
+                        VulkanError::OperationFailed("could not get extension properties").into(),
+                    );
                 }
             }
         };
@@ -370,10 +363,9 @@ impl VulkanDevice {
                 let name = match ext.extension_name_as_c_str() {
                     Ok(e) => e,
                     Err(_) => {
-                        return Err(VulkanError::OperationFailed(
-                            "could not get extension name",
-                        )
-                        .into());
+                        return Err(
+                            VulkanError::OperationFailed("could not get extension name").into()
+                        );
                     }
                 };
                 if *req == name {

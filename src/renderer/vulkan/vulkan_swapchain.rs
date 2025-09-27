@@ -508,7 +508,9 @@ impl VulkanSwapchain {
         };
         match res {
             Ok((index, _)) => return Ok((false, index)),
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => return Ok((true, 0)),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
+                return Ok((true, 0));
+            }
             Err(_) => {
                 return Err(VulkanError::OperationFailed("failure to acqurie next image").into());
             }
