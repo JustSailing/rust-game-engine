@@ -1,4 +1,4 @@
-use super::consts::FLOAT_EPSILON;
+use super::{consts::FLOAT_EPSILON, vec2::Vec2};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone, Copy, Debug)]
@@ -202,6 +202,8 @@ impl PartialEq for Vec3 {
 }
 
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct Vector3D {
     pub position: Vec3,
+    pub texcoord: Vec2,
 }

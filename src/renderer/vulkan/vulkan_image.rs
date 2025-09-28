@@ -222,7 +222,7 @@ impl VulkanImage {
                     .aspect_mask(ImageAspectFlags::COLOR)
                     .mip_level(0)
                     .base_array_layer(0)
-                    .layer_count(0),
+                    .layer_count(1),
             )
             .image_extent(
                 Extent3D::default()

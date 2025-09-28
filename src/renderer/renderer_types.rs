@@ -1,6 +1,4 @@
-use crate::application::{
-    basic::math::consts::INVALID_ID, renderer::vulkan::vulkan_backend::VulkanContext,
-};
+use crate::application::renderer::vulkan::vulkan_backend::VulkanContext;
 
 use super::resources::resource_types::Texture;
 
@@ -73,6 +71,7 @@ pub struct RendererBackend {
     view: Matrix4,
     far_clip: f32,
     near_clip: f32,
+    default_texture: Option<Texture>,
 }
 
 static mut RENDERER_BACKEND: Option<RendererBackend> = None;
@@ -128,8 +127,34 @@ impl FrontendRenderer {
             } else {
                 FrontendRenderer::create_renderer_backend(&RendererBackendType::Vulkan)?;
             }
-            if let Some(ref state) = RENDERER_BACKEND {
-                (state.initialize)(app_name, window)
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                (state.initialize)(app_name, window)?;
+                const TEX_DIMENSION: u8 = 255;
+                const CHANNELS: u8 = 4;
+                const PIXEL_COUNT: usize = TEX_DIMENSION as usize * TEX_DIMENSION as usize;
+                let mut pixels = [255u8; PIXEL_COUNT * CHANNELS as usize];
+                let width = CHANNELS;
+                let height: usize = pixels.len() / CHANNELS as usize;
+                for row in (0..height).step_by(4) {
+                    for col in (0..width as usize).step_by(4) {
+                        let index = (row * width as usize) + col;
+
+                        pixels[index + 0] = 0;
+                        pixels[index + 1] = 0;
+                    }
+                }
+
+                let texture = Self::create_texture(
+                    "default",
+                    false,
+                    TEX_DIMENSION as i32,
+                    TEX_DIMENSION as i32,
+                    CHANNELS as i32,
+                    &pixels,
+                    false,
+                )?;
+                state.default_texture = Some(texture);
+                Ok(())
             } else {
                 return Err(FrontendRendererError::NotInitialized.into());
             }
@@ -164,13 +189,35 @@ impl FrontendRenderer {
         width: i32,
         height: i32,
         channel_count: i32,
-        pixels: *const u8,
+        pixels: &[u8],
         has_transparency: bool,
     ) -> Result<Texture> {
-        Err(FrontendRendererError::OperationFailed("").into())
+        unsafe {
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                (state.create_texture)(
+                    name,
+                    auto_realease,
+                    width,
+                    height,
+                    channel_count,
+                    pixels,
+                    has_transparency,
+                )
+            } else {
+                return Err(FrontendRendererError::NotInitialized.into());
+            }
+        }
     }
 
-    pub fn destroy_texture(texture: &Texture) {}
+    pub fn destroy_texture(texture: &Texture) -> Result<()> {
+        unsafe {
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                (state.destroy_texture)(&texture)
+            } else {
+                return Err(FrontendRendererError::NotInitialized.into());
+            }
+        }
+    }
 
     pub fn end_frame(delta: f32) -> Result<()> {
         unsafe {
@@ -210,11 +257,12 @@ impl FrontendRenderer {
         let rotation = unsafe { Quat::from_axis_angle(Vec3::new_forward(), ANGLE, false) };
         let model = Quat::to_rotation_matrix(rotation, Vec3::new_zeroes());
         // let model = Matrix4::identity();
-        let data = GeometryRenderData {
+        let mut data = GeometryRenderData {
             object_id: 0,
             model,
             textures: [None; 16],
         };
+        data.textures[0] = state.default_texture.as_ref();
         (state.update_object)(data)?;
 
         FrontendRenderer::end_frame(packet.delta_time)?;
@@ -269,6 +317,7 @@ impl FrontendRenderer {
                     near_clip: 0.1,
                     create_texture: VulkanContext::create_texture,
                     destroy_texture: VulkanContext::destroy_texture,
+                    default_texture: None,
                 })
             }
         }
@@ -278,6 +327,7 @@ impl FrontendRenderer {
     fn destroy_renderer_backend() -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
+                Self::destroy_texture(state.default_texture.as_ref().unwrap())?;
                 Ok((state.shutdown)()?)
             } else {
                 return Err(FrontendRendererError::NotInitialized.into());

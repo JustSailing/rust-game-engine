@@ -12,6 +12,7 @@ use crate::application::basic::{
     math::{
         consts::INVALID_ID,
         matrix4::Matrix4,
+        vec2::Vec2,
         vec3::{Vec3, Vector3D},
         vec4::Vec4,
     },
@@ -233,15 +234,19 @@ impl<'a> VulkanContext<'a> {
         let verts: [Vector3D; VERT_COUNT] = [
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(0.0, 0.0),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(1.0, 1.0),
             },
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(0.0, 1.0),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(1.0, 0.0),
             },
         ];
 
