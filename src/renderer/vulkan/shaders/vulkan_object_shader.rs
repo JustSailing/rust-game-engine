@@ -4,7 +4,7 @@ use ash::{
         BufferUsageFlags, DescriptorBufferInfo, DescriptorImageInfo, DescriptorPool,
         DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
         DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
-        DescriptorType, Extent2D, Format, Image, ImageLayout, MemoryMapFlags, MemoryPropertyFlags,
+        DescriptorType, Extent2D, Format, ImageLayout, MemoryMapFlags, MemoryPropertyFlags,
         Offset2D, PipelineBindPoint, PipelineShaderStageCreateInfo, Rect2D, ShaderModule,
         ShaderModuleCreateInfo, ShaderStageFlags, VertexInputAttributeDescription, Viewport,
         WriteDescriptorSet,
@@ -23,6 +23,8 @@ use crate::application::basic::{
 use crate::application::renderer::renderer_types::{
     GeometryRenderData, GlobalUniformObj, UniformObject,
 };
+
+use crate::application::renderer::resources::resource_types::Texture;
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -51,6 +53,7 @@ struct VulkanShaderStage<'a> {
 pub struct VulkanObjectShader<'a> {
     stages: [VulkanShaderStage<'a>; OBJECT_SHADER_STAGE_COUNT],
     pipeline: VulkanPipeline,
+    default_diffuse: Option<Texture>,
     global_descriptor_set_layout: DescriptorSetLayout,
     global_descriptor_pool: DescriptorPool,
     global_descriptor_sets: Vec<DescriptorSet>,
@@ -71,6 +74,7 @@ impl<'a> VulkanObjectShader<'a> {
         width: u32,
         height: u32,
         max_frames: u32,
+        //default_diffuse: Option<&'a Texture>,
     ) -> Result<Self> {
         let stage_type_strs = ["vert", "frag"];
         let mut shader_stages: [VulkanShaderStage; OBJECT_SHADER_STAGE_COUNT] =
@@ -296,9 +300,7 @@ impl<'a> VulkanObjectShader<'a> {
             device,
             (size_of::<UniformObject>() as u64) * max_frames as u64,
             BufferUsageFlags::TRANSFER_DST | BufferUsageFlags::UNIFORM_BUFFER,
-            MemoryPropertyFlags::DEVICE_LOCAL
-                | MemoryPropertyFlags::HOST_VISIBLE
-                | MemoryPropertyFlags::HOST_COHERENT,
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
             true,
         )?;
 
@@ -320,8 +322,14 @@ impl<'a> VulkanObjectShader<'a> {
                     generations: [INVALID_ID; 3],
                 }; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT],
             }; VULKAN_MAX_OBJECT_COUNT],
+            default_diffuse: None,
         })
     }
+
+    pub fn set_default_diffuse(&mut self, texture: &Texture) {
+        self.default_diffuse = Some(*texture);
+    }
+
     fn create_shader_module(
         device: &VulkanDevice,
         name: &str,
@@ -389,7 +397,7 @@ impl<'a> VulkanObjectShader<'a> {
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
         image_index: u32,
-        data: GeometryRenderData,
+        data: &mut GeometryRenderData,
         delta: f32,
     ) -> Result<()> {
         let cmd_buf = command_buffer.command_buffer[image_index as usize];
@@ -450,7 +458,7 @@ impl<'a> VulkanObjectShader<'a> {
                 .dst_binding(descriptor_index as u32)
                 .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                 .descriptor_count(1);
-            descriptor_writes[0] = descriptor;
+            descriptor_writes[descriptor_count] = descriptor;
             descriptor_count += 1;
             object_state.descriptor_states[descriptor_index].generations[image_index as usize] = 1;
         }
@@ -459,10 +467,10 @@ impl<'a> VulkanObjectShader<'a> {
         const SAMPLER_COUNT: usize = 1;
         let mut image_info = [DescriptorImageInfo::default(); SAMPLER_COUNT];
         for (i, d) in image_info.iter_mut().enumerate() {
-            let texture = if let Some(t) = data.textures[i] {
-                t
-            } else {
-                continue;
+            let mut data = *data.textures[i].borrow_mut();
+            let texture = match data {
+                Some(ref mut t) => t,
+                None => continue,
             };
             let descriptor_generaton = &mut object_state.descriptor_states[descriptor_index]
                 .generations[image_index as usize];
@@ -483,12 +491,21 @@ impl<'a> VulkanObjectShader<'a> {
                 descriptor_count += 1;
                 if texture.generation != INVALID_ID as u32 {
                     *descriptor_generaton = texture.generation as usize;
+                } else {
+                    texture.generation = *descriptor_generaton as u32;
                 }
                 descriptor_index += 1;
             }
         }
 
-        if descriptor_count > 0 {
+        if descriptor_count == 1 {
+            unsafe {
+                device.device.update_descriptor_sets(
+                    std::slice::from_ref(&descriptor_writes.first().unwrap()),
+                    &[],
+                );
+            }
+        } else if descriptor_count == 2 {
             unsafe {
                 device
                     .device

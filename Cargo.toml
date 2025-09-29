@@ -8,6 +8,7 @@ dead_code ="allow"
 
 [dependencies]
 ash = {version = "0.38.0", features = ["linked"]}
+image = "0.25.8"
 libc = "0.2.175"
 x11 = "2.21.0"
 

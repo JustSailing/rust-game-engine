@@ -195,31 +195,32 @@ impl ApplicationState {
         const FPS: u64 = 60;
         const FRAME_DURATION: Duration = Duration::from_micros(1_000_000 / FPS);
         let mut last_frame_time = Instant::now();
+        let mut delta: Duration = Duration::from_micros(0);
         loop {
-            let current_time = Instant::now();
-            let delta = current_time.duration_since(last_frame_time);
-            if !(app_state.game.update)(&mut app_state.game, delta.as_secs_f32()) {
-                return Err(Error::CouldNotUpdateGame.into());
-            }
-
-            if !(app_state.game.render)(&mut app_state.game, delta.as_secs_f32()) {
-                return Err(Error::CouldNotRenderGame.into());
-            }
-
             if app_state.window.get_event()? {
+                let current_time = Instant::now();
+                delta = current_time.duration_since(last_frame_time);
+                if !(app_state.game.update)(&mut app_state.game, delta.as_secs_f32()) {
+                    return Err(Error::CouldNotUpdateGame.into());
+                }
+
+                if !(app_state.game.render)(&mut app_state.game, delta.as_secs_f32()) {
+                    return Err(Error::CouldNotRenderGame.into());
+                }
+
                 let render_packet = RendererPacket {
                     delta_time: delta.as_secs_f32(),
                 };
                 FrontendRenderer::draw_frame(&render_packet)?;
+                let elapsed_since_last_frame = last_frame_time.elapsed();
+                if elapsed_since_last_frame < FRAME_DURATION {
+                    thread::sleep(FRAME_DURATION - elapsed_since_last_frame);
+                }
+                InputState::update(delta.as_secs_f32())?;
+                last_frame_time = Instant::now();
             } else {
                 break;
             }
-            let elapsed_since_last_frame = last_frame_time.elapsed();
-            if elapsed_since_last_frame < FRAME_DURATION {
-                thread::sleep(FRAME_DURATION - elapsed_since_last_frame);
-            }
-            InputState::update(delta.as_secs_f32())?;
-            last_frame_time = Instant::now();
         }
         Ok(())
     }

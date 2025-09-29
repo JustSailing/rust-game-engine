@@ -31,6 +31,7 @@ pub enum EventCodes {
     MouseMoved = 0x06,
     MouseWheel = 0x07,
     WindowResized = 0x08,
+    Debug0 = 0x15,
     //Dont touch
     MaxCodes,
 }
@@ -46,6 +47,8 @@ impl From<usize> for EventCodes {
             0x06 => EventCodes::MouseMoved,
             0x07 => EventCodes::MouseWheel,
             0x08 => EventCodes::WindowResized,
+
+            0x15 => EventCodes::Debug0,
             _ => EventCodes::MaxCodes,
         }
     }

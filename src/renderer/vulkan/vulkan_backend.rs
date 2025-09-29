@@ -542,7 +542,7 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
-    pub fn update_object(data: GeometryRenderData) -> Result<()> {
+    pub fn update_object(data: &mut GeometryRenderData) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
@@ -594,9 +594,9 @@ impl<'a> VulkanContext<'a> {
     pub fn create_texture(
         name: &str,
         auto_realease: bool,
-        width: i32,
-        height: i32,
-        channel_count: i32,
+        width: u32,
+        height: u32,
+        channel_count: u32,
         pixels: &[u8],
         has_transparency: bool,
     ) -> Result<Texture> {
@@ -710,12 +710,24 @@ impl<'a> VulkanContext<'a> {
             height: height as u32,
             channel_count: channel_count as u8,
             has_transparency,
-            generation: 1,
-            internal_data: Box::new(TextureData {
+            generation: 0,
+            internal_data: TextureData {
                 image: image,
                 sampler: sampler,
-            }),
+            },
         })
+    }
+
+    pub fn set_default_diffuse(texture: &Texture) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+        state.object_shader.set_default_diffuse(texture);
+        Ok(())
     }
 
     pub fn destroy_texture(texture: &Texture) -> Result<()> {

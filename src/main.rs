@@ -1,10 +1,13 @@
 mod application;
+use std::ptr;
+
 use application::basic::{
     input::InputState, math::consts::deg_to_rad, math::matrix4::Matrix4, math::vec3::Vec3,
     window::Key,
 };
 use application::{AppConfig, ApplicationState, Error as AppError};
 
+use crate::application::basic::event::{EventCodes, EventCtx};
 use crate::application::renderer::renderer_types::FrontendRenderer;
 
 fn main() -> Result<(), AppError> {
@@ -79,6 +82,16 @@ pub fn game_update(game: &mut Game, delta: f32) -> bool {
 
     if InputState::is_key_down(Key::S).unwrap() {
         camera_pitch(&mut game.state, -1.0 * delta * movement);
+    }
+
+    if InputState::is_key_down(Key::T).unwrap() {
+        let ctx: EventCtx = EventCtx::I32([0; 4]);
+        let _ = FrontendRenderer::on_event_debug(
+            EventCodes::Debug0 as usize,
+            ptr::null(),
+            ptr::null(),
+            &ctx,
+        );
     }
 
     recalculate_view(&mut game.state);
