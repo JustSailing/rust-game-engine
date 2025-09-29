@@ -150,7 +150,7 @@ impl VulkanImage {
         &self,
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
-        format: Format,
+        _format: Format,
         old_layout: ImageLayout,
         new_layout: ImageLayout,
         index: usize,

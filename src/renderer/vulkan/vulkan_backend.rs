@@ -592,8 +592,8 @@ impl<'a> VulkanContext<'a> {
     }
 
     pub fn create_texture(
-        name: &str,
-        auto_realease: bool,
+        _name: &str,
+        _auto_realease: bool,
         width: u32,
         height: u32,
         channel_count: u32,

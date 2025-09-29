@@ -398,7 +398,7 @@ impl<'a> VulkanObjectShader<'a> {
         command_buffer: &VulkanCommandBuffer,
         image_index: u32,
         data: &mut GeometryRenderData,
-        delta: f32,
+        _delta: f32,
     ) -> Result<()> {
         let cmd_buf = command_buffer.command_buffer[image_index as usize];
         unsafe {

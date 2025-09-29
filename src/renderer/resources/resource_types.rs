@@ -1,4 +1,3 @@
-
 use super::super::vulkan::vulkan_image::VulkanImage;
 use ash::vk::Sampler;
 

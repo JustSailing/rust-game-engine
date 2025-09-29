@@ -260,10 +260,10 @@ impl FrontendRenderer {
     }
 
     pub fn on_event_debug(
-        code: usize,
-        sender: *const std::ffi::c_void,
-        listener: *const std::ffi::c_void,
-        ctx: &EventCtx,
+        _code: usize,
+        _sender: *const std::ffi::c_void,
+        _listener: *const std::ffi::c_void,
+        _ctx: &EventCtx,
     ) -> bool {
         let state = unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
