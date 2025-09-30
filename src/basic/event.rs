@@ -78,14 +78,12 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::AlreadyInitialized => {
-                write!(
-                    f,
-                    "Event State Already Initialized {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
+            Error::AlreadyInitialized => write!(
+                f,
+                "Event State Already Initialized {}  {}",
+                file!(),
+                line!()
+            ),
             Error::NotInitialized => {
                 write!(f, "Event State Not Initialized {}  {}", file!(), line!())
             }
@@ -98,11 +96,11 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-static mut EVENT_STATE: Option<EventState> = None;
-
 pub struct EventState {
     registered: [EventCodeEntry; EventCodes::MaxCodes as usize],
 }
+
+static mut EVENT_STATE: Option<EventState> = None;
 
 impl EventState {
     pub fn initialize() -> Result<()> {

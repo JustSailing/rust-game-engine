@@ -8,7 +8,7 @@ use application::basic::{
 use application::{AppConfig, ApplicationState, Error as AppError};
 
 use crate::application::basic::event::{EventCodes, EventCtx};
-use crate::application::renderer::renderer_types::FrontendRenderer;
+use crate::application::renderer::renderer_types::Renderer;
 
 fn main() -> Result<(), AppError> {
     println!("Hello, world!");
@@ -63,6 +63,7 @@ pub struct Game {
 
 pub fn game_initialize(game: &mut Game) -> bool {
     game.state.camera_position = Vec3::new(0.0, 0.0, -30.0);
+    game.state.camera_euler = Vec3::new_zeroes();
     game.state.view = Matrix4::translation(&game.state.camera_position);
     return true;
 }
@@ -86,17 +87,13 @@ pub fn game_update(game: &mut Game, delta: f32) -> bool {
 
     if InputState::is_key_down(Key::T).unwrap() {
         let ctx: EventCtx = EventCtx::I32([0; 4]);
-        let _ = FrontendRenderer::on_event_debug(
-            EventCodes::Debug0 as usize,
-            ptr::null(),
-            ptr::null(),
-            &ctx,
-        );
+        let _ =
+            Renderer::on_event_debug(EventCodes::Debug0 as usize, ptr::null(), ptr::null(), &ctx);
     }
 
     recalculate_view(&mut game.state);
 
-    match FrontendRenderer::set_view(game.state.view) {
+    match Renderer::set_view(game.state.view) {
         Ok(_) => return true,
         Err(_) => return false,
     }

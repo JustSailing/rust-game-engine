@@ -23,9 +23,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            Error::OperationFailed(e) => {
-                write!(f, "{e} {}  {}", file!(), line!())
-            }
+            Error::OperationFailed(e) => write!(f, "{e} {}  {}", file!(), line!()),
         }
     }
 }

@@ -26,9 +26,7 @@ impl fmt::Display for Error {
             Error::CannotOpen => write!(f, "cannot open file {} {}", file!(), line!()),
             Error::CannotReadln => write!(f, "cannot read line {} {}", file!(), line!()),
             Error::CannotSeek => write!(f, "cannot seek file {} {}", file!(), line!()),
-            Error::CannotWriteToFile => {
-                write!(f, "cannot write to file {} {}", file!(), line!())
-            }
+            Error::CannotWriteToFile => write!(f, "cannot write to file {} {}", file!(), line!()),
             Error::CannotFlushFile => write!(f, "cannot flush file {} {}", file!(), line!()),
         }
     }

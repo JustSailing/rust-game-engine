@@ -3,12 +3,22 @@ pub mod basic;
 #[path = "./renderer/mod.rs"]
 pub mod renderer;
 
+#[path = "./resources/mod.rs"]
+pub mod resources;
+
+#[path = "./systems/mod.rs"]
+pub mod systems;
+
 use crate::Game;
+//use crate::application::systems::texture_system::{TextureSysConfig, TextureSystem};
 
 use basic::event::{EventCodes, EventCtx, EventState};
 use basic::input::InputState;
 use basic::window::Window;
-use renderer::renderer_types::{FrontendRenderer, RendererPacket};
+use renderer::renderer_types::{
+    Renderer, RendererPacket,
+    systems::texture_system::{TextureSysConfig, TextureSystem},
+};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{ffi::c_void, fmt, ptr};
@@ -120,15 +130,15 @@ impl ApplicationState {
                 return Err(Error::AlreadyInitialized.into());
             }
         }
-        let config = game.config;
+        let app_config = game.config;
         let window = Window::create(
-            config.start_pos_x,
-            config.start_pos_y,
-            config.start_width,
-            config.start_height,
+            app_config.start_pos_x,
+            app_config.start_pos_y,
+            app_config.start_width,
+            app_config.start_height,
         )?;
 
-        window.set_title(config.name);
+        window.set_title(app_config.name);
         window.show();
 
         InputState::initialize()?;
@@ -159,7 +169,10 @@ impl ApplicationState {
             application_on_resize,
         )?;
 
-        FrontendRenderer::initialize(config.name, &window)?;
+        Renderer::initialize(app_config.name, &window)?;
+        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
+
+        TextureSystem::initialize(texture_sys_config)?;
 
         if !(game.initialize)(game) {
             return Err(Error::CouldNotInitializeGame.into());
@@ -171,10 +184,10 @@ impl ApplicationState {
                 is_running: false,
                 is_suspended: false,
                 window: window,
-                pos_x: config.start_pos_x,
-                pos_y: config.start_pos_y,
-                width: config.start_width,
-                height: config.start_height,
+                pos_x: app_config.start_pos_x,
+                pos_y: app_config.start_pos_y,
+                width: app_config.start_width,
+                height: app_config.start_height,
             });
         }
 
@@ -210,7 +223,7 @@ impl ApplicationState {
                 let render_packet = RendererPacket {
                     delta_time: delta.as_secs_f32(),
                 };
-                FrontendRenderer::draw_frame(&render_packet)?;
+                Renderer::draw_frame(&render_packet)?;
                 let elapsed_since_last_frame = last_frame_time.elapsed();
                 if elapsed_since_last_frame < frame_duration {
                     thread::sleep(frame_duration - elapsed_since_last_frame);
@@ -241,7 +254,8 @@ impl Drop for ApplicationState {
         unsafe {
             if let Some(ref mut _state) = APP_STATE {
                 // probably log to console
-                let _ = FrontendRenderer::shutdown();
+                let _ = TextureSystem::shutdown();
+                let _ = Renderer::shutdown();
                 let _ = EventState::shutdown();
                 let _ = InputState::shutdown();
             }
@@ -286,7 +300,7 @@ fn application_on_resize(
                 arr[0], arr[1], arr[2], arr[3]
             );
 
-            match FrontendRenderer::on_resize(arr[0], arr[1]) {
+            match Renderer::on_resize(arr[0], arr[1]) {
                 Ok(_) => true,
                 Err(_) => false,
             }

@@ -1,1 +1,1 @@
-pub mod vulkan_object_shader;
+pub mod vulkan_material_shader;

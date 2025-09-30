@@ -1,5 +1,5 @@
 use super::{
-    super::vulkan::shaders::vulkan_object_shader::VulkanObjectShader,
+    super::vulkan::shaders::vulkan_material_shader::VulkanMaterialShader,
     vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
@@ -8,19 +8,18 @@ use super::{
     vulkan_swapchain::VulkanSwapchain,
     vulkan_sync_objects::{InFlightFrames, SyncObjects},
 };
-use crate::application::basic::{
-    math::{
-        consts::INVALID_ID,
-        matrix4::Matrix4,
-        vec2::Vec2,
-        vec3::{Vec3, Vector3D},
-        vec4::Vec4,
+use crate::application::{
+    basic::{
+        math::{
+            consts::INVALID_ID,
+            matrix4::Matrix4,
+            vec2::Vec2,
+            vec3::{Vec3, Vector3D},
+            vec4::Vec4,
+        },
+        window::Window,
     },
-    window::Window,
-};
-
-use crate::application::renderer::{
-    renderer_types::GeometryRenderData,
+    renderer::renderer_types::GeometryRenderData,
     resources::resource_types::{Texture, TextureData},
 };
 
@@ -57,16 +56,12 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::OperationFailed(e) => {
-                write!(f, "{e} {}  {}", file!(), line!())
-            }
+            Error::OperationFailed(e) => write!(f, "{e} {}  {}", file!(), line!()),
         }
     }
 }
 
 impl std::error::Error for Error {}
-
-static mut VULKAN_STATE: Option<VulkanContext> = None;
 
 pub struct VulkanContext<'a> {
     #[cfg(feature = "debug")]
@@ -78,7 +73,7 @@ pub struct VulkanContext<'a> {
     geometry_index_offset: u64,
     object_index_buffer: VulkanBuffer,
     object_vertex_buffer: VulkanBuffer,
-    object_shader: VulkanObjectShader<'a>,
+    material_shader: VulkanMaterialShader<'a>,
     images_in_flight: Vec<Option<&'a SyncObjects>>,
     in_flight_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
@@ -96,6 +91,8 @@ pub struct VulkanContext<'a> {
     surface: SurfaceKHR,
     instance: Instance,
 }
+
+static mut VULKAN_STATE: Option<VulkanContext> = None;
 
 impl<'a> VulkanContext<'a> {
     pub fn initialize(name: &str, window: &Window) -> Result<()> {
@@ -219,7 +216,7 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
-        let mut object_shader = VulkanObjectShader::create(
+        let mut material_shader = VulkanMaterialShader::create(
             &instance,
             &dev,
             &rend_pass,
@@ -276,7 +273,7 @@ impl<'a> VulkanContext<'a> {
         )?;
 
         let mut object_id = 0;
-        object_shader.acquire_resources(&dev, &mut object_id)?;
+        material_shader.acquire_resources(&dev, &mut object_id)?;
 
         #[cfg(feature = "debug")]
         {
@@ -303,7 +300,7 @@ impl<'a> VulkanContext<'a> {
                     geometry_index_offset: 0,
                     object_index_buffer: index_buffer,
                     object_vertex_buffer: vertex_buffer,
-                    object_shader: object_shader,
+                    material_shader: material_shader,
                     images_in_flight: images_in_flight,
                     image_index: 0,
                     recreating_swapchain: false,
@@ -335,7 +332,7 @@ impl<'a> VulkanContext<'a> {
                     geometry_index_offset: 0,
                     object_index_buffer: index_buffer,
                     object_vertex_buffer: vertex_buffer,
-                    object_shader: object_shader,
+                    material_shader: material_shader,
                     images_in_flight: images_in_flight,
                     image_index: 0,
                     recreating_swapchain: false,
@@ -500,7 +497,7 @@ impl<'a> VulkanContext<'a> {
             state.swapchain_framebuffers[state.image_index as usize].framebuffer,
         );
 
-        state.object_shader.use_shader(
+        state.material_shader.use_shader(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
@@ -523,16 +520,16 @@ impl<'a> VulkanContext<'a> {
                 return Err(Error::OperationFailed("Vulkan Context not initialized").into());
             }
         };
-        state.object_shader.use_shader(
+        state.material_shader.use_shader(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
         );
 
-        state.object_shader.global_ubo.projection = projection;
-        state.object_shader.global_ubo.view = view;
+        state.material_shader.global_ubo.projection = projection;
+        state.material_shader.global_ubo.view = view;
 
-        state.object_shader.update_global_state(
+        state.material_shader.update_global_state(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
@@ -551,7 +548,7 @@ impl<'a> VulkanContext<'a> {
             }
         };
 
-        state.object_shader.update_object(
+        state.material_shader.update_object(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
@@ -593,7 +590,6 @@ impl<'a> VulkanContext<'a> {
 
     pub fn create_texture(
         _name: &str,
-        _auto_realease: bool,
         width: u32,
         height: u32,
         channel_count: u32,
@@ -716,18 +712,6 @@ impl<'a> VulkanContext<'a> {
                 sampler: sampler,
             },
         })
-    }
-
-    pub fn set_default_diffuse(texture: &Texture) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut state) = VULKAN_STATE {
-                state
-            } else {
-                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
-            }
-        };
-        state.object_shader.set_default_diffuse(texture);
-        Ok(())
     }
 
     pub fn destroy_texture(texture: &Texture) -> Result<()> {
@@ -1019,7 +1003,7 @@ impl<'a> Drop for VulkanContext<'a> {
                 for frame in &state.swapchain_framebuffers {
                     frame.destroy(&state.device);
                 }
-                state.object_shader.destroy(&state.device);
+                state.material_shader.destroy(&state.device);
                 state.in_flight_frames.destroy(&state.device);
                 state
                     .device
@@ -1044,7 +1028,7 @@ impl<'a> Drop for VulkanContext<'a> {
                 for frame in &state.swapchain_framebuffers {
                     frame.destroy(&state.device);
                 }
-                state.object_shader.destroy(&state.device);
+                state.material_shader.destroy(&state.device);
                 state.in_flight_frames.destroy(&state.device);
                 state
                     .device

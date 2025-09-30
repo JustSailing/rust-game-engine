@@ -16,22 +16,21 @@ use super::super::{
     vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
     vulkan_pipeline::VulkanPipeline, vulkan_renderpass::VulkanRenderPass,
 };
-use crate::application::basic::{
-    filesystem::{FileHandle, FileModes},
-    math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vec3, vec4::Vec4},
-};
-use crate::application::renderer::renderer_types::{
-    GeometryRenderData, GlobalUniformObj, UniformObject,
-};
 
-use crate::application::renderer::resources::resource_types::Texture;
+use crate::application::{
+    basic::{
+        filesystem::{FileHandle, FileModes},
+        math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vec3, vec4::Vec4},
+    },
+    renderer::renderer_types::{GeometryRenderData, GlobalUniformObj, UniformObject},
+};
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
 const VULKAN_MAX_OBJECT_COUNT: usize = 1024;
 const VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT: usize = 2;
 const OBJECT_SHADER_STAGE_COUNT: usize = 2;
-const BUILT_IN_NAME: &str = "Builtin.ObjectShader";
+const BUILT_IN_NAME: &str = "Builtin.MaterialShader";
 
 #[derive(Clone, Copy)]
 struct VulkanDescriptorState {
@@ -50,10 +49,9 @@ struct VulkanShaderStage<'a> {
     shader_stage_create_info: PipelineShaderStageCreateInfo<'a>,
 }
 
-pub struct VulkanObjectShader<'a> {
+pub struct VulkanMaterialShader<'a> {
     stages: [VulkanShaderStage<'a>; OBJECT_SHADER_STAGE_COUNT],
     pipeline: VulkanPipeline,
-    default_diffuse: Option<Texture>,
     global_descriptor_set_layout: DescriptorSetLayout,
     global_descriptor_pool: DescriptorPool,
     global_descriptor_sets: Vec<DescriptorSet>,
@@ -66,7 +64,7 @@ pub struct VulkanObjectShader<'a> {
     object_states: [VulkanShaderObjectState; VULKAN_MAX_OBJECT_COUNT],
 }
 
-impl<'a> VulkanObjectShader<'a> {
+impl<'a> VulkanMaterialShader<'a> {
     pub fn create(
         instance: &Instance,
         device: &VulkanDevice,
@@ -322,12 +320,7 @@ impl<'a> VulkanObjectShader<'a> {
                     generations: [INVALID_ID; 3],
                 }; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT],
             }; VULKAN_MAX_OBJECT_COUNT],
-            default_diffuse: None,
         })
-    }
-
-    pub fn set_default_diffuse(&mut self, texture: &Texture) {
-        self.default_diffuse = Some(*texture);
     }
 
     fn create_shader_module(
@@ -467,9 +460,9 @@ impl<'a> VulkanObjectShader<'a> {
         const SAMPLER_COUNT: usize = 1;
         let mut image_info = [DescriptorImageInfo::default(); SAMPLER_COUNT];
         for (i, d) in image_info.iter_mut().enumerate() {
-            let mut data = *data.textures[i].borrow_mut();
+            let data = &mut *data.textures[i].borrow_mut();
             let texture = match data {
-                Some(ref mut t) => t,
+                Some(t) => t,
                 None => continue,
             };
             let descriptor_generaton = &mut object_state.descriptor_states[descriptor_index]
@@ -489,10 +482,10 @@ impl<'a> VulkanObjectShader<'a> {
                     .image_info(std::slice::from_ref(d));
                 descriptor_writes[descriptor_count as usize] = descriptor;
                 descriptor_count += 1;
-                if texture.generation != INVALID_ID as u32 {
-                    *descriptor_generaton = texture.generation as usize;
+                if texture.generation != INVALID_ID {
+                    *descriptor_generaton = texture.generation;
                 } else {
-                    texture.generation = *descriptor_generaton as u32;
+                    texture.generation = *descriptor_generaton;
                 }
                 descriptor_index += 1;
             }

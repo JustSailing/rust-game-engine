@@ -26,14 +26,12 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::AlreadyInitialized => {
-                write!(
-                    f,
-                    "Input State Already Initialized {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
+            Error::AlreadyInitialized => write!(
+                f,
+                "Input State Already Initialized {}  {}",
+                file!(),
+                line!()
+            ),
             Error::NotInitialized => {
                 write!(f, "Input State Not Initialized {}  {}", file!(), line!())
             }

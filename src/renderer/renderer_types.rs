@@ -1,19 +1,21 @@
 use crate::application::{
     basic::{
         event::{EventCodes, EventCtx, EventState},
-        math::consts::INVALID_ID,
+        math::{
+            consts::INVALID_ID, consts::deg_to_rad, matrix4::Matrix4, vec3::Vec3, vec4::Quat,
+            vec4::Vec4,
+        },
+        window::Window,
     },
     renderer::vulkan::vulkan_backend::VulkanContext,
+    resources::resource_types::Texture,
 };
 
-use super::resources::resource_types::Texture;
+#[path = "../systems/mod.rs"]
+pub mod systems;
+use systems::texture_system::TextureSystem;
 
 use std::{cell::RefCell, fmt, ptr, rc::Rc};
-
-use crate::application::basic::{
-    math::{consts::deg_to_rad, matrix4::Matrix4, vec3::Vec3, vec4::Quat, vec4::Vec4},
-    window::Window,
-};
 
 use image;
 
@@ -38,10 +40,10 @@ pub struct UniformObject {
     pub padding: [Vec4; 3],
 }
 
-pub struct GeometryRenderData {
+pub struct GeometryRenderData<'a> {
     pub object_id: usize,
     pub model: Matrix4,
-    pub textures: [Rc<RefCell<Option<Texture>>>; 1],
+    pub textures: [Rc<RefCell<Option<&'a mut Texture>>>; 1],
 }
 
 pub struct RendererPacket {
@@ -49,7 +51,7 @@ pub struct RendererPacket {
 }
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
-pub struct RendererBackend {
+pub struct RendererBackend<'a> {
     frame_number: u64,
     initialize: fn(application_name: &str, window: &Window) -> Result<()>,
     shutdown: fn() -> Result<()>,
@@ -65,14 +67,12 @@ pub struct RendererBackend {
     update_object: fn(data: &mut GeometryRenderData) -> Result<()>,
     create_texture: fn(
         name: &str,
-        auto_realease: bool,
         width: u32,
         height: u32,
         channel_count: u32,
         pixels: &[u8],
         has_transparency: bool,
     ) -> Result<Texture>,
-    set_default_diffuse: fn(texture: &Texture) -> Result<()>,
     destroy_texture: fn(texture: &Texture) -> Result<()>,
     end_frame: fn(delta_time: f32) -> Result<()>,
 
@@ -80,8 +80,7 @@ pub struct RendererBackend {
     view: Matrix4,
     far_clip: f32,
     near_clip: f32,
-    default_diffuse: Rc<RefCell<Option<Texture>>>,
-    test_diffuse: Rc<RefCell<Option<Texture>>>,
+    test_diffuse: Rc<RefCell<Option<&'a mut Texture>>>,
 }
 
 static mut RENDERER_BACKEND: Option<RendererBackend> = None;
@@ -97,27 +96,18 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::AlreadyInitialized => write!(
-                f,
-                "FrontendRenderer Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::AlreadyShutdown => write!(
-                f,
-                "FrontendRenderer Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::NotInitialized => write!(
-                f,
-                "FrontendRenderer Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
+            Error::AlreadyInitialized => {
+                write!(f, "Renderer Already Initialized {}  {}", file!(), line!())
+            }
+            Error::AlreadyShutdown => {
+                write!(f, "Renderer Already Initialized {}  {}", file!(), line!())
+            }
+            Error::NotInitialized => {
+                write!(f, "Renderer Already Initialized {}  {}", file!(), line!())
+            }
             Error::OperationFailed(e) => write!(
                 f,
-                "FrontendRenderer Operation Failed: {e}. {}  {}",
+                "Renderer Operation Failed: {e}. {}  {}",
                 file!(),
                 line!()
             ),
@@ -127,15 +117,15 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct FrontendRenderer;
+pub struct Renderer;
 
-impl FrontendRenderer {
+impl<'a> Renderer {
     pub fn initialize(app_name: &str, window: &Window) -> Result<()> {
         unsafe {
             if let Some(ref _state) = RENDERER_BACKEND {
                 return Err(Error::AlreadyInitialized.into());
             } else {
-                FrontendRenderer::create_renderer_backend(&RendererBackendType::Vulkan)?;
+                Renderer::create_renderer_backend(&RendererBackendType::Vulkan)?;
             }
 
             EventState::register_event(
@@ -146,35 +136,6 @@ impl FrontendRenderer {
 
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.initialize)(app_name, window)?;
-                const TEX_DIMENSION: u8 = 255;
-                const CHANNELS: u8 = 4;
-                const PIXEL_COUNT: usize = TEX_DIMENSION as usize * TEX_DIMENSION as usize;
-                let mut pixels = [255u8; PIXEL_COUNT * CHANNELS as usize];
-                let width = CHANNELS;
-                let height: usize = pixels.len() / CHANNELS as usize;
-                for row in (0..height).step_by(4) {
-                    for col in (0..width as usize).step_by(4) {
-                        let index = (row * width as usize) + col;
-
-                        pixels[index + 0] = 0;
-                        pixels[index + 1] = 0;
-                    }
-                }
-
-                let texture = Self::create_texture(
-                    "default",
-                    false,
-                    TEX_DIMENSION as u32,
-                    TEX_DIMENSION as u32,
-                    CHANNELS as u32,
-                    &pixels,
-                    false,
-                )?;
-                //texture.generation = INVALID_ID as u32;
-                state.default_diffuse = Rc::new(RefCell::new(Some(texture)));
-
-                //state.test_diffuse = Some(texture);
-                (state.set_default_diffuse)(&state.default_diffuse.borrow().as_ref().unwrap())?;
                 Ok(())
             } else {
                 return Err(Error::NotInitialized.into());
@@ -185,7 +146,7 @@ impl FrontendRenderer {
     pub fn shutdown() -> Result<()> {
         unsafe {
             if let Some(ref mut _state) = RENDERER_BACKEND {
-                let _ = FrontendRenderer::destroy_renderer_backend();
+                let _ = Renderer::destroy_renderer_backend();
                 RENDERER_BACKEND = None;
                 return Ok(());
             } else {
@@ -206,7 +167,6 @@ impl FrontendRenderer {
 
     pub fn create_texture(
         name: &str,
-        auto_realease: bool,
         width: u32,
         height: u32,
         channel_count: u32,
@@ -215,15 +175,7 @@ impl FrontendRenderer {
     ) -> Result<Texture> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.create_texture)(
-                    name,
-                    auto_realease,
-                    width,
-                    height,
-                    channel_count,
-                    pixels,
-                    has_transparency,
-                )
+                (state.create_texture)(name, width, height, channel_count, pixels, has_transparency)
             } else {
                 return Err(Error::NotInitialized.into());
             }
@@ -247,14 +199,13 @@ impl FrontendRenderer {
         }
         let mut texture = Self::create_texture(
             name,
-            true,
             width as u32,
             height as u32,
             channel_count,
             v.as_slice(),
             transparancy,
         )?;
-        texture.generation = INVALID_ID as u32;
+        texture.generation = INVALID_ID;
 
         Ok(texture)
     }
@@ -274,19 +225,23 @@ impl FrontendRenderer {
         };
         let names = ["brick-wall", "door", "stone-wall", "tile"];
         static mut CHOICE: usize = 3;
+        let old_name = unsafe { names[CHOICE] };
         unsafe {
             CHOICE += 1;
             CHOICE %= 4;
         }
-        let temp = state.default_diffuse.borrow_mut().unwrap();
-        state
-            .default_diffuse
-            .replace(match Self::load_texture(names[unsafe { CHOICE }]) {
+
+        state.test_diffuse.replace(
+            match TextureSystem::acquire(unsafe { names[CHOICE] }, true) {
                 Ok(t) => Some(t),
                 Err(_) => return false,
-            });
-        let _ = Self::destroy_texture(&temp);
-        true
+            },
+        );
+
+        match TextureSystem::release(old_name) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
     }
 
     pub fn destroy_texture(texture: &Texture) -> Result<()> {
@@ -319,7 +274,7 @@ impl FrontendRenderer {
             }
         };
 
-        if !FrontendRenderer::begin_frame(packet.delta_time)? {
+        if !Renderer::begin_frame(packet.delta_time)? {
             return Ok(());
         }
 
@@ -342,10 +297,15 @@ impl FrontendRenderer {
             model,
             textures: [Rc::new(RefCell::new(None))],
         };
-        data.textures[0] = Rc::clone(&state.default_diffuse);
+        if state.test_diffuse.borrow().as_ref().is_none() {
+            state
+                .test_diffuse
+                .replace(Some(TextureSystem::get_default_texture()?));
+        }
+        data.textures[0] = Rc::clone(&state.test_diffuse);
         (state.update_object)(&mut data)?;
 
-        FrontendRenderer::end_frame(packet.delta_time)?;
+        Renderer::end_frame(packet.delta_time)?;
         Ok(())
     }
 
@@ -397,9 +357,7 @@ impl FrontendRenderer {
                     near_clip: 0.1,
                     create_texture: VulkanContext::create_texture,
                     destroy_texture: VulkanContext::destroy_texture,
-                    default_diffuse: Rc::new(RefCell::new(std::mem::zeroed())),
-                    test_diffuse: Rc::new(RefCell::new(std::mem::zeroed())),
-                    set_default_diffuse: VulkanContext::set_default_diffuse,
+                    test_diffuse: Rc::new(RefCell::new(None)),
                 })
             }
         }
@@ -409,7 +367,6 @@ impl FrontendRenderer {
     fn destroy_renderer_backend() -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                Self::destroy_texture(state.default_diffuse.borrow().as_ref().unwrap())?;
                 Ok((state.shutdown)()?)
             } else {
                 return Err(Error::NotInitialized.into());
