@@ -10,15 +10,13 @@ pub mod resources;
 pub mod systems;
 
 use crate::Game;
-//use crate::application::systems::texture_system::{TextureSysConfig, TextureSystem};
+use crate::application::systems::material_system::{MaterialSysConfig, MaterialSystem};
+use crate::application::systems::texture_system::{TextureSysConfig, TextureSystem};
 
 use basic::event::{EventCodes, EventCtx, EventState};
 use basic::input::InputState;
 use basic::window::Window;
-use renderer::renderer_types::{
-    Renderer, RendererPacket,
-    systems::texture_system::{TextureSysConfig, TextureSystem},
-};
+use renderer::renderer_types::{Renderer, RendererPacket};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{ffi::c_void, fmt, ptr};
@@ -170,9 +168,12 @@ impl ApplicationState {
         )?;
 
         Renderer::initialize(app_config.name, &window)?;
-        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
 
+        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
         TextureSystem::initialize(texture_sys_config)?;
+
+        let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 100 };
+        MaterialSystem::initialize(material_sys_config)?;
 
         if !(game.initialize)(game) {
             return Err(Error::CouldNotInitializeGame.into());
@@ -254,6 +255,7 @@ impl Drop for ApplicationState {
         unsafe {
             if let Some(ref mut _state) = APP_STATE {
                 // probably log to console
+                let _ = MaterialSystem::shutdown();
                 let _ = TextureSystem::shutdown();
                 let _ = Renderer::shutdown();
                 let _ = EventState::shutdown();

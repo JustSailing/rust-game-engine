@@ -2,22 +2,22 @@ use crate::application::{
     basic::{
         event::{EventCodes, EventCtx, EventState},
         math::{
-            consts::INVALID_ID, consts::deg_to_rad, matrix4::Matrix4, vec3::Vec3, vec4::Quat,
-            vec4::Vec4,
+            consts::deg_to_rad,
+            matrix4::Matrix4,
+            vec3::Vec3,
+            vec4::{Quat, Vec4},
         },
         window::Window,
     },
     renderer::vulkan::vulkan_backend::VulkanContext,
-    resources::resource_types::Texture,
+    resources::resource_types::{Material, Texture},
+    systems::{
+        material_system::{MaterialConfig, MaterialSystem},
+        texture_system::TextureSystem,
+    },
 };
 
-#[path = "../systems/mod.rs"]
-pub mod systems;
-use systems::texture_system::TextureSystem;
-
 use std::{cell::RefCell, fmt, ptr, rc::Rc};
-
-use image;
 
 pub enum RendererBackendType {
     Vulkan,
@@ -41,9 +41,8 @@ pub struct UniformObject {
 }
 
 pub struct GeometryRenderData<'a> {
-    pub object_id: usize,
     pub model: Matrix4,
-    pub textures: [Rc<RefCell<Option<&'a mut Texture>>>; 1],
+    pub material: Rc<RefCell<Option<&'a mut Material<'a>>>>,
 }
 
 pub struct RendererPacket {
@@ -65,22 +64,17 @@ pub struct RendererBackend<'a> {
         mode: i32,
     ) -> Result<()>,
     update_object: fn(data: &mut GeometryRenderData) -> Result<()>,
-    create_texture: fn(
-        name: &str,
-        width: u32,
-        height: u32,
-        channel_count: u32,
-        pixels: &[u8],
-        has_transparency: bool,
-    ) -> Result<Texture>,
+    create_texture: fn(pixels: &[u8], texture: &mut Texture) -> Result<()>,
     destroy_texture: fn(texture: &Texture) -> Result<()>,
+    create_material: fn(material: &'_ mut Material<'a>) -> Result<()>,
+    destroy_material: fn(material: &Material<'a>) -> Result<()>,
     end_frame: fn(delta_time: f32) -> Result<()>,
 
     projection: Matrix4,
     view: Matrix4,
     far_clip: f32,
     near_clip: f32,
-    test_diffuse: Rc<RefCell<Option<&'a mut Texture>>>,
+    test_material: Rc<RefCell<Option<&'a mut Material<'a>>>>,
 }
 
 static mut RENDERER_BACKEND: Option<RendererBackend> = None;
@@ -125,7 +119,7 @@ impl<'a> Renderer {
             if let Some(ref _state) = RENDERER_BACKEND {
                 return Err(Error::AlreadyInitialized.into());
             } else {
-                Renderer::create_renderer_backend(&RendererBackendType::Vulkan)?;
+                Self::create_renderer_backend(&RendererBackendType::Vulkan)?;
             }
 
             EventState::register_event(
@@ -146,7 +140,7 @@ impl<'a> Renderer {
     pub fn shutdown() -> Result<()> {
         unsafe {
             if let Some(ref mut _state) = RENDERER_BACKEND {
-                let _ = Renderer::destroy_renderer_backend();
+                let _ = Self::destroy_renderer_backend();
                 RENDERER_BACKEND = None;
                 return Ok(());
             } else {
@@ -165,49 +159,14 @@ impl<'a> Renderer {
         }
     }
 
-    pub fn create_texture(
-        name: &str,
-        width: u32,
-        height: u32,
-        channel_count: u32,
-        pixels: &[u8],
-        has_transparency: bool,
-    ) -> Result<Texture> {
+    pub fn create_texture(pixels: &[u8], texture: &mut Texture) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.create_texture)(name, width, height, channel_count, pixels, has_transparency)
+                (state.create_texture)(pixels, texture)
             } else {
                 return Err(Error::NotInitialized.into());
             }
         }
-    }
-
-    fn load_texture(name: &str) -> Result<Texture> {
-        let file_path = format!("assets/textures/{}.{}", name, "jpg");
-        let data = image::open(file_path)?.to_rgba8();
-        let width = data.width();
-        let height = data.height();
-        let v = data.into_raw();
-        let channel_count: u32 = 4;
-        let total_size = width * height * channel_count;
-        let mut transparancy = false;
-        for i in (3..total_size as usize).step_by(channel_count as usize) {
-            if v[i] < 255 {
-                transparancy = true;
-                break;
-            }
-        }
-        let mut texture = Self::create_texture(
-            name,
-            width as u32,
-            height as u32,
-            channel_count,
-            v.as_slice(),
-            transparancy,
-        )?;
-        texture.generation = INVALID_ID;
-
-        Ok(texture)
     }
 
     pub fn on_event_debug(
@@ -231,12 +190,16 @@ impl<'a> Renderer {
             CHOICE %= 4;
         }
 
-        state.test_diffuse.replace(
-            match TextureSystem::acquire(unsafe { names[CHOICE] }, true) {
-                Ok(t) => Some(t),
-                Err(_) => return false,
-            },
-        );
+        state
+            .test_material
+            .borrow_mut()
+            .as_mut()
+            .unwrap()
+            .diffuse_map
+            .texture = match TextureSystem::acquire(unsafe { names[CHOICE].to_string() }, true) {
+            Ok(t) => Some(t),
+            Err(_) => return false,
+        };
 
         match TextureSystem::release(old_name) {
             Ok(_) => true,
@@ -248,6 +211,26 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.destroy_texture)(&texture)
+            } else {
+                return Err(Error::NotInitialized.into());
+            }
+        }
+    }
+
+    pub fn create_material<'b: 'static>(material: &'a mut Material<'b>) -> Result<()> {
+        unsafe {
+            if let Some(ref state) = RENDERER_BACKEND {
+                (state.create_material)(material)
+            } else {
+                return Err(Error::NotInitialized.into());
+            }
+        }
+    }
+
+    pub fn destroy_material<'b: 'static>(material: &'a Material<'b>) -> Result<()> {
+        unsafe {
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                (state.destroy_material)(material)
             } else {
                 return Err(Error::NotInitialized.into());
             }
@@ -274,7 +257,7 @@ impl<'a> Renderer {
             }
         };
 
-        if !Renderer::begin_frame(packet.delta_time)? {
+        if !Self::begin_frame(packet.delta_time)? {
             return Ok(());
         }
 
@@ -293,16 +276,17 @@ impl<'a> Renderer {
         let model = Quat::to_rotation_matrix(rotation, Vec3::new_zeroes());
         // let model = Matrix4::identity();
         let mut data = GeometryRenderData {
-            object_id: 0,
             model,
-            textures: [Rc::new(RefCell::new(None))],
+            material: Rc::new(RefCell::new(None)),
         };
-        if state.test_diffuse.borrow().as_ref().is_none() {
+        let mut mat_config = MaterialConfig::default().name(&"test_material".to_string());
+        if state.test_material.borrow().as_ref().is_none() {
             state
-                .test_diffuse
-                .replace(Some(TextureSystem::get_default_texture()?));
+                .test_material
+                .replace(Some(MaterialSystem::acquire(&mut mat_config)?));
         }
-        data.textures[0] = Rc::clone(&state.test_diffuse);
+
+        data.material = Rc::clone(&state.test_material);
         (state.update_object)(&mut data)?;
 
         Renderer::end_frame(packet.delta_time)?;
@@ -357,7 +341,9 @@ impl<'a> Renderer {
                     near_clip: 0.1,
                     create_texture: VulkanContext::create_texture,
                     destroy_texture: VulkanContext::destroy_texture,
-                    test_diffuse: Rc::new(RefCell::new(None)),
+                    create_material: VulkanContext::create_material,
+                    destroy_material: VulkanContext::destroy_material,
+                    test_material: Rc::new(RefCell::new(None)),
                 })
             }
         }

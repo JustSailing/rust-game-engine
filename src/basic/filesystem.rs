@@ -67,14 +67,35 @@ impl FileHandle {
         }
     }
 
-    pub fn read_line(&self) -> Result<String> {
+    pub fn read_line(&self) -> Result<(usize, String)> {
         let mut reader = BufReader::new(&self.file);
         let mut line = String::new();
         match reader.read_line(&mut line) {
-            Ok(_) => {}
+            Ok(0) => return Ok((0, "".to_string())),
+            Ok(x) => return Ok((x, line)),
             Err(_) => return Err(Error::CannotReadln.into()),
         }
-        Ok(line)
+    }
+
+    pub fn read_lines(&mut self) -> Result<Vec<String>> {
+        match self.file.seek(SeekFrom::Start(0)) {
+            Ok(_) => {}
+            Err(_) => return Err(Error::CannotSeek.into()),
+        }
+        let mut reader = BufReader::new(&self.file);
+        let mut all_lines = Vec::new();
+        let mut line = String::new();
+        loop {
+            match reader.read_line(&mut line) {
+                Ok(0) => return Ok(all_lines),
+                Ok(_) => {
+                    all_lines.push(line.clone());
+                    line.clear();
+                    //continue;
+                }
+                Err(_) => return Err(Error::CannotReadln.into()),
+            }
+        }
     }
 
     pub fn read_all(&mut self) -> Result<String> {

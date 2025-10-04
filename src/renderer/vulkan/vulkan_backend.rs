@@ -11,7 +11,6 @@ use super::{
 use crate::application::{
     basic::{
         math::{
-            consts::INVALID_ID,
             matrix4::Matrix4,
             vec2::Vec2,
             vec3::{Vec3, Vector3D},
@@ -20,7 +19,7 @@ use crate::application::{
         window::Window,
     },
     renderer::renderer_types::GeometryRenderData,
-    resources::resource_types::{Texture, TextureData},
+    resources::resource_types::{Material, Texture},
 };
 
 use ash::{
@@ -216,7 +215,7 @@ impl<'a> VulkanContext<'a> {
 
         let in_flight_frames = InFlightFrames::new(sync_objects);
 
-        let mut material_shader = VulkanMaterialShader::create(
+        let material_shader = VulkanMaterialShader::create(
             &instance,
             &dev,
             &rend_pass,
@@ -272,8 +271,8 @@ impl<'a> VulkanContext<'a> {
             &indices,
         )?;
 
-        let mut object_id = 0;
-        material_shader.acquire_resources(&dev, &mut object_id)?;
+        // let mut object_id = 0;
+        // material_shader.acquire_resources(&dev, &mut object_id)?;
 
         #[cfg(feature = "debug")]
         {
@@ -588,14 +587,7 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
-    pub fn create_texture(
-        _name: &str,
-        width: u32,
-        height: u32,
-        channel_count: u32,
-        pixels: &[u8],
-        has_transparency: bool,
-    ) -> Result<Texture> {
+    pub fn create_texture(pixels: &[u8], texture: &mut Texture) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
@@ -604,7 +596,9 @@ impl<'a> VulkanContext<'a> {
             }
         };
 
-        let image_size: DeviceSize = (width * height * channel_count) as DeviceSize;
+        let image_size: DeviceSize = (texture.width as u64
+            * texture.height as u64
+            * texture.channel_count as u64) as DeviceSize;
         let image_format = Format::R8G8B8A8_UNORM;
         let usage = BufferUsageFlags::TRANSFER_SRC;
         let memory_property_flags =
@@ -626,11 +620,11 @@ impl<'a> VulkanContext<'a> {
             pixels,
         )?;
 
-        let image = super::vulkan_image::VulkanImage::create(
+        texture.internal_data.image = super::vulkan_image::VulkanImage::create(
             &state.instance,
             ImageType::TYPE_2D,
-            width as u32,
-            height as u32,
+            texture.width,
+            texture.height,
             image_format,
             ImageTiling::OPTIMAL,
             ImageUsageFlags::TRANSFER_SRC
@@ -648,7 +642,7 @@ impl<'a> VulkanContext<'a> {
             state.device.graphics_command_pool,
         )?;
 
-        image.transition_layout(
+        texture.internal_data.image.transition_layout(
             &state.device,
             &temp_command_buffer,
             image_format,
@@ -657,9 +651,14 @@ impl<'a> VulkanContext<'a> {
             0,
         )?;
 
-        image.copy_from_buffer(&state.device, &staging, &temp_command_buffer, 0);
+        texture.internal_data.image.copy_from_buffer(
+            &state.device,
+            &staging,
+            &temp_command_buffer,
+            0,
+        );
 
-        image.transition_layout(
+        texture.internal_data.image.transition_layout(
             &state.device,
             &temp_command_buffer,
             image_format,
@@ -693,25 +692,13 @@ impl<'a> VulkanContext<'a> {
             .min_lod(0.0)
             .max_lod(0.0);
 
-        let sampler = unsafe {
+        texture.internal_data.sampler = unsafe {
             match state.device.device.create_sampler(&sampler_info, None) {
                 Ok(s) => s,
                 Err(_) => return Err(Error::OperationFailed("could not create sampler").into()),
             }
         };
-
-        Ok(Texture {
-            id: INVALID_ID,
-            width: width as u32,
-            height: height as u32,
-            channel_count: channel_count as u8,
-            has_transparency,
-            generation: 0,
-            internal_data: TextureData {
-                image: image,
-                sampler: sampler,
-            },
-        })
+        Ok(())
     }
 
     pub fn destroy_texture(texture: &Texture) -> Result<()> {
@@ -732,6 +719,34 @@ impl<'a> VulkanContext<'a> {
                 .device
                 .destroy_sampler(texture.internal_data.sampler, None)
         };
+        Ok(())
+    }
+
+    pub fn create_material(material: &mut Material) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+        state
+            .material_shader
+            .acquire_resources(&state.device, material)?;
+        Ok(())
+    }
+
+    pub fn destroy_material(material: &Material) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+        state
+            .material_shader
+            .release_resources(&state.device, material)?;
         Ok(())
     }
 

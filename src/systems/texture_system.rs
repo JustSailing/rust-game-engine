@@ -19,6 +19,23 @@ pub struct TextureRef {
     auto_release: bool,
 }
 
+impl TextureRef {
+    pub fn auto_release(mut self, auto_release: bool) -> TextureRef {
+        self.auto_release = auto_release;
+        self
+    }
+}
+
+impl Default for TextureRef {
+    fn default() -> Self {
+        Self {
+            reference_count: 0,
+            handle: INVALID_ID,
+            auto_release: false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Error {
     AlreadyInitialized,
@@ -76,7 +93,6 @@ pub struct TextureSystem {
     default_texture: Texture,
     registered_textures: Vec<Texture>,
     registered_textures_hashmap: HashMap<String, TextureRef>,
-    free_index: usize,
     //TODO: add free list of indices when we release textures
 }
 
@@ -96,10 +112,7 @@ impl<'a> TextureSystem {
         let mut registered_array = Vec::<Texture>::with_capacity(config.max_count);
         let registered_hash_map = HashMap::<String, TextureRef>::with_capacity(config.max_count);
         for _ in 0..config.max_count {
-            let mut tf: Texture = unsafe { std::mem::zeroed() };
-            tf.id = INVALID_ID;
-            tf.generation = INVALID_ID;
-            registered_array.push(tf);
+            registered_array.push(Texture::default());
         }
 
         unsafe {
@@ -108,7 +121,6 @@ impl<'a> TextureSystem {
                 default_texture: Self::create_default_texture()?,
                 registered_textures: registered_array,
                 registered_textures_hashmap: registered_hash_map,
-                free_index: 0,
             });
         }
 
@@ -130,16 +142,13 @@ impl<'a> TextureSystem {
                 pixels[index + 1] = 0;
             }
         }
-
-        let mut texture = Renderer::create_texture(
-            DEFAULT_TEXTURE_NAME,
-            TEX_DIMENSION as u32,
-            TEX_DIMENSION as u32,
-            CHANNELS as u32,
-            &pixels,
-            false,
-        )?;
-        texture.generation = INVALID_ID;
+        let mut texture = Texture::default()
+            .has_transparency(false)
+            .width(TEX_DIMENSION as u32)
+            .height(TEX_DIMENSION as u32)
+            .channel_count(CHANNELS as u8)
+            .generation(INVALID_ID);
+        Renderer::create_texture(&pixels, &mut texture)?;
 
         Ok(texture)
     }
@@ -163,26 +172,24 @@ impl<'a> TextureSystem {
         let channel_count: u32 = 4;
         let total_size = width * height * channel_count;
         let mut transparancy = false;
-        for i in (3..total_size as usize).step_by(channel_count as usize) {
-            if v[i] < 255 {
+        for i in 0..total_size as usize - 3 {
+            if v[i + 3] < 255 {
                 transparancy = true;
                 break;
             }
         }
-        let mut texture = Renderer::create_texture(
-            name,
-            width as u32,
-            height as u32,
-            channel_count,
-            v.as_slice(),
-            transparancy,
-        )?;
-        texture.generation = INVALID_ID;
+        let mut texture = Texture::default()
+            .has_transparency(transparancy)
+            .width(width)
+            .height(height)
+            .channel_count(channel_count as u8)
+            .generation(INVALID_ID);
+        Renderer::create_texture(v.as_slice(), &mut texture)?;
 
         Ok(texture)
     }
 
-    pub fn acquire(name: &str, auto_release: bool) -> Result<&mut Texture> {
+    pub fn acquire(name: String, auto_release: bool) -> Result<&'a mut Texture> {
         let state = unsafe {
             if let Some(ref mut state) = TEXTURE_STATE {
                 state
@@ -196,18 +203,13 @@ impl<'a> TextureSystem {
             );
             return Ok(&mut state.default_texture);
         }
-        let tex_ref = match state.registered_textures_hashmap.get_mut(name) {
+        let tex_ref = match state.registered_textures_hashmap.get_mut(&name) {
             Some(t) => t,
             None => {
-                let tex_ref = TextureRef {
-                    reference_count: 0,
-                    handle: INVALID_ID,
-                    auto_release,
-                };
-                state
-                    .registered_textures_hashmap
-                    .insert(String::from(name), tex_ref);
-                state.registered_textures_hashmap.get_mut(name).unwrap()
+                let tex_ref = TextureRef::default().auto_release(auto_release);
+                let n = String::from(name.clone());
+                state.registered_textures_hashmap.insert(n.clone(), tex_ref);
+                state.registered_textures_hashmap.get_mut(&n).unwrap()
             }
         };
         if tex_ref.reference_count == 0 {
@@ -227,10 +229,11 @@ impl<'a> TextureSystem {
                 ))
                 .into());
             }
-            state.registered_textures[tex_ref.handle] = Self::load_texture(name)?;
+            let n = String::from(&name);
+            state.registered_textures[tex_ref.handle] = Self::load_texture(&n)?;
             state.registered_textures[tex_ref.handle].id = tex_ref.handle;
         }
-        Self::insert_hashmap(name, *tex_ref)?;
+        Self::insert_hashmap(&name, *tex_ref)?;
         Ok(&mut state.registered_textures[tex_ref.handle])
     }
 
@@ -258,9 +261,7 @@ impl<'a> TextureSystem {
         if tex_ref.reference_count == 0 && tex_ref.auto_release {
             let t = &state.registered_textures[tex_ref.handle];
             Renderer::destroy_texture(t)?;
-            unsafe { state.registered_textures[tex_ref.handle] = std::mem::zeroed() };
-            state.registered_textures[tex_ref.handle].id = INVALID_ID;
-            state.registered_textures[tex_ref.handle].generation = INVALID_ID;
+            state.registered_textures[tex_ref.handle] = Texture::default();
             // don't think i need the 2 lines below
             tex_ref.handle = INVALID_ID;
             tex_ref.auto_release = false;
@@ -298,12 +299,13 @@ impl<'a> TextureSystem {
     pub fn shutdown() -> Result<()> {
         unsafe {
             if let Some(ref mut state) = TEXTURE_STATE {
+                Self::destroy_default_texture()?;
                 for texture in state.registered_textures.iter() {
                     if texture.id != INVALID_ID {
+                        println!("WARN: did not free texture id: {}", texture.id);
                         Renderer::destroy_texture(texture)?;
                     }
                 }
-                Renderer::destroy_texture(&state.default_texture)?;
                 TEXTURE_STATE = None;
                 Ok(())
             } else {

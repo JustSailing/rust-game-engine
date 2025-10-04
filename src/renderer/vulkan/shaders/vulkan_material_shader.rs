@@ -23,13 +23,15 @@ use crate::application::{
         math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vec3, vec4::Vec4},
     },
     renderer::renderer_types::{GeometryRenderData, GlobalUniformObj, UniformObject},
+    resources::resource_types::{Material, TextureUse},
 };
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
-const VULKAN_MAX_OBJECT_COUNT: usize = 1024;
-const VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT: usize = 2;
-const OBJECT_SHADER_STAGE_COUNT: usize = 2;
+const VULKAN_MAX_MATERIAL_COUNT: usize = 1024;
+const VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT: usize = 2;
+const VULKAN_MATERIAL_SHADER_SAMPLER_COUNT: usize = 1;
+const MATERIAL_SHADER_STAGE_COUNT: usize = 2;
 const BUILT_IN_NAME: &str = "Builtin.MaterialShader";
 
 #[derive(Clone, Copy)]
@@ -38,9 +40,9 @@ struct VulkanDescriptorState {
 }
 
 #[derive(Clone, Copy)]
-struct VulkanShaderObjectState {
+struct VulkanMaterialShaderInstanceState {
     descriptor_sets: [DescriptorSet; 3],
-    descriptor_states: [VulkanDescriptorState; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT],
+    descriptor_states: [VulkanDescriptorState; VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT],
 }
 
 struct VulkanShaderStage<'a> {
@@ -50,7 +52,7 @@ struct VulkanShaderStage<'a> {
 }
 
 pub struct VulkanMaterialShader<'a> {
-    stages: [VulkanShaderStage<'a>; OBJECT_SHADER_STAGE_COUNT],
+    stages: [VulkanShaderStage<'a>; MATERIAL_SHADER_STAGE_COUNT],
     pipeline: VulkanPipeline,
     global_descriptor_set_layout: DescriptorSetLayout,
     global_descriptor_pool: DescriptorPool,
@@ -61,7 +63,8 @@ pub struct VulkanMaterialShader<'a> {
     object_descriptor_set_layout: DescriptorSetLayout,
     object_uniform_buffer: VulkanBuffer,
     object_uniform_buffer_index: u32,
-    object_states: [VulkanShaderObjectState; VULKAN_MAX_OBJECT_COUNT],
+    instance_states: [VulkanMaterialShaderInstanceState; VULKAN_MAX_MATERIAL_COUNT],
+    sampler_uses: [TextureUse; VULKAN_MATERIAL_SHADER_SAMPLER_COUNT],
 }
 
 impl<'a> VulkanMaterialShader<'a> {
@@ -75,11 +78,11 @@ impl<'a> VulkanMaterialShader<'a> {
         //default_diffuse: Option<&'a Texture>,
     ) -> Result<Self> {
         let stage_type_strs = ["vert", "frag"];
-        let mut shader_stages: [VulkanShaderStage; OBJECT_SHADER_STAGE_COUNT] =
+        let mut shader_stages: [VulkanShaderStage; MATERIAL_SHADER_STAGE_COUNT] =
             unsafe { std::mem::zeroed() };
         let stage_flags: [ShaderStageFlags; 2] =
             [ShaderStageFlags::VERTEX, ShaderStageFlags::FRAGMENT];
-        for i in 0..OBJECT_SHADER_STAGE_COUNT {
+        for i in 0..MATERIAL_SHADER_STAGE_COUNT {
             let shader_stage = Self::create_shader_module(
                 device,
                 BUILT_IN_NAME,
@@ -138,15 +141,15 @@ impl<'a> VulkanMaterialShader<'a> {
             }
         };
         const LOCAL_SAMPLER_COUNT: u32 = 1;
-        let descriptor_types: [DescriptorType; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] = [
+        let descriptor_types: [DescriptorType; VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT] = [
             DescriptorType::UNIFORM_BUFFER,         // binding 0 - uniform buffer
             DescriptorType::COMBINED_IMAGE_SAMPLER, // binding 1 - diffuse sampler
         ];
 
-        let mut bindings: [DescriptorSetLayoutBinding; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] =
+        let mut bindings: [DescriptorSetLayoutBinding; VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT] =
             unsafe { std::mem::zeroed() };
 
-        for i in 0..VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT {
+        for i in 0..VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT {
             bindings[i] = DescriptorSetLayoutBinding::default()
                 .binding(i as u32)
                 .descriptor_count(1)
@@ -171,18 +174,18 @@ impl<'a> VulkanMaterialShader<'a> {
             }
         };
 
-        let mut object_pool_sizes: [DescriptorPoolSize; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] =
-            [DescriptorPoolSize::default(); VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT];
-        object_pool_sizes[0].descriptor_count = VULKAN_MAX_OBJECT_COUNT as u32;
+        let mut object_pool_sizes: [DescriptorPoolSize; VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT] =
+            [DescriptorPoolSize::default(); VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT];
+        object_pool_sizes[0].descriptor_count = VULKAN_MAX_MATERIAL_COUNT as u32;
         object_pool_sizes[0].ty = DescriptorType::UNIFORM_BUFFER;
 
         object_pool_sizes[1].descriptor_count =
-            LOCAL_SAMPLER_COUNT * VULKAN_MAX_OBJECT_COUNT as u32;
+            LOCAL_SAMPLER_COUNT * VULKAN_MAX_MATERIAL_COUNT as u32;
         object_pool_sizes[1].ty = DescriptorType::COMBINED_IMAGE_SAMPLER;
 
         let object_pool_info = DescriptorPoolCreateInfo::default()
             .pool_sizes(&object_pool_sizes)
-            .max_sets(VULKAN_MAX_OBJECT_COUNT as u32);
+            .max_sets(VULKAN_MAX_MATERIAL_COUNT as u32);
 
         let object_descriptor_pool = unsafe {
             match device
@@ -234,7 +237,7 @@ impl<'a> VulkanMaterialShader<'a> {
         let layouts: [DescriptorSetLayout; DESCRIPTOR_SET_LAYOUT_COUNT] =
             [global_descritpor_set_layout, object_descriptor_layout];
 
-        let mut stage_create_infos: [PipelineShaderStageCreateInfo; OBJECT_SHADER_STAGE_COUNT] =
+        let mut stage_create_infos: [PipelineShaderStageCreateInfo; MATERIAL_SHADER_STAGE_COUNT] =
             unsafe { std::mem::zeroed() };
 
         for (size, info) in stage_create_infos.iter_mut().enumerate() {
@@ -314,12 +317,13 @@ impl<'a> VulkanMaterialShader<'a> {
             object_descriptor_set_layout: object_descriptor_layout,
             object_uniform_buffer: object_buffer,
             object_uniform_buffer_index: 0,
-            object_states: [VulkanShaderObjectState {
+            instance_states: [VulkanMaterialShaderInstanceState {
                 descriptor_sets: [DescriptorSet::default(); 3],
                 descriptor_states: [VulkanDescriptorState {
                     generations: [INVALID_ID; 3],
-                }; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT],
-            }; VULKAN_MAX_OBJECT_COUNT],
+                }; VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT],
+            }; VULKAN_MAX_MATERIAL_COUNT],
+            sampler_uses: [TextureUse::Unknown; VULKAN_MATERIAL_SHADER_SAMPLER_COUNT],
         })
     }
 
@@ -406,29 +410,29 @@ impl<'a> VulkanMaterialShader<'a> {
                 ),
             );
         }
-
-        let object_state = &mut self.object_states[data.object_id];
+        let object_id = data.material.borrow().as_ref().unwrap().internal_id;
+        let object_state = &mut self.instance_states[object_id];
         let object_descriptor = object_state.descriptor_sets[image_index as usize];
 
-        let mut descriptor_writes: [WriteDescriptorSet; VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT] =
-            [WriteDescriptorSet::default(); VULKAN_OBJECT_SHADER_DESCRIPTOR_COUNT];
+        let mut descriptor_writes: [WriteDescriptorSet; VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT] =
+            [WriteDescriptorSet::default(); VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT];
 
         let mut descriptor_count = 0;
         let mut descriptor_index = 0;
 
         let range = size_of::<UniformObject>();
-        let offset = size_of::<UniformObject>() * data.object_id;
+        let offset = size_of::<UniformObject>() * object_id;
         let mut obo = UniformObject {
             diffuse_color: Vec4::new_zeroes(),
             padding: [Vec4::new_zeroes(); 3],
         };
 
-        static mut ACCUMULATOR: f32 = 0.0;
-        unsafe {
-            ACCUMULATOR += 0.01;
-        }
-        let s = unsafe { (ACCUMULATOR.sin() + 1.0) / 2.0 };
-        obo.diffuse_color = Vec4::new(s, s, s, 1.0);
+        // static mut ACCUMULATOR: f32 = 0.0;
+        // unsafe {
+        //     ACCUMULATOR += 0.01;
+        // }
+        // let s = unsafe { (ACCUMULATOR.sin() + 1.0) / 2.0 };
+        obo.diffuse_color = data.material.borrow().as_ref().unwrap().diffuse_colour;
 
         self.object_uniform_buffer.load_data(
             device,
@@ -453,18 +457,38 @@ impl<'a> VulkanMaterialShader<'a> {
                 .descriptor_count(1);
             descriptor_writes[descriptor_count] = descriptor;
             descriptor_count += 1;
-            object_state.descriptor_states[descriptor_index].generations[image_index as usize] = 1;
+            object_state.descriptor_states[descriptor_index].generations[image_index as usize] =
+                data.material.borrow().as_ref().unwrap().generation;
         }
         descriptor_index += 1;
 
         const SAMPLER_COUNT: usize = 1;
         let mut image_info = [DescriptorImageInfo::default(); SAMPLER_COUNT];
-        for (i, d) in image_info.iter_mut().enumerate() {
-            let data = &mut *data.textures[i].borrow_mut();
-            let texture = match data {
-                Some(t) => t,
-                None => continue,
+        for (_, d) in image_info.iter_mut().enumerate() {
+            let use_type = data
+                .material
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .diffuse_map
+                .use_type;
+            match use_type {
+                TextureUse::Unknown => {
+                    return Err(VulkanError::OperationFailed(
+                        "unable to bind sample to unknown use",
+                    )
+                    .into());
+                }
+                TextureUse::MapDiffuse => {}
             };
+            let mut material = data.material.borrow_mut();
+            let texture = material
+                .as_mut()
+                .unwrap()
+                .diffuse_map
+                .texture
+                .as_mut()
+                .unwrap();
             let descriptor_generaton = &mut object_state.descriptor_states[descriptor_index]
                 .generations[image_index as usize];
             if *descriptor_generaton != texture.generation as usize
@@ -570,17 +594,21 @@ impl<'a> VulkanMaterialShader<'a> {
         Ok(())
     }
 
-    pub fn acquire_resources(&mut self, device: &VulkanDevice, object_id: &mut u32) -> Result<()> {
-        *object_id = self.object_uniform_buffer_index;
+    pub fn acquire_resources(
+        &mut self,
+        device: &VulkanDevice,
+        material: &mut Material,
+    ) -> Result<()> {
+        material.internal_id = self.object_uniform_buffer_index as usize;
         self.object_uniform_buffer_index += 1;
-        let obj_id = *object_id;
+        let obj_id = material.internal_id;
 
         let layouts = [self.object_descriptor_set_layout; 3];
-        let object_state = &mut self.object_states[obj_id as usize];
+        let instance_state = &mut self.instance_states[obj_id];
         let alloc_info = DescriptorSetAllocateInfo::default()
             .descriptor_pool(self.object_descriptor_pool)
             .set_layouts(&layouts);
-        object_state.descriptor_sets = unsafe {
+        instance_state.descriptor_sets = unsafe {
             match device.device.allocate_descriptor_sets(&alloc_info) {
                 Ok(ds) => ds.as_slice().try_into().unwrap(),
                 Err(_) => {
@@ -593,13 +621,13 @@ impl<'a> VulkanMaterialShader<'a> {
         Ok(())
     }
 
-    pub fn release_resources(&mut self, device: &VulkanDevice, object_id: u32) -> Result<()> {
-        let object_state = &mut self.object_states[object_id as usize];
+    pub fn release_resources(&mut self, device: &VulkanDevice, material: &Material) -> Result<()> {
+        let instance_state = &mut self.instance_states[material.internal_id];
 
         unsafe {
             match device
                 .device
-                .free_descriptor_sets(self.object_descriptor_pool, &object_state.descriptor_sets)
+                .free_descriptor_sets(self.object_descriptor_pool, &instance_state.descriptor_sets)
             {
                 Ok(_) => (),
                 Err(_) => {
@@ -610,7 +638,7 @@ impl<'a> VulkanMaterialShader<'a> {
             }
         }
 
-        object_state.descriptor_states[object_id as usize]
+        instance_state.descriptor_states[material.internal_id]
             .generations
             .iter_mut()
             .map(|i| *i = INVALID_ID)
