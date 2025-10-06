@@ -11,15 +11,15 @@ use super::{
 use crate::application::{
     basic::{
         math::{
+            consts::INVALID_ID,
             matrix4::Matrix4,
-            vec2::Vec2,
             vec3::{Vec3, Vector3D},
             vec4::Vec4,
         },
         window::Window,
     },
     renderer::renderer_types::GeometryRenderData,
-    resources::resource_types::{Material, Texture},
+    resources::resource_types::{Geometry, Material, Texture},
 };
 
 use ash::{
@@ -62,6 +62,36 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+//
+const VULKAN_MAX_GEOMETRY_COUNT: usize = 100;
+
+#[derive(Clone, Copy)]
+struct VulkanGeometryData {
+    id: usize,
+    generation: usize,
+    vertex_count: u32,
+    vertex_size: u32,
+    vertex_buffer_offset: u32,
+    index_count: u32,
+    index_size: u32,
+    index_buffer_offset: u32,
+}
+
+impl Default for VulkanGeometryData {
+    fn default() -> Self {
+        Self {
+            id: INVALID_ID,
+            generation: INVALID_ID,
+            vertex_count: Default::default(),
+            vertex_size: Default::default(),
+            vertex_buffer_offset: Default::default(),
+            index_count: Default::default(),
+            index_size: Default::default(),
+            index_buffer_offset: Default::default(),
+        }
+    }
+}
+
 pub struct VulkanContext<'a> {
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
@@ -70,6 +100,7 @@ pub struct VulkanContext<'a> {
     frame_delta_time: f32,
     geometry_vertex_offset: u64,
     geometry_index_offset: u64,
+    geometries: Vec<VulkanGeometryData>,
     object_index_buffer: VulkanBuffer,
     object_vertex_buffer: VulkanBuffer,
     material_shader: VulkanMaterialShader<'a>,
@@ -225,54 +256,11 @@ impl<'a> VulkanContext<'a> {
         )?;
 
         let (vertex_buffer, index_buffer) = Self::create_buffers(&instance, &dev)?;
-        const FACTOR: f32 = 10.0;
-        const VERT_COUNT: usize = 4;
-        let verts: [Vector3D; VERT_COUNT] = [
-            Vector3D {
-                position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(0.0, 0.0),
-            },
-            Vector3D {
-                position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(1.0, 1.0),
-            },
-            Vector3D {
-                position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(0.0, 1.0),
-            },
-            Vector3D {
-                position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(1.0, 0.0),
-            },
-        ];
 
-        Self::upload_data_range(
-            &instance,
-            &dev,
-            dev.graphics_command_pool,
-            Fence::null(),
-            dev.graphics_queue,
-            &vertex_buffer,
-            0,
-            &verts,
-        )?;
-
-        const INDEX_COUNT: usize = 6;
-        let indices: [u32; INDEX_COUNT] = [0, 1, 2, 0, 3, 1];
-
-        Self::upload_data_range(
-            &instance,
-            &dev,
-            dev.graphics_command_pool,
-            Fence::null(),
-            dev.graphics_queue,
-            &index_buffer,
-            0,
-            &indices,
-        )?;
-
-        // let mut object_id = 0;
-        // material_shader.acquire_resources(&dev, &mut object_id)?;
+        let mut geometries = Vec::<VulkanGeometryData>::with_capacity(VULKAN_MAX_GEOMETRY_COUNT);
+        for _ in 0..VULKAN_MAX_GEOMETRY_COUNT {
+            geometries.push(VulkanGeometryData::default());
+        }
 
         #[cfg(feature = "debug")]
         {
@@ -297,6 +285,7 @@ impl<'a> VulkanContext<'a> {
                     frame_delta_time: 0.0,
                     geometry_vertex_offset: 0,
                     geometry_index_offset: 0,
+                    geometries: geometries,
                     object_index_buffer: index_buffer,
                     object_vertex_buffer: vertex_buffer,
                     material_shader: material_shader,
@@ -329,6 +318,7 @@ impl<'a> VulkanContext<'a> {
                     frame_delta_time: 0.0,
                     geometry_vertex_offset: 0,
                     geometry_index_offset: 0,
+                    geometries: geometries,
                     object_index_buffer: index_buffer,
                     object_vertex_buffer: vertex_buffer,
                     material_shader: material_shader,
@@ -538,7 +528,7 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
-    pub fn update_object(data: &mut GeometryRenderData) -> Result<()> {
+    pub fn draw_geometry(data: &mut GeometryRenderData) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
@@ -546,16 +536,36 @@ impl<'a> VulkanContext<'a> {
                 return Err(Error::OperationFailed("Vulkan Context not initialized").into());
             }
         };
-
-        state.material_shader.update_object(
+        state.material_shader.use_shader(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
-            data,
-            state.frame_delta_time,
+        );
+
+        state.material_shader.set_model(
+            &state.device,
+            &state.graphics_cmd_bufs,
+            state.in_flight_frames.current_frame as u32,
+            data.model,
         )?;
 
-        let offsets: [DeviceSize; 1] = [0];
+        state.material_shader.apply_material(
+            &state.device,
+            &state.graphics_cmd_bufs,
+            state.in_flight_frames.current_frame as u32,
+            data.geometry
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .material
+                .as_mut()
+                .unwrap(),
+        )?;
+
+        let buffer_data =
+            &state.geometries[data.geometry.borrow_mut().as_mut().unwrap().internal_id];
+
+        let offsets: [DeviceSize; 1] = [buffer_data.vertex_buffer_offset.into()];
         unsafe {
             state.device.device.cmd_bind_vertex_buffers(
                 state.graphics_cmd_bufs.command_buffer
@@ -564,24 +574,34 @@ impl<'a> VulkanContext<'a> {
                 &[state.object_vertex_buffer.buffer],
                 &offsets,
             );
+            if buffer_data.index_count > 0 {
+                state.device.device.cmd_bind_index_buffer(
+                    state.graphics_cmd_bufs.command_buffer
+                        [state.in_flight_frames.current_frame as usize],
+                    state.object_index_buffer.buffer,
+                    0,
+                    IndexType::UINT32,
+                );
 
-            state.device.device.cmd_bind_index_buffer(
-                state.graphics_cmd_bufs.command_buffer
-                    [state.in_flight_frames.current_frame as usize],
-                state.object_index_buffer.buffer,
-                0,
-                IndexType::UINT32,
-            );
-
-            state.device.device.cmd_draw_indexed(
-                state.graphics_cmd_bufs.command_buffer
-                    [state.in_flight_frames.current_frame as usize],
-                6,
-                1,
-                0,
-                0,
-                0,
-            );
+                state.device.device.cmd_draw_indexed(
+                    state.graphics_cmd_bufs.command_buffer
+                        [state.in_flight_frames.current_frame as usize],
+                    buffer_data.index_count,
+                    1,
+                    0,
+                    0,
+                    0,
+                );
+            } else {
+                state.device.device.cmd_draw(
+                    state.graphics_cmd_bufs.command_buffer
+                        [state.in_flight_frames.current_frame as usize],
+                    buffer_data.vertex_count,
+                    1,
+                    0,
+                    0,
+                );
+            }
         }
 
         Ok(())
@@ -747,6 +767,103 @@ impl<'a> VulkanContext<'a> {
         state
             .material_shader
             .release_resources(&state.device, material)?;
+        Ok(())
+    }
+
+    pub fn create_geometry(
+        geometry: &mut Geometry<'a>,
+        vertices: &[Vector3D],
+        indices: &[u32],
+    ) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+        let is_reupload = geometry.internal_id != INVALID_ID;
+        let mut old_range = VulkanGeometryData::default();
+        let mut internal_data: Option<&mut VulkanGeometryData> = None;
+        if is_reupload {
+            internal_data = Some(&mut state.geometries[geometry.internal_id]);
+            let int_data = internal_data.as_ref().unwrap();
+            old_range.index_buffer_offset = int_data.index_buffer_offset;
+            old_range.index_count = int_data.index_count;
+            old_range.index_size = int_data.index_size;
+            old_range.vertex_buffer_offset = int_data.vertex_buffer_offset;
+            old_range.vertex_count = int_data.vertex_count;
+            old_range.vertex_size = int_data.vertex_size;
+        } else {
+            for (i, geo) in state.geometries.iter_mut().enumerate() {
+                if geo.id == INVALID_ID {
+                    geometry.internal_id = i;
+                    geo.id = geometry.id;
+                    internal_data = Some(geo);
+                    break;
+                }
+            }
+        }
+        if internal_data.is_none() {
+            return Err(Error::OperationFailed("Vulkan State Geometries is Full").into());
+        }
+
+        let command_pool = state.device.graphics_command_pool;
+        let queue = state.device.graphics_queue;
+        let int_data = internal_data.unwrap();
+        int_data.vertex_buffer_offset = state.geometry_vertex_offset as u32;
+        int_data.vertex_count = vertices.len() as u32;
+        int_data.vertex_size = vertices.len() as u32 * size_of::<Vector3D>() as u32;
+        Self::upload_data_range(
+            &state.instance,
+            &state.device,
+            command_pool,
+            Fence::null(),
+            queue,
+            &state.object_vertex_buffer,
+            state.geometry_vertex_offset,
+            vertices,
+        )?;
+
+        state.geometry_vertex_offset += int_data.vertex_size as u64;
+
+        if indices.len() > 0 {
+            int_data.index_buffer_offset = state.geometry_index_offset as u32;
+            int_data.index_count = indices.len() as u32;
+            int_data.index_size = indices.len() as u32 * size_of::<u32>() as u32;
+
+            Self::upload_data_range(
+                &state.instance,
+                &state.device,
+                command_pool,
+                Fence::null(),
+                queue,
+                &state.object_index_buffer,
+                state.geometry_index_offset,
+                indices,
+            )?;
+            state.geometry_index_offset += int_data.index_size as u64;
+        }
+        if int_data.generation == INVALID_ID {
+            int_data.generation = 0;
+        } else {
+            int_data.generation += 1;
+        }
+        // NEXT: create a free list of offsets that were freed
+        Ok(())
+    }
+
+    pub fn destroy_geometry(geometry: &Geometry<'a>) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(Error::OperationFailed("Vulkan Context not initialized").into());
+            }
+        };
+        if geometry.internal_id != INVALID_ID {
+            state.geometries[geometry.internal_id] = VulkanGeometryData::default();
+        }
         Ok(())
     }
 

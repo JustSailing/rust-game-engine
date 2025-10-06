@@ -1,23 +1,18 @@
 use crate::application::{
     basic::{
-        event::{EventCodes, EventCtx, EventState},
         math::{
             consts::deg_to_rad,
             matrix4::Matrix4,
-            vec3::Vec3,
-            vec4::{Quat, Vec4},
+            vec3::{Vec3, Vector3D},
+            vec4::Vec4,
         },
         window::Window,
     },
     renderer::vulkan::vulkan_backend::VulkanContext,
-    resources::resource_types::{Material, Texture},
-    systems::{
-        material_system::{MaterialConfig, MaterialSystem},
-        texture_system::TextureSystem,
-    },
+    resources::resource_types::{Geometry, Material, Texture},
 };
 
-use std::{cell::RefCell, fmt, ptr, rc::Rc};
+use std::{cell::RefCell, fmt, rc::Rc};
 
 pub enum RendererBackendType {
     Vulkan,
@@ -42,11 +37,12 @@ pub struct UniformObject {
 
 pub struct GeometryRenderData<'a> {
     pub model: Matrix4,
-    pub material: Rc<RefCell<Option<&'a mut Material<'a>>>>,
+    pub geometry: Rc<RefCell<Option<&'a mut Geometry<'a>>>>,
 }
 
-pub struct RendererPacket {
+pub struct RendererPacket<'a> {
     pub delta_time: f32,
+    pub geometries: Vec<GeometryRenderData<'a>>,
 }
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
@@ -63,18 +59,20 @@ pub struct RendererBackend<'a> {
         ambient_colour: Vec4,
         mode: i32,
     ) -> Result<()>,
-    update_object: fn(data: &mut GeometryRenderData) -> Result<()>,
+    draw_geometry: fn(data: &mut GeometryRenderData) -> Result<()>,
     create_texture: fn(pixels: &[u8], texture: &mut Texture) -> Result<()>,
     destroy_texture: fn(texture: &Texture) -> Result<()>,
     create_material: fn(material: &'_ mut Material<'a>) -> Result<()>,
     destroy_material: fn(material: &Material<'a>) -> Result<()>,
+    create_geometry:
+        fn(geometry: &'_ mut Geometry<'a>, vertices: &[Vector3D], indices: &[u32]) -> Result<()>,
+    destroy_geometry: fn(geometry: &Geometry<'a>) -> Result<()>,
     end_frame: fn(delta_time: f32) -> Result<()>,
 
     projection: Matrix4,
     view: Matrix4,
     far_clip: f32,
     near_clip: f32,
-    test_material: Rc<RefCell<Option<&'a mut Material<'a>>>>,
 }
 
 static mut RENDERER_BACKEND: Option<RendererBackend> = None;
@@ -122,12 +120,6 @@ impl<'a> Renderer {
                 Self::create_renderer_backend(&RendererBackendType::Vulkan)?;
             }
 
-            EventState::register_event(
-                EventCodes::Debug0 as usize,
-                ptr::null(),
-                Self::on_event_debug,
-            )?;
-
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.initialize)(app_name, window)?;
                 Ok(())
@@ -169,44 +161,6 @@ impl<'a> Renderer {
         }
     }
 
-    pub fn on_event_debug(
-        _code: usize,
-        _sender: *const std::ffi::c_void,
-        _listener: *const std::ffi::c_void,
-        _ctx: &EventCtx,
-    ) -> bool {
-        let state = unsafe {
-            if let Some(ref mut state) = RENDERER_BACKEND {
-                state
-            } else {
-                return false;
-            }
-        };
-        let names = ["brick-wall", "door", "stone-wall", "tile"];
-        static mut CHOICE: usize = 3;
-        let old_name = unsafe { names[CHOICE] };
-        unsafe {
-            CHOICE += 1;
-            CHOICE %= 4;
-        }
-
-        state
-            .test_material
-            .borrow_mut()
-            .as_mut()
-            .unwrap()
-            .diffuse_map
-            .texture = match TextureSystem::acquire(unsafe { names[CHOICE].to_string() }, true) {
-            Ok(t) => Some(t),
-            Err(_) => return false,
-        };
-
-        match TextureSystem::release(old_name) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
-    }
-
     pub fn destroy_texture(texture: &Texture) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
@@ -237,6 +191,30 @@ impl<'a> Renderer {
         }
     }
 
+    pub fn create_geometry<'b: 'static>(
+        geometry: &'a mut Geometry<'b>,
+        vertices: &[Vector3D],
+        indicies: &[u32],
+    ) -> Result<()> {
+        unsafe {
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                (state.create_geometry)(geometry, vertices, indicies)
+            } else {
+                return Err(Error::NotInitialized.into());
+            }
+        }
+    }
+
+    pub fn destroy_geometry<'b: 'static>(geometry: &'a Geometry<'b>) -> Result<()> {
+        unsafe {
+            if let Some(ref mut state) = RENDERER_BACKEND {
+                (state.destroy_geometry)(geometry)
+            } else {
+                return Err(Error::NotInitialized.into());
+            }
+        }
+    }
+
     pub fn end_frame(delta: f32) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
@@ -248,7 +226,7 @@ impl<'a> Renderer {
         }
     }
 
-    pub fn draw_frame(packet: &RendererPacket) -> Result<()> {
+    pub fn draw_frame(packet: &mut RendererPacket) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 state
@@ -269,25 +247,9 @@ impl<'a> Renderer {
             0,
         )?;
 
-        static mut ANGLE: f32 = 0.01;
-        unsafe { ANGLE += 0.01 }
-
-        let rotation = unsafe { Quat::from_axis_angle(Vec3::new_forward(), ANGLE, false) };
-        let model = Quat::to_rotation_matrix(rotation, Vec3::new_zeroes());
-        // let model = Matrix4::identity();
-        let mut data = GeometryRenderData {
-            model,
-            material: Rc::new(RefCell::new(None)),
-        };
-        let mut mat_config = MaterialConfig::default().name(&"test_material".to_string());
-        if state.test_material.borrow().as_ref().is_none() {
-            state
-                .test_material
-                .replace(Some(MaterialSystem::acquire(&mut mat_config)?));
+        for geo in packet.geometries.iter_mut() {
+            (state.draw_geometry)(geo)?;
         }
-
-        data.material = Rc::clone(&state.test_material);
-        (state.update_object)(&mut data)?;
 
         Renderer::end_frame(packet.delta_time)?;
         Ok(())
@@ -334,7 +296,7 @@ impl<'a> Renderer {
                     begin_frame: VulkanContext::begin_frame,
                     end_frame: VulkanContext::end_frame,
                     update_global_state: VulkanContext::update_global_state,
-                    update_object: VulkanContext::update_object,
+                    draw_geometry: VulkanContext::draw_geometry,
                     projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 1000.0),
                     view: Matrix4::translation(&Vec3::new(0.0, 0.0, -30.0)),
                     far_clip: 1000.0,
@@ -343,7 +305,8 @@ impl<'a> Renderer {
                     destroy_texture: VulkanContext::destroy_texture,
                     create_material: VulkanContext::create_material,
                     destroy_material: VulkanContext::destroy_material,
-                    test_material: Rc::new(RefCell::new(None)),
+                    create_geometry: VulkanContext::create_geometry,
+                    destroy_geometry: VulkanContext::destroy_geometry,
                 })
             }
         }

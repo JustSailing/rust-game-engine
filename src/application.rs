@@ -10,6 +10,10 @@ pub mod resources;
 pub mod systems;
 
 use crate::Game;
+use crate::application::basic::math::matrix4::Matrix4;
+use crate::application::renderer::renderer_types::GeometryRenderData;
+use crate::application::resources::resource_types::Geometry;
+use crate::application::systems::geometry_system::{GeometrySysConfig, GeometrySystem};
 use crate::application::systems::material_system::{MaterialSysConfig, MaterialSystem};
 use crate::application::systems::texture_system::{TextureSysConfig, TextureSystem};
 
@@ -17,6 +21,8 @@ use basic::event::{EventCodes, EventCtx, EventState};
 use basic::input::InputState;
 use basic::window::Window;
 use renderer::renderer_types::{Renderer, RendererPacket};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{ffi::c_void, fmt, ptr};
@@ -108,9 +114,7 @@ impl std::error::Error for Error {}
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
-static mut APP_STATE: Option<ApplicationState> = None;
-
-pub struct ApplicationState {
+pub struct ApplicationState<'a> {
     game: Game,
     is_running: bool,
     is_suspended: bool,
@@ -119,9 +123,12 @@ pub struct ApplicationState {
     pos_y: i32,
     width: i32,
     height: i32,
+    test_geometry: Rc<RefCell<Option<&'a mut Geometry<'a>>>>,
 }
 
-impl ApplicationState {
+static mut APP_STATE: Option<ApplicationState> = None;
+
+impl<'a: 'static> ApplicationState<'a> {
     pub fn create(game: &mut Game) -> Result<()> {
         unsafe {
             if let Some(ref _a) = APP_STATE {
@@ -167,6 +174,8 @@ impl ApplicationState {
             application_on_resize,
         )?;
 
+        EventState::register_event(EventCodes::Debug0 as usize, ptr::null(), on_event_debug)?;
+
         Renderer::initialize(app_config.name, &window)?;
 
         let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
@@ -174,6 +183,9 @@ impl ApplicationState {
 
         let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 100 };
         MaterialSystem::initialize(material_sys_config)?;
+
+        let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 100 };
+        GeometrySystem::initialize(geometry_sys_config)?;
 
         if !(game.initialize)(game) {
             return Err(Error::CouldNotInitializeGame.into());
@@ -189,6 +201,7 @@ impl ApplicationState {
                 pos_y: app_config.start_pos_y,
                 width: app_config.start_width,
                 height: app_config.start_height,
+                test_geometry: Rc::new(RefCell::new(Some(GeometrySystem::get_default_geometry()?))),
             });
         }
 
@@ -213,6 +226,7 @@ impl ApplicationState {
             if app_state.window.get_event()? {
                 let current_time = Instant::now();
                 let delta = current_time.duration_since(last_frame_time);
+                InputState::update(delta.as_secs_f32())?;
                 if !(app_state.game.update)(&mut app_state.game, delta.as_secs_f32()) {
                     return Err(Error::CouldNotUpdateGame.into());
                 }
@@ -220,16 +234,24 @@ impl ApplicationState {
                 if !(app_state.game.render)(&mut app_state.game, delta.as_secs_f32()) {
                     return Err(Error::CouldNotRenderGame.into());
                 }
+                let geo = Rc::clone(&app_state.test_geometry);
 
-                let render_packet = RendererPacket {
-                    delta_time: delta.as_secs_f32(),
+                let test_render = GeometryRenderData {
+                    model: Matrix4::identity(),
+                    geometry: geo,
                 };
-                Renderer::draw_frame(&render_packet)?;
+                let mut geometries = Vec::new();
+                geometries.push(test_render);
+                let mut render_packet = RendererPacket {
+                    delta_time: delta.as_secs_f32(),
+                    geometries: geometries,
+                };
+                Renderer::draw_frame(&mut render_packet)?;
                 let elapsed_since_last_frame = last_frame_time.elapsed();
                 if elapsed_since_last_frame < frame_duration {
                     thread::sleep(frame_duration - elapsed_since_last_frame);
                 }
-                InputState::update(delta.as_secs_f32())?;
+
                 last_frame_time = Instant::now();
             } else {
                 break;
@@ -250,7 +272,7 @@ impl ApplicationState {
     }
 }
 
-impl Drop for ApplicationState {
+impl<'a> Drop for ApplicationState<'a> {
     fn drop(&mut self) {
         unsafe {
             if let Some(ref mut _state) = APP_STATE {
@@ -308,5 +330,46 @@ fn application_on_resize(
             }
         }
         _ => return false,
+    }
+}
+
+pub fn on_event_debug(
+    _code: usize,
+    _sender: *const std::ffi::c_void,
+    _listener: *const std::ffi::c_void,
+    _ctx: &EventCtx,
+) -> bool {
+    let state = unsafe {
+        if let Some(ref mut state) = APP_STATE {
+            state
+        } else {
+            return false;
+        }
+    };
+    let names = ["brick-wall", "door", "stone-wall", "tile"];
+    static mut CHOICE: usize = 3;
+    let old_name = unsafe { names[CHOICE] };
+    unsafe {
+        CHOICE += 1;
+        CHOICE %= 4;
+    }
+
+    state
+        .test_geometry
+        .borrow_mut()
+        .as_mut()
+        .unwrap()
+        .material
+        .as_mut()
+        .unwrap()
+        .diffuse_map
+        .texture = match TextureSystem::acquire(unsafe { names[CHOICE].to_string() }, true) {
+        Ok(t) => Some(t),
+        Err(_) => return false,
+    };
+
+    match TextureSystem::release(old_name) {
+        Ok(_) => true,
+        Err(_) => false,
     }
 }

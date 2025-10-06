@@ -87,8 +87,12 @@ pub fn game_update(game: &mut Game, delta: f32) -> bool {
 
     if InputState::is_key_down(Key::T).unwrap() {
         let ctx: EventCtx = EventCtx::I32([0; 4]);
-        let _ =
-            Renderer::on_event_debug(EventCodes::Debug0 as usize, ptr::null(), ptr::null(), &ctx);
+        let _ = application::on_event_debug(
+            EventCodes::Debug0 as usize,
+            ptr::null(),
+            ptr::null(),
+            &ctx,
+        );
     }
 
     recalculate_view(&mut game.state);

@@ -22,7 +22,7 @@ use crate::application::{
         filesystem::{FileHandle, FileModes},
         math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vec3, vec4::Vec4},
     },
-    renderer::renderer_types::{GeometryRenderData, GlobalUniformObj, UniformObject},
+    renderer::renderer_types::{GlobalUniformObj, UniformObject},
     resources::resource_types::{Material, TextureUse},
 };
 
@@ -389,13 +389,12 @@ impl<'a> VulkanMaterialShader<'a> {
         );
     }
 
-    pub fn update_object(
+    pub fn set_model(
         &mut self,
         device: &VulkanDevice,
         command_buffer: &VulkanCommandBuffer,
         image_index: u32,
-        data: &mut GeometryRenderData,
-        _delta: f32,
+        model: Matrix4,
     ) -> Result<()> {
         let cmd_buf = command_buffer.command_buffer[image_index as usize];
         unsafe {
@@ -405,12 +404,22 @@ impl<'a> VulkanMaterialShader<'a> {
                 ShaderStageFlags::VERTEX,
                 0,
                 std::slice::from_raw_parts(
-                    &data.model as *const Matrix4 as *const u8,
+                    &model as *const Matrix4 as *const u8,
                     size_of::<Matrix4>(),
                 ),
             );
         }
-        let object_id = data.material.borrow().as_ref().unwrap().internal_id;
+        Ok(())
+    }
+
+    pub fn apply_material(
+        &mut self,
+        device: &VulkanDevice,
+        command_buffer: &VulkanCommandBuffer,
+        image_index: u32,
+        material: &mut Material,
+    ) -> Result<()> {
+        let object_id = material.internal_id;
         let object_state = &mut self.instance_states[object_id];
         let object_descriptor = object_state.descriptor_sets[image_index as usize];
 
@@ -432,7 +441,7 @@ impl<'a> VulkanMaterialShader<'a> {
         //     ACCUMULATOR += 0.01;
         // }
         // let s = unsafe { (ACCUMULATOR.sin() + 1.0) / 2.0 };
-        obo.diffuse_color = data.material.borrow().as_ref().unwrap().diffuse_colour;
+        obo.diffuse_color = material.diffuse_colour;
 
         self.object_uniform_buffer.load_data(
             device,
@@ -458,20 +467,14 @@ impl<'a> VulkanMaterialShader<'a> {
             descriptor_writes[descriptor_count] = descriptor;
             descriptor_count += 1;
             object_state.descriptor_states[descriptor_index].generations[image_index as usize] =
-                data.material.borrow().as_ref().unwrap().generation;
+                material.generation;
         }
         descriptor_index += 1;
 
         const SAMPLER_COUNT: usize = 1;
         let mut image_info = [DescriptorImageInfo::default(); SAMPLER_COUNT];
         for (_, d) in image_info.iter_mut().enumerate() {
-            let use_type = data
-                .material
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .diffuse_map
-                .use_type;
+            let use_type = material.diffuse_map.use_type;
             match use_type {
                 TextureUse::Unknown => {
                     return Err(VulkanError::OperationFailed(
@@ -481,14 +484,9 @@ impl<'a> VulkanMaterialShader<'a> {
                 }
                 TextureUse::MapDiffuse => {}
             };
-            let mut material = data.material.borrow_mut();
-            let texture = material
-                .as_mut()
-                .unwrap()
-                .diffuse_map
-                .texture
-                .as_mut()
-                .unwrap();
+
+            let texture = material.diffuse_map.texture.as_mut().unwrap();
+
             let descriptor_generaton = &mut object_state.descriptor_states[descriptor_index]
                 .generations[image_index as usize];
             if *descriptor_generaton != texture.generation as usize

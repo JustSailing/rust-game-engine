@@ -4,7 +4,7 @@ use crate::application::{
 };
 use ash::vk::Sampler;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Texture {
     pub id: usize,
     pub width: u32,
@@ -51,23 +51,25 @@ impl Default for Texture {
         }
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct TextureData {
     pub image: VulkanImage,
     pub sampler: Sampler,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum TextureUse {
     Unknown = 0x00,
     MapDiffuse = 0x01,
 }
 
+#[derive(Debug)]
 pub struct TextureMap<'a> {
     pub texture: Option<&'a mut Texture>,
     pub use_type: TextureUse,
 }
 
+#[derive(Debug)]
 pub struct Material<'a> {
     pub id: usize,
     pub generation: usize,
@@ -86,6 +88,27 @@ impl<'a> Default for Material<'_> {
             name: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             diffuse_map: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Geometry<'a> {
+    pub id: usize,
+    pub internal_id: usize,
+    pub generation: usize,
+    pub name: String,
+    pub material: Option<&'a mut Material<'a>>,
+}
+
+impl Default for Geometry<'_> {
+    fn default() -> Self {
+        Self {
+            id: INVALID_ID,
+            internal_id: INVALID_ID,
+            generation: INVALID_ID,
+            name: Default::default(),
+            material: Default::default(),
         }
     }
 }

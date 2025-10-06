@@ -17,7 +17,7 @@ use ash::{
 
 type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct VulkanImage {
     image: Image,
     memory: DeviceMemory,
