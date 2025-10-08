@@ -1,9 +1,10 @@
+use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::{env, fmt};
+use thiserror::Error;
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, FileHandleError>;
 
 pub enum FileModes {
     READ = 0b001,
@@ -11,28 +12,19 @@ pub enum FileModes {
     RW = 0b100,
 }
 
-#[derive(Debug)]
-pub enum Error {
-    CannotOpen,
+#[derive(Error, Debug)]
+pub enum FileHandleError {
+    #[error("could not open file {path} {} {}", file!(), line!())]
+    CannotOpen { path: String },
+    #[error("could not open file {} {}", file!(), line!())]
     CannotReadln,
+    #[error("could not seek file {} {}", file!(), line!())]
     CannotSeek,
+    #[error("could not write file {} {}", file!(), line!())]
     CannotWriteToFile,
+    #[error("could not flush file {} {}", file!(), line!())]
     CannotFlushFile,
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::CannotOpen => write!(f, "cannot open file {} {}", file!(), line!()),
-            Error::CannotReadln => write!(f, "cannot read line {} {}", file!(), line!()),
-            Error::CannotSeek => write!(f, "cannot seek file {} {}", file!(), line!()),
-            Error::CannotWriteToFile => write!(f, "cannot write to file {} {}", file!(), line!()),
-            Error::CannotFlushFile => write!(f, "cannot flush file {} {}", file!(), line!()),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[derive(Debug)]
 pub struct FileHandle {
@@ -63,7 +55,9 @@ impl FileHandle {
                 //file_name: path.clone(),
                 is_valid: true,
             }),
-            Err(_) => Err(Error::CannotOpen.into()),
+            Err(_) => Err(FileHandleError::CannotOpen {
+                path: path.to_string(),
+            }),
         }
     }
 
@@ -73,14 +67,14 @@ impl FileHandle {
         match reader.read_line(&mut line) {
             Ok(0) => return Ok((0, "".to_string())),
             Ok(x) => return Ok((x, line)),
-            Err(_) => return Err(Error::CannotReadln.into()),
+            Err(_) => return Err(FileHandleError::CannotReadln.into()),
         }
     }
 
     pub fn read_lines(&mut self) -> Result<Vec<String>> {
         match self.file.seek(SeekFrom::Start(0)) {
             Ok(_) => {}
-            Err(_) => return Err(Error::CannotSeek.into()),
+            Err(_) => return Err(FileHandleError::CannotSeek.into()),
         }
         let mut reader = BufReader::new(&self.file);
         let mut all_lines = Vec::new();
@@ -93,7 +87,7 @@ impl FileHandle {
                     line.clear();
                     //continue;
                 }
-                Err(_) => return Err(Error::CannotReadln.into()),
+                Err(_) => return Err(FileHandleError::CannotReadln.into()),
             }
         }
     }
@@ -101,13 +95,13 @@ impl FileHandle {
     pub fn read_all(&mut self) -> Result<String> {
         match self.file.seek(SeekFrom::Start(0)) {
             Ok(_) => {}
-            Err(_) => return Err(Error::CannotSeek.into()),
+            Err(_) => return Err(FileHandleError::CannotSeek.into()),
         }
         let mut reader = BufReader::new(&self.file);
         let mut line = String::new();
         match reader.read_to_string(&mut line) {
             Ok(_) => {}
-            Err(_) => return Err(Error::CannotReadln.into()),
+            Err(_) => return Err(FileHandleError::CannotReadln.into()),
         }
         Ok(line)
     }
@@ -115,16 +109,16 @@ impl FileHandle {
     pub fn write(&mut self, text: &str) -> Result<()> {
         match self.file.seek(SeekFrom::End(0)) {
             Ok(_) => {}
-            Err(_) => return Err(Error::CannotSeek.into()),
+            Err(_) => return Err(FileHandleError::CannotSeek.into()),
         }
 
         match self.file.write_all(text.as_bytes()) {
             Ok(_) => {}
-            Err(_) => return Err(Error::CannotWriteToFile.into()),
+            Err(_) => return Err(FileHandleError::CannotWriteToFile.into()),
         }
         match self.file.flush() {
             Ok(_) => {}
-            Err(_) => return Err(Error::CannotFlushFile.into()),
+            Err(_) => return Err(FileHandleError::CannotFlushFile.into()),
         }
         Ok(())
     }

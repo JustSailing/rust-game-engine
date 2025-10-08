@@ -1,97 +1,55 @@
-use std::{collections::HashMap, fmt};
+use std::collections::HashMap;
 
 use crate::application::{
     basic::{
-        filesystem::FileHandle,
-        filesystem::FileModes,
+        filesystem::{FileHandle, FileHandleError, FileModes},
         math::{consts::INVALID_ID, vec4::Vec4},
     },
-    renderer::renderer_types::Renderer,
-    resources::resource_types::{Material, TextureUse},
-    systems::texture_system::TextureSystem,
+    renderer::renderer_types::{FrontendRendererError, Renderer},
+    resources::resource_types::{Material, MaterialConfig, TextureUse},
+    systems::texture_system::{TextureSysError, TextureSystem},
 };
 
+use thiserror::Error;
+
 const DEFAULT_MATERIAL_NAME: &'static str = "default";
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, MaterialSysError>;
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum MaterialSysError {
+    #[error("material system error: already initialized {} {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("material system error: not initialized {} {}", file!(), line!())]
     NotInitialized,
+    #[error("material system error: already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("material system error: config provided has a max count less than 1 {} {}", file!(), line!())]
     MaterialCountZero,
-    ReleaseTextureDoesNotExist,
-    FailedToAcquireMaterial(String),
+    #[error("material system error:  releasing texture that doesn't exist: {name} {} {}", file!(), line!())]
+    ReleaseTextureDoesNotExist { name: String },
+    #[error("material system error: registered materials are at max count increase config max count {} {}", file!(), line!())]
+    MaterialRegistedMaterialsFull,
+    #[error("material system error:  acquire texture that doesn't exist: {name} {} {}", file!(), line!())]
+    FailedToAcquireMaterial { name: String },
+    #[error("material system error:  texture system error in material sys: {source} {} {}", file!(), line!())]
+    TexutreSystemError {
+        #[from]
+        source: TextureSysError,
+    },
+    #[error("material system error:  frontend renderer error in material sys: {source} {} {}", file!(), line!())]
+    RendererSystemError {
+        #[from]
+        source: FrontendRendererError,
+    },
+    #[error("material system error:  file handle error in material sys: {source} {} {}", file!(), line!())]
+    FileHandleError {
+        #[from]
+        source: FileHandleError,
+    },
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => write!(
-                f,
-                "Material System State Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::NotInitialized => write!(
-                f,
-                "Material System State Not Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::AlreadyShutdown => write!(
-                f,
-                "Material System State Already Shutdown {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::MaterialCountZero => write!(
-                f,
-                "Material System State Material Count Zero {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::FailedToAcquireMaterial(e) => write!(f, "{e} {}  {}", file!(), line!()),
-            Error::ReleaseTextureDoesNotExist => write!(
-                f,
-                "Tried to release texture that does not exist {}  {}",
-                file!(),
-                line!()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct MaterialSysConfig {
     pub max_count: usize,
-}
-
-#[derive(Clone)]
-pub struct MaterialConfig {
-    name: String,
-    auto_release: bool,
-    diffuse_colour: Vec4,
-    diffuse_map_name: String,
-}
-
-impl Default for MaterialConfig {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            auto_release: Default::default(),
-            diffuse_colour: Vec4::new_ones(),
-            diffuse_map_name: Default::default(),
-        }
-    }
-}
-
-impl MaterialConfig {
-    pub fn name(mut self, name: &String) -> Self {
-        self.name = name.clone();
-        self
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -131,11 +89,11 @@ impl<'a: 'static> MaterialSystem<'a> {
     pub fn initialize(config: MaterialSysConfig) -> Result<()> {
         unsafe {
             if let Some(ref _state) = MATERIAL_STATE {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(MaterialSysError::AlreadyInitialized);
             }
         }
         if config.max_count == 0 {
-            return Err(Error::MaterialCountZero.into());
+            return Err(MaterialSysError::MaterialCountZero);
         }
 
         let mut registered_array = Vec::<Material>::with_capacity(config.max_count);
@@ -169,7 +127,7 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 Ok(&mut state.default_material)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized.into());
             }
         }
     }
@@ -182,13 +140,17 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized.into());
             }
         };
 
         let mat_ref = match state.registered_materials_hashmap.get_mut(name) {
             Some(t) => t,
-            None => return Err(Error::ReleaseTextureDoesNotExist.into()),
+            None => {
+                return Err(MaterialSysError::ReleaseTextureDoesNotExist {
+                    name: name.to_string(),
+                });
+            }
         };
         if mat_ref.reference_count == 0 {
             println!("WARN tried to release a non-loaded texture.");
@@ -217,7 +179,7 @@ impl<'a: 'static> MaterialSystem<'a> {
                 state.registered_materials[index] = Material::default();
                 return Ok(());
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized.into());
             }
         };
     }
@@ -259,7 +221,7 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized.into());
             }
         };
         if config.name == DEFAULT_MATERIAL_NAME {
@@ -291,12 +253,12 @@ impl<'a: 'static> MaterialSystem<'a> {
                 }
             }
             if mat_ref.handle == INVALID_ID {
-                return Err(Error::FailedToAcquireMaterial("Material System cannot hold anymore materials. Adjust material system config to allow more".to_string()).into());
+                return Err(MaterialSysError::MaterialRegistedMaterialsFull);
             }
             //let name = config.name.clone().as_str();
             state.registered_materials[mat_ref.handle] = Self::load_material(config)?;
             if state.registered_materials[mat_ref.handle].generation == INVALID_ID {
-                state.registered_materials[mat_ref.handle].generation = 0;
+                state.registered_materials[mat_ref.handle].generation = INVALID_ID;
             } else {
                 state.registered_materials[mat_ref.handle].generation += 1;
             }
@@ -314,7 +276,7 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized.into());
             }
         };
         state
@@ -350,7 +312,7 @@ impl<'a: 'static> MaterialSystem<'a> {
                 }
                 MATERIAL_STATE = None;
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized.into());
             }
         }
 

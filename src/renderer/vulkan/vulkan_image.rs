@@ -1,5 +1,5 @@
 use super::{
-    vulkan_backend::{Error as VulkanError, VulkanContext},
+    vulkan_backend::{VulkanBackendError, VulkanContext},
     vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
@@ -15,7 +15,7 @@ use ash::{
     },
 };
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct VulkanImage {
@@ -55,7 +55,7 @@ impl VulkanImage {
             match device.device.create_image(&image_create_info, None) {
                 Ok(i) => i,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create image").into());
+                    return Err(VulkanBackendError::OperationFailed{ issue: "could not create image"});
                 }
             }
         };
@@ -69,10 +69,9 @@ impl VulkanImage {
         );
 
         if memory_type == -1 {
-            return Err(VulkanError::OperationFailed(
+            return Err(VulkanBackendError::OperationFailed{ issue: 
                 "required memory type not found. Image not valid.",
-            )
-            .into());
+        });
         }
         let memory_allocate_info = MemoryAllocateInfo::default()
             .allocation_size(memory_requirements.size)
@@ -82,10 +81,9 @@ impl VulkanImage {
             match device.device.allocate_memory(&memory_allocate_info, None) {
                 Ok(dm) => dm,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
+                    return Err(VulkanBackendError::OperationFailed{ issue: 
                         "could not allocate memory for image",
-                    )
-                    .into());
+                    });
                 }
             }
         };
@@ -94,7 +92,7 @@ impl VulkanImage {
                 Ok(_) => (),
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not bind memory for image").into(),
+                        VulkanBackendError::OperationFailed{ issue: "could not bind memory for image"},
                     );
                 }
             }
@@ -141,7 +139,7 @@ impl VulkanImage {
         unsafe {
             match device.device.create_image_view(&view_create_info, None) {
                 Ok(v) => Ok(v),
-                Err(_) => Err(VulkanError::OperationFailed("could not create image view").into()),
+                Err(_) => Err(VulkanBackendError::OperationFailed{ issue: "could not create image view"}),
             }
         }
     }
@@ -189,7 +187,7 @@ impl VulkanImage {
             source_stage = PipelineStageFlags::TRANSFER;
             dest_stage = PipelineStageFlags::FRAGMENT_SHADER;
         } else {
-            return Err(VulkanError::OperationFailed("unsupported transition").into());
+            return Err(VulkanBackendError::OperationFailed{ issue: "unsupported transition"});
         }
 
         unsafe {

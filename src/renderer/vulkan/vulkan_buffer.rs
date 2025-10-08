@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::ptr::copy_nonoverlapping as memcpy;
 
 use super::{
-    vulkan_backend::Error as VulkanError, vulkan_backend::VulkanContext,
+    vulkan_backend::VulkanBackendError, vulkan_backend::VulkanContext,
     vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
 };
 use ash::Instance;
@@ -11,7 +11,7 @@ use ash::vk::{
     Fence, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, Queue, SharingMode,
 };
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 pub struct VulkanBuffer {
     pub buffer: Buffer,
     size: u64,
@@ -40,7 +40,9 @@ impl VulkanBuffer {
             match device.device.create_buffer(&buffer_create_info, None) {
                 Ok(b) => b,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create buffer").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue : "could not create buffer",
+                    });
                 }
             }
         };
@@ -55,7 +57,9 @@ impl VulkanBuffer {
         );
 
         if memory_index == -1 {
-            return Err(VulkanError::OperationFailed("could not find memory index").into());
+            return Err(VulkanBackendError::OperationFailed {
+                issue : "could not find memory index",
+            });
         }
 
         let allocate_info = MemoryAllocateInfo::default()
@@ -66,7 +70,9 @@ impl VulkanBuffer {
             match device.device.allocate_memory(&allocate_info, None) {
                 Ok(m) => m,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not allocate memory").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue : "could not allocate memory",
+                    });
                 }
             }
         };
@@ -113,7 +119,9 @@ impl VulkanBuffer {
             match device.device.create_buffer(&buffer_create_info, None) {
                 Ok(b) => b,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("failed to create buffer").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue : "failed to create buffer",
+                    });
                 }
             }
         };
@@ -128,7 +136,9 @@ impl VulkanBuffer {
             match device.device.allocate_memory(&memory_info, None) {
                 Ok(m) => m,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not allocate memory").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue : "could not allocate memory",
+                    });
                 }
             }
         };
@@ -137,7 +147,9 @@ impl VulkanBuffer {
             match device.device.bind_buffer_memory(new_buffer, new_memory, 0) {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not bind new memory").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue : "could not bind new memory",
+                    });
                 }
             }
         }
@@ -174,7 +186,9 @@ impl VulkanBuffer {
                 .bind_buffer_memory(self.buffer, self.memory, offset)
         } {
             Ok(_) => Ok(()),
-            Err(_) => Err(VulkanError::OperationFailed("could not bind buffer memory").into()),
+            Err(_) => Err(VulkanBackendError::OperationFailed {
+                issue : "could not bind buffer memory",
+            }),
         }
     }
 
@@ -188,7 +202,9 @@ impl VulkanBuffer {
         unsafe {
             match device.device.map_memory(self.memory, offset, size, flags) {
                 Ok(d) => Ok(d),
-                Err(_) => Err(VulkanError::OperationFailed("could not map memory").into()),
+                Err(_) => Err(VulkanBackendError::OperationFailed {
+                    issue : "could not map memory",
+                }),
             }
         }
     }
@@ -211,7 +227,9 @@ impl VulkanBuffer {
             match device.device.map_memory(self.memory, offset, size, flags) {
                 Ok(d) => d,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not map memory").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue : "could not map memory",
+                    });
                 }
             }
         };

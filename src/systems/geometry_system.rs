@@ -1,15 +1,15 @@
-use std::{collections::HashMap, fmt};
-
 use crate::application::{
     basic::math::{
         consts::INVALID_ID,
         vec2::Vec2,
         vec3::{Vec3, Vector3D},
     },
-    renderer::renderer_types::Renderer,
-    resources::resource_types::Geometry,
-    systems::material_system::{MaterialConfig, MaterialSystem},
+    renderer::renderer_types::{FrontendRendererError, Renderer},
+    resources::resource_types::{Geometry, MaterialConfig},
+    systems::material_system::{MaterialSysError, MaterialSystem},
 };
+use std::collections::HashMap;
+use thiserror::Error;
 pub struct GeometrySysConfig {
     pub max_count: usize,
 }
@@ -24,62 +24,33 @@ pub struct GeometryConfig {
 }
 
 const DEFAULT_GEOMETRY_NAME: &'static str = "default";
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, GeometrySysError>;
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum GeometrySysError {
+    #[error("geometry system error: already initialized {}  {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("geometry system error: not initialized {}  {}", file!(), line!())]
     NotInitialized,
+    #[error("geometry system error: already shutdown {}  {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("geometry system error: config max count is less than 1 {}  {}", file!(), line!())]
     GeometryCountZero,
+    #[error("geometry system error: id is invalid {}  {}", file!(), line!())]
     IdIsInvalid,
+    #[error("geometry system error: registered geometries has reached max count. adjust config {}  {}", file!(), line!())]
     RegisteredGeometryFull,
+    #[error("geometry system error: error returned from material system {source} {}  {}", file!(), line!())]
+    MaterialSysError {
+        #[from]
+        source: MaterialSysError,
+    },
+    #[error("geometry system error: error returned from frontend renderer {source} {}  {}", file!(), line!())]
+    FrontendRendererError {
+        #[from]
+        source: FrontendRendererError,
+    },
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => write!(
-                f,
-                "Geometry System State Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::NotInitialized => write!(
-                f,
-                "Geometry System State Not Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::AlreadyShutdown => write!(
-                f,
-                "Geometry System State Already Shutdown {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::GeometryCountZero => write!(
-                f,
-                "Geometry System State given a count of zero in GeometrySysConfig {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::IdIsInvalid => write!(
-                f,
-                "Geometry System State was given an invalid id {} {}",
-                file!(),
-                line!()
-            ),
-            Error::RegisteredGeometryFull => write!(
-                f,
-                "Geometry System State the amount of registered geometries exceed. Increase amount in GeometrySysConfig {} {}",
-                file!(),
-                line!()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[derive(Copy, Clone, Default)]
 pub struct GeometryRef {
@@ -118,11 +89,11 @@ impl<'a: 'static> GeometrySystem<'a> {
     pub fn initialize(config: GeometrySysConfig) -> Result<()> {
         unsafe {
             if let Some(ref _state) = GEOMETRY_STATE {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(GeometrySysError::AlreadyInitialized);
             }
         }
         if config.max_count == 0 {
-            return Err(Error::GeometryCountZero.into());
+            return Err(GeometrySysError::GeometryCountZero);
         }
 
         let mut registered_array = Vec::<Geometry>::with_capacity(config.max_count);
@@ -148,7 +119,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             if let Some(ref mut state) = GEOMETRY_STATE {
                 return Ok(&mut state.default_geometry);
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(GeometrySysError::NotInitialized);
             }
         };
     }
@@ -158,12 +129,12 @@ impl<'a: 'static> GeometrySystem<'a> {
             if let Some(ref mut state) = GEOMETRY_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(GeometrySysError::NotInitialized);
             }
         };
         let geo_ref = match state.registered_geometries_hashmap.get_mut(&id) {
             Some(gr) => gr,
-            None => return Err(Error::IdIsInvalid.into()),
+            None => return Err(GeometrySysError::IdIsInvalid),
         };
 
         geo_ref.reference_count += 1;
@@ -178,7 +149,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             if let Some(ref mut state) = GEOMETRY_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(GeometrySysError::NotInitialized);
             }
         };
         let mut geo_ref = GeometryRef::default();
@@ -192,7 +163,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             }
         }
         if geo_ref.handle == INVALID_ID {
-            return Err(Error::RegisteredGeometryFull.into());
+            return Err(GeometrySysError::RegisteredGeometryFull);
         }
         let geometry = &mut state.registered_geometries[geo_ref.handle];
         Self::create_geometry(geo_ref.handle, config)?;
@@ -204,7 +175,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             if let Some(ref mut state) = GEOMETRY_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(GeometrySysError::NotInitialized);
             }
         };
         if geometry.id != INVALID_ID {
@@ -230,7 +201,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             if let Some(ref mut state) = GEOMETRY_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(GeometrySysError::NotInitialized);
             }
         };
         let geo = &mut state.registered_geometries[handle];
@@ -245,7 +216,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             if let Some(ref mut state) = GEOMETRY_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(GeometrySysError::NotInitialized);
             }
         };
         Renderer::destroy_geometry(geometry)?;

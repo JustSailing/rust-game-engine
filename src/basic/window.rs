@@ -1,5 +1,4 @@
 use std::ffi::CString;
-use std::fmt;
 use std::mem;
 use std::ptr;
 
@@ -9,26 +8,29 @@ use x11::xlib::Display as Display_;
 use x11::xlib::Window as Window_;
 use x11::xlib::*;
 
-use crate::application::basic::event::{EventCodes, EventCtx, EventState};
+use crate::application::basic::event::{EventCodes, EventCtx, EventState, EventSysError};
 
-use super::input::InputState;
+use super::input::{InputState, InputSysError};
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub enum Error {
-    OperationFailed(&'static str),
+type Result<T> = std::result::Result<T, WindowError>;
+
+#[derive(Error, Debug)]
+pub enum WindowError {
+    #[error("window error: {issue} {} {}", file!(), line!())]
+    OperationFailed { issue: String },
+    #[error("window error: from input system {source} {} {}", file!(), line!())]
+    InputStateError {
+        #[from]
+        source: InputSysError,
+    },
+    #[error("window error: from event system {source} {} {}", file!(), line!())]
+    EventStateError {
+        #[from]
+        source: EventSysError,
+    },
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Error::OperationFailed(e) => write!(f, "{e} {}  {}", file!(), line!()),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct Display {
     pub raw: *mut Display_,
@@ -38,7 +40,9 @@ impl Display {
     pub fn open() -> Result<Self> {
         let display = unsafe { XOpenDisplay(ptr::null_mut()) };
         if display.is_null() {
-            return Err(Error::OperationFailed("failed to open display").into());
+            return Err(WindowError::OperationFailed {
+                issue: "failed to open display".to_string(),
+            });
         }
         Ok(Display { raw: display })
     }
@@ -69,7 +73,11 @@ impl Window {
     pub fn create(x: i32, y: i32, width: i32, height: i32) -> Result<Self> {
         let display = match Display::open() {
             Ok(d) => d,
-            Err(_) => return Err(Error::OperationFailed("Could not open display").into()),
+            Err(_) => {
+                return Err(WindowError::OperationFailed {
+                    issue: "Could not open display".to_string(),
+                });
+            }
         };
         let screen_num = unsafe { XDefaultScreen(display.raw) };
         let root_win_id = unsafe { XRootWindow(display.raw, screen_num) };
@@ -87,7 +95,9 @@ impl Window {
             )
         };
         if window_id == 0 {
-            return Err(Error::OperationFailed("failed to create simple window").into());
+            return Err(WindowError::OperationFailed {
+                issue: "failed to create simple window".to_string(),
+            });
         }
         let wm_protocols;
         let wm_delete_window;

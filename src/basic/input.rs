@@ -1,8 +1,8 @@
 use super::event::{EventCodes, EventCtx, EventState};
 use super::window::{Button, Key};
-use std::fmt;
+use thiserror::Error;
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, InputSysError>;
 
 #[derive(Clone, Copy)]
 struct KeyboardState {
@@ -16,33 +16,15 @@ struct MouseState {
     buttons: [u8; Button::MaxButtons as usize],
 }
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum InputSysError {
+    #[error("input system error: already initialized {} {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("input system error: already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("input system error: not initialized {} {}", file!(), line!())]
     NotInitialized,
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => write!(
-                f,
-                "Input State Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::NotInitialized => {
-                write!(f, "Input State Not Initialized {}  {}", file!(), line!())
-            }
-            Error::AlreadyShutdown => {
-                write!(f, "Input State Already Shutdown {}  {}", file!(), line!())
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct InputState {
     keyboard_current: KeyboardState,
@@ -57,7 +39,7 @@ impl InputState {
     pub fn initialize() -> Result<()> {
         unsafe {
             if let Some(ref _a) = INPUT_STATE {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(InputSysError::AlreadyInitialized);
             } else {
                 INPUT_STATE = Some(InputState {
                     keyboard_current: KeyboardState { keys: [0; 256] },
@@ -83,7 +65,7 @@ impl InputState {
             if let Some(ref _a) = INPUT_STATE {
                 INPUT_STATE = None;
             } else {
-                return Err(Error::AlreadyShutdown.into());
+                return Err(InputSysError::AlreadyShutdown);
             }
         }
         Ok(())
@@ -95,7 +77,7 @@ impl InputState {
                 state.keyboard_previous = state.keyboard_current;
                 state.mouse_previous = state.mouse_current;
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         }
 
@@ -107,7 +89,7 @@ impl InputState {
             if let Some(ref mut s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -123,7 +105,7 @@ impl InputState {
             };
             match EventState::fire_event(code, std::ptr::null(), &ctx) {
                 Ok(()) => (),
-                Err(_) => return Err(Error::NotInitialized.into()),
+                Err(_) => return Err(InputSysError::NotInitialized),
             }
         }
 
@@ -135,7 +117,7 @@ impl InputState {
             if let Some(ref mut s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -151,7 +133,7 @@ impl InputState {
             };
             match EventState::fire_event(code, std::ptr::null(), &ctx) {
                 Ok(()) => (),
-                Err(_) => return Err(Error::NotInitialized.into()),
+                Err(_) => return Err(InputSysError::NotInitialized),
             }
         }
 
@@ -163,7 +145,7 @@ impl InputState {
             if let Some(ref mut s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -176,7 +158,7 @@ impl InputState {
             let ctx = EventCtx::U16(arr);
             match EventState::fire_event(EventCodes::MouseMoved as usize, std::ptr::null(), &ctx) {
                 Ok(()) => (),
-                Err(_) => return Err(Error::NotInitialized.into()),
+                Err(_) => return Err(InputSysError::NotInitialized),
             }
         }
 
@@ -189,7 +171,7 @@ impl InputState {
         let ctx = EventCtx::I8(arr);
         match EventState::fire_event(EventCodes::MouseWheel as usize, std::ptr::null(), &ctx) {
             Ok(_) => Ok(()),
-            Err(_) => return Err(Error::NotInitialized.into()),
+            Err(_) => return Err(InputSysError::NotInitialized),
         }
     }
 
@@ -198,7 +180,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -210,7 +192,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -222,7 +204,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -234,7 +216,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
 
@@ -246,7 +228,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
         Ok(state.mouse_current.buttons[button as usize] == true as _)
@@ -257,7 +239,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
         Ok(state.mouse_current.buttons[button as usize] == false as _)
@@ -268,7 +250,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
         Ok(state.mouse_previous.buttons[button as usize] == true as _)
@@ -279,7 +261,7 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
         Ok(state.mouse_previous.buttons[button as usize] == false as _)
@@ -290,12 +272,12 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
         Ok((
-            state.mouse_current.pos_x.into(),
-            state.mouse_current.pos_y.into(),
+            state.mouse_current.pos_x as i32,
+            state.mouse_current.pos_y as i32,
         ))
     }
 
@@ -304,12 +286,12 @@ impl InputState {
             if let Some(ref s) = INPUT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(InputSysError::NotInitialized);
             }
         };
         Ok((
-            state.mouse_previous.pos_x.into(),
-            state.mouse_previous.pos_y.into(),
+            state.mouse_previous.pos_x as i32,
+            state.mouse_previous.pos_y as i32,
         ))
     }
 }

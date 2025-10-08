@@ -3,9 +3,9 @@ use ash::vk::{
     CommandBufferResetFlags, CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
 };
 
-use super::{vulkan_backend::Error as VulkanError, vulkan_device::VulkanDevice};
+use super::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 pub enum CommandBufferState {
     Ready,
@@ -42,7 +42,7 @@ impl VulkanCommandBuffer {
                 Ok(c) => c,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not allocate command buffer").into(),
+                        VulkanBackendError::OperationFailed{ issue: "could not allocate command buffer"},
                     );
                 }
             }
@@ -89,7 +89,7 @@ impl VulkanCommandBuffer {
                 Ok(_) => self.state = CommandBufferState::Recording,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not begin command buffer").into(),
+                        VulkanBackendError::OperationFailed{ issue: "could not begin command buffer"},
                     );
                 }
             }
@@ -109,7 +109,7 @@ impl VulkanCommandBuffer {
                 }
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not reset command buffer").into(),
+                        VulkanBackendError::OperationFailed{ issue: "could not reset command buffer"},
                     );
                 }
             }
@@ -126,7 +126,7 @@ impl VulkanCommandBuffer {
                     self.state = CommandBufferState::RecordingEnded;
                 }
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("ending command buffer failed").into());
+                    return Err(VulkanBackendError::OperationFailed{ issue: "ending command buffer failed"});
                 }
             }
         }
@@ -161,14 +161,14 @@ impl VulkanCommandBuffer {
             {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not submit queue").into());
+                    return Err(VulkanBackendError::OperationFailed{ issue: "could not submit queue"});
                 }
             }
 
             match device.device.queue_wait_idle(queue) {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not wait for queue").into());
+                    return Err(VulkanBackendError::OperationFailed{ issue: "could not wait for queue"});
                 }
             }
         }

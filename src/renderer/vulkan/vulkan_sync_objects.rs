@@ -1,8 +1,8 @@
 use ash::vk::{self, Fence, FenceCreateFlags, FenceCreateInfo, Semaphore, SemaphoreCreateInfo};
 
-use super::{vulkan_backend::Error as VulkanError, vulkan_device::VulkanDevice};
+use super::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 #[derive(Clone, Copy)]
 pub struct SyncObjects {
     pub image_avail_semaphore: Semaphore,
@@ -21,7 +21,7 @@ impl SyncObjects {
             match device.device.create_fence(&fence_create_info, None) {
                 Ok(f) => f,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create fence").into());
+                    return Err(VulkanBackendError::OperationFailed { issue: "could not create fence"});
                 }
             }
         };
@@ -30,7 +30,7 @@ impl SyncObjects {
             match device.device.create_semaphore(&sema_info, None) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create semaphore").into());
+                    return Err(VulkanBackendError::OperationFailed { issue: "could not create semaphore"});
                 }
             }
         };
@@ -39,7 +39,7 @@ impl SyncObjects {
             match device.device.create_semaphore(&sema_info, None) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create semaphore").into());
+                    return Err(VulkanBackendError::OperationFailed { issue: "could not create semaphore"});
                 }
             }
         };
@@ -63,15 +63,15 @@ impl SyncObjects {
                     Ok(false)
                 }
                 Err(vk::Result::ERROR_DEVICE_LOST) => {
-                    Err(VulkanError::OperationFailed("fence: device lost").into())
+                    Err(VulkanBackendError::OperationFailed { issue: "fence: device lost"})
                 }
                 Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
-                    Err(VulkanError::OperationFailed("fence: out of host memory").into())
+                    Err(VulkanBackendError::OperationFailed { issue: "fence: out of host memory"})
                 }
                 Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
-                    Err(VulkanError::OperationFailed("fence: out of device memory").into())
+                    Err(VulkanBackendError::OperationFailed { issue: "fence: out of device memory"})
                 }
-                Err(_) => Err(VulkanError::OperationFailed("fence: unknown error occured").into()),
+                Err(_) => Err(VulkanBackendError::OperationFailed { issue: "fence: unknown error occured"}),
             }
         }
     }
@@ -83,7 +83,7 @@ impl SyncObjects {
                 .reset_fences(std::slice::from_ref(&self.fence))
             {
                 Ok(_) => Ok(()),
-                Err(_) => Err(VulkanError::OperationFailed("could not reset fence").into()),
+                Err(_) => Err(VulkanBackendError::OperationFailed { issue: "could not reset fence"}),
             }
         }
     }

@@ -69,6 +69,32 @@ pub struct TextureMap<'a> {
     pub use_type: TextureUse,
 }
 
+#[derive(Clone)]
+pub struct MaterialConfig {
+    pub name: String,
+    pub auto_release: bool,
+    pub diffuse_colour: Vec4,
+    pub diffuse_map_name: String,
+}
+
+impl Default for MaterialConfig {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            auto_release: Default::default(),
+            diffuse_colour: Vec4::new_ones(),
+            diffuse_map_name: Default::default(),
+        }
+    }
+}
+
+impl MaterialConfig {
+    pub fn name(mut self, name: &String) -> Self {
+        self.name = name.clone();
+        self
+    }
+}
+
 #[derive(Debug)]
 pub struct Material<'a> {
     pub id: usize,
@@ -111,4 +137,35 @@ impl Default for Geometry<'_> {
             material: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ResourceType {
+    Text,
+    Binary,
+    Image,
+    Material,
+    StaticMesh,
+    Custom,
+    Unknown,
+}
+#[derive(Debug, Clone)]
+pub enum ResourceData {
+    Unknown,
+    ImageResourceData(ImageResourceData),
+}
+#[derive(Debug, Clone)]
+pub struct Resource {
+    loader_id: usize,
+    name: String,
+    full_path: String,
+    data: ResourceData,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageResourceData {
+    channel_count: u8,
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
 }

@@ -1,6 +1,7 @@
-use std::{fmt, os::raw::c_void};
+use std::{os::raw::c_void};
+use thiserror::Error;
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, EventSysError>;
 
 pub enum EventCtx {
     I64([i64; 2]),
@@ -22,6 +23,7 @@ pub enum EventCtx {
     None,
 }
 
+#[derive(Debug)]
 pub enum EventCodes {
     ApplicationQuit = 0x01,
     KeyPressed = 0x02,
@@ -68,33 +70,15 @@ struct EventCodeEntry {
     events: Vec<RegisteredEvent>,
 }
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum EventSysError {
+    #[error("event system error: already initialize {} {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("event system error: not intialized {} {}", file!(), line!())]
     NotInitialized,
+    #[error("event system error: already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => write!(
-                f,
-                "Event State Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::NotInitialized => {
-                write!(f, "Event State Not Initialized {}  {}", file!(), line!())
-            }
-            Error::AlreadyShutdown => {
-                write!(f, "Event State Already Shutdown {}  {}", file!(), line!())
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct EventState {
     registered: [EventCodeEntry; EventCodes::MaxCodes as usize],
@@ -106,7 +90,7 @@ impl EventState {
     pub fn initialize() -> Result<()> {
         unsafe {
             if let Some(ref _a) = EVENT_STATE {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(EventSysError::AlreadyInitialized);
             }
         };
 
@@ -132,7 +116,7 @@ impl EventState {
                 }
                 EVENT_STATE = None;
             } else {
-                return Err(Error::AlreadyShutdown.into());
+                return Err(EventSysError::AlreadyShutdown);
             }
         };
 
@@ -148,7 +132,7 @@ impl EventState {
             if let Some(ref mut s) = EVENT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(EventSysError::NotInitialized);
             }
         };
 
@@ -175,7 +159,7 @@ impl EventState {
             if let Some(ref mut s) = EVENT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(EventSysError::NotInitialized);
             }
         };
 
@@ -202,7 +186,7 @@ impl EventState {
             if let Some(ref mut s) = EVENT_STATE {
                 s
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(EventSysError::NotInitialized);
             }
         };
         for reg in &state.registered[code].events {

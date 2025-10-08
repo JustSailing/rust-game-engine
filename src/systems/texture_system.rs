@@ -1,9 +1,13 @@
-use std::{collections::HashMap, fmt};
+use std::collections::HashMap;
 
 use crate::application::{
-    basic::math::consts::INVALID_ID, renderer::renderer_types::Renderer,
+    basic::math::consts::INVALID_ID,
+    renderer::renderer_types::{FrontendRendererError, Renderer},
     resources::resource_types::Texture,
 };
+
+use image::ImageError;
+use thiserror::Error;
 
 #[derive(Clone, Copy)]
 pub struct TextureSysConfig {
@@ -36,57 +40,33 @@ impl Default for TextureRef {
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum TextureSysError {
+    #[error("texture system error: system already initialized {} {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("texture system error: system not initialized {} {}", file!(), line!())]
     NotInitialized,
+    #[error("texture system error: system already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("texture system error: config given with max count less than 1 {} {}", file!(), line!())]
     TextureCountZero,
+    #[error("texture system error: releasing a texture that does not exist {} {}", file!(), line!())]
     ReleaseTextureDoesNotExist,
-    FailedToAcquireTexture(String),
+    #[error("texture system error: failed to acquire texture: {} {} {}", name,  file!(), line!())]
+    FailedToAcquireTexture { name: String },
+    #[error("texture system error: frontend renderer error : {} {} {source}", file!(), line!())]
+    FrontendError {
+        #[from]
+        source: FrontendRendererError,
+    },
+    #[error("texture system error: image error from image crate {} {} {source}", file!(), line!())]
+    ImageError {
+        #[from]
+        source: ImageError,
+    },
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => write!(
-                f,
-                "Texture System State Already Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::NotInitialized => write!(
-                f,
-                "Texture System State Not Initialized {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::AlreadyShutdown => write!(
-                f,
-                "Texture System State Already Shutdown {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::TextureCountZero => write!(
-                f,
-                "Texture System State Texture Count Zero {}  {}",
-                file!(),
-                line!()
-            ),
-            Error::FailedToAcquireTexture(e) => write!(f, "{e} {}  {}", file!(), line!()),
-            Error::ReleaseTextureDoesNotExist => write!(
-                f,
-                "Tried to release texture that does not exist {}  {}",
-                file!(),
-                line!()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, TextureSysError>;
 
 pub struct TextureSystem {
     config: TextureSysConfig,
@@ -102,11 +82,11 @@ impl<'a> TextureSystem {
     pub fn initialize(config: TextureSysConfig) -> Result<()> {
         unsafe {
             if let Some(ref _state) = TEXTURE_STATE {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(TextureSysError::AlreadyInitialized);
             }
         }
         if config.max_count == 0 {
-            return Err(Error::TextureCountZero.into());
+            return Err(TextureSysError::TextureCountZero);
         }
 
         let mut registered_array = Vec::<Texture>::with_capacity(config.max_count);
@@ -156,16 +136,16 @@ impl<'a> TextureSystem {
     fn destroy_default_texture() -> Result<()> {
         unsafe {
             if let Some(ref mut state) = TEXTURE_STATE {
-                Renderer::destroy_texture(&state.default_texture)
+                Renderer::destroy_texture(&state.default_texture).map_err(Into::into)
             } else {
-                Err(Error::NotInitialized.into())
+                Err(TextureSysError::NotInitialized.into())
             }
         }
     }
 
     fn load_texture(name: &str) -> Result<Texture> {
         let file_path = format!("assets/textures/{}.{}", name, "jpg");
-        let data = image::open(file_path)?.to_rgba8();
+        let data = image::open(file_path)?.flipv().to_rgba8();
         let width = data.width();
         let height = data.height();
         let v = data.into_raw();
@@ -194,7 +174,7 @@ impl<'a> TextureSystem {
             if let Some(ref mut state) = TEXTURE_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(TextureSysError::NotInitialized.into());
             }
         };
         if name == DEFAULT_TEXTURE_NAME {
@@ -224,10 +204,10 @@ impl<'a> TextureSystem {
                 }
             }
             if tex_ref.handle == INVALID_ID {
-                return Err(Error::FailedToAcquireTexture(String::from(
-                    "failed to acquire texture. texture system cannot hold anymore textures",
-                ))
-                .into());
+                return Err(TextureSysError::FailedToAcquireTexture {
+                    name: "failed to acquire texture. texture system cannot hold anymore textures"
+                        .to_string(),
+                });
             }
             let n = String::from(&name);
             state.registered_textures[tex_ref.handle] = Self::load_texture(&n)?;
@@ -245,13 +225,13 @@ impl<'a> TextureSystem {
             if let Some(ref mut state) = TEXTURE_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(TextureSysError::NotInitialized.into());
             }
         };
 
         let tex_ref = match state.registered_textures_hashmap.get_mut(name) {
             Some(t) => t,
-            None => return Err(Error::ReleaseTextureDoesNotExist.into()),
+            None => return Err(TextureSysError::ReleaseTextureDoesNotExist.into()),
         };
         if tex_ref.reference_count == 0 {
             println!("WARN tried to release a non-loaded texture.");
@@ -277,7 +257,7 @@ impl<'a> TextureSystem {
             if let Some(ref mut state) = TEXTURE_STATE {
                 Ok(&mut state.default_texture)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(TextureSysError::NotInitialized.into());
             }
         }
     }
@@ -287,7 +267,7 @@ impl<'a> TextureSystem {
             if let Some(ref mut state) = TEXTURE_STATE {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(TextureSysError::NotInitialized.into());
             }
         };
         state
@@ -309,7 +289,7 @@ impl<'a> TextureSystem {
                 TEXTURE_STATE = None;
                 Ok(())
             } else {
-                Err(Error::NotInitialized.into())
+                Err(TextureSysError::NotInitialized.into())
             }
         }
     }

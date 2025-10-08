@@ -1,4 +1,4 @@
-use super::vulkan_backend::Error as VulkanError;
+use super::vulkan_backend::VulkanBackendError;
 use ash::{
     Device, Instance,
     khr::surface,
@@ -12,7 +12,7 @@ use ash::{
 };
 use std::ffi::CStr;
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 struct PhysicalDeviceRequirements {
     graphics: bool,
     present: bool,
@@ -63,10 +63,9 @@ impl VulkanDevice {
             match instance.enumerate_physical_devices() {
                 Ok(devs) => devs,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "Could not enumerate physical devices",
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "Could not enumerate physical devices",
+                    });
                 }
             }
         };
@@ -159,10 +158,9 @@ impl VulkanDevice {
                 match instance.create_device(phys_dev, &device_create_info, None) {
                     Ok(dev) => dev,
                     Err(_) => {
-                        return Err(VulkanError::OperationFailed(
-                            "could not create logical device",
-                        )
-                        .into());
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create logical device",
+                        });
                     }
                 }
             };
@@ -179,10 +177,9 @@ impl VulkanDevice {
                 match dev.create_command_pool(&pool_create_info, None) {
                     Ok(g) => g,
                     Err(_) => {
-                        return Err(VulkanError::OperationFailed(
-                            "could not create graphics command pool",
-                        )
-                        .into());
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create graphics command pool",
+                        });
                     }
                 }
             };
@@ -203,7 +200,9 @@ impl VulkanDevice {
                 depth_format: Format::default(),
             });
         }
-        return Err(VulkanError::OperationFailed("Could not find suitable device").into());
+        return Err(VulkanBackendError::OperationFailed {
+            issue: "Could not find suitable device",
+        });
     }
 
     pub fn query_swapchain_support(
@@ -216,9 +215,9 @@ impl VulkanDevice {
             match surface_loader.get_physical_device_surface_capabilities(*phys_dev, *surface) {
                 Ok(c) => c,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not get surface capabilities").into(),
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not get surface capabilities",
+                    });
                 }
             }
         };
@@ -226,9 +225,9 @@ impl VulkanDevice {
             match surface_loader.get_physical_device_surface_formats(*phys_dev, *surface) {
                 Ok(f) => f,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not get surface formats").into(),
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not get surface formats",
+                    });
                 }
             }
         };
@@ -236,7 +235,9 @@ impl VulkanDevice {
             match surface_loader.get_physical_device_surface_present_modes(*phys_dev, *surface) {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not get present modes").into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not get present modes",
+                    });
                 }
             }
         };
@@ -297,10 +298,9 @@ impl VulkanDevice {
                 ) {
                     Ok(b) => b,
                     Err(_) => {
-                        return Err(VulkanError::OperationFailed(
-                            "Failed to get physical device surface support",
-                        )
-                        .into());
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "Failed to get physical device surface support",
+                        });
                     }
                 }
             };
@@ -311,7 +311,9 @@ impl VulkanDevice {
         let name = match dev_properties.device_name_as_c_str() {
             Ok(s) => s.to_str().unwrap_or("could not convert cstr to str"),
             Err(_) => {
-                return Err(VulkanError::OperationFailed("Could not get device name").into());
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Could not get device name",
+                });
             }
         };
         println!(
@@ -350,9 +352,9 @@ impl VulkanDevice {
             match instance.enumerate_device_extension_properties(*phys_dev) {
                 Ok(ext) => ext,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not get extension properties").into(),
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not get extension properties",
+                    });
                 }
             }
         };
@@ -363,9 +365,9 @@ impl VulkanDevice {
                 let name = match ext.extension_name_as_c_str() {
                     Ok(e) => e,
                     Err(_) => {
-                        return Err(
-                            VulkanError::OperationFailed("could not get extension name").into()
-                        );
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not get extension name",
+                        });
                     }
                 };
                 if *req == name {

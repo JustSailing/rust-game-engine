@@ -12,7 +12,7 @@ use ash::{
 };
 
 use super::super::{
-    vulkan_backend::Error as VulkanError, vulkan_buffer::VulkanBuffer,
+    vulkan_backend::VulkanBackendError, vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
     vulkan_pipeline::VulkanPipeline, vulkan_renderpass::VulkanRenderPass,
 };
@@ -26,7 +26,7 @@ use crate::application::{
     resources::resource_types::{Material, TextureUse},
 };
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 const VULKAN_MAX_MATERIAL_COUNT: usize = 1024;
 const VULKAN_MATERIAL_SHADER_DESCRIPTOR_COUNT: usize = 2;
@@ -110,10 +110,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(d) => d,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not create global descriptor set layout".into(),
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create global descriptor set layout",
+                    });
                 }
             }
         };
@@ -133,10 +132,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not create descritpor pool".into(),
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create descritpor pool",
+                    });
                 }
             }
         };
@@ -166,10 +164,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(d) => d,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not create object descriptor layout",
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create object descriptor layout",
+                    });
                 }
             }
         };
@@ -194,9 +191,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not create descriptor pool").into(),
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create descriptor pool",
+                    });
                 }
             }
         };
@@ -283,10 +280,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(gd) => gd,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not allocate descriptor sets".into(),
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not allocate descriptor sets".into(),
+                    });
                 }
             }
         };
@@ -337,14 +333,18 @@ impl<'a> VulkanMaterialShader<'a> {
         println!("file name: {}", file_name);
         let mut file_handle = match FileHandle::open(&file_name, FileModes::READ, false) {
             Ok(f) => f,
-            Err(_) => return Err(VulkanError::OperationFailed("could not open file".into()).into()),
+            Err(_) => {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "could not open file",
+                });
+            }
         };
         let code = match ash::util::read_spv(&mut file_handle.file) {
             Ok(c) => c,
             Err(_) => {
-                return Err(
-                    VulkanError::OperationFailed("could not read spirv file".into()).into(),
-                );
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "could not read spirv file",
+                });
             }
         };
 
@@ -356,10 +356,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed(
-                        "could not create shader module".into(),
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create shader module".into(),
+                    });
                 }
             }
         };
@@ -477,10 +476,9 @@ impl<'a> VulkanMaterialShader<'a> {
             let use_type = material.diffuse_map.use_type;
             match use_type {
                 TextureUse::Unknown => {
-                    return Err(VulkanError::OperationFailed(
-                        "unable to bind sample to unknown use",
-                    )
-                    .into());
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "unable to bind sample to unknown use",
+                    });
                 }
                 TextureUse::MapDiffuse => {}
             };
@@ -610,9 +608,9 @@ impl<'a> VulkanMaterialShader<'a> {
             match device.device.allocate_descriptor_sets(&alloc_info) {
                 Ok(ds) => ds.as_slice().try_into().unwrap(),
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not allocate descriptor sets").into(),
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not allocate descriptor sets",
+                    });
                 }
             }
         };
@@ -629,9 +627,9 @@ impl<'a> VulkanMaterialShader<'a> {
             {
                 Ok(_) => (),
                 Err(_) => {
-                    return Err(
-                        VulkanError::OperationFailed("could not free descriptor sets").into(),
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not free descriptor sets",
+                    });
                 }
             }
         }

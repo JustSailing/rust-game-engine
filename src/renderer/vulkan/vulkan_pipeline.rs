@@ -14,11 +14,11 @@ use ash::vk::{
 use crate::application::basic::math::{matrix4::Matrix4, vec3::Vector3D};
 
 use super::{
-    vulkan_backend::Error as VulkanError, vulkan_command_buffer::VulkanCommandBuffer,
+    vulkan_backend::VulkanBackendError, vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice, vulkan_renderpass::VulkanRenderPass,
 };
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 pub struct VulkanPipeline {
     pipeline: Pipeline,
@@ -131,7 +131,7 @@ impl VulkanPipeline {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(
-                        VulkanError::OperationFailed("could not create pipeline layout").into(),
+                        VulkanBackendError::OperationFailed{ issue: "could not create pipeline layout"},
                     );
                 }
             }
@@ -160,7 +160,7 @@ impl VulkanPipeline {
             ) {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create pipeline").into());
+                    return Err(VulkanBackendError::OperationFailed{ issue: "could not create pipeline"});
                 }
             }
         };

@@ -5,12 +5,13 @@ use application::basic::{
     input::InputState, math::consts::deg_to_rad, math::matrix4::Matrix4, math::vec3::Vec3,
     window::Key,
 };
-use application::{AppConfig, ApplicationState, Error as AppError};
+use application::{AppConfig, ApplicationState};
 
 use crate::application::basic::event::{EventCodes, EventCtx};
 use crate::application::renderer::renderer_types::Renderer;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn main() -> Result<(), AppError> {
+fn main() -> Result<()> {
     println!("Hello, world!");
     let app_config = AppConfig {
         start_pos_x: 0,
@@ -70,6 +71,7 @@ pub fn game_initialize(game: &mut Game) -> bool {
 
 pub fn game_update(game: &mut Game, delta: f32) -> bool {
     let movement = 500.0;
+
     if InputState::is_key_down(Key::A).unwrap() {
         camera_yaw(&mut game.state, 1.0 * delta * movement);
     }

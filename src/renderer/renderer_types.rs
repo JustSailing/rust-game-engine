@@ -8,12 +8,15 @@ use crate::application::{
         },
         window::Window,
     },
-    renderer::vulkan::vulkan_backend::VulkanContext,
+    renderer::vulkan::vulkan_backend::{VulkanBackendError, VulkanContext},
     resources::resource_types::{Geometry, Material, Texture},
 };
 
-use std::{cell::RefCell, fmt, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
+use thiserror::Error;
+
+type Result<T> = std::result::Result<T, FrontendRendererError>;
 pub enum RendererBackendType {
     Vulkan,
     OpenGL,
@@ -45,29 +48,28 @@ pub struct RendererPacket<'a> {
     pub geometries: Vec<GeometryRenderData<'a>>,
 }
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
 pub struct RendererBackend<'a> {
     frame_number: u64,
-    initialize: fn(application_name: &str, window: &Window) -> Result<()>,
-    shutdown: fn() -> Result<()>,
-    resized: fn(width: i32, height: i32) -> Result<()>,
-    begin_frame: fn(delta_time: f32) -> Result<bool>,
+    initialize: fn(application_name: &str, window: &Window) -> std::result::Result<(), VulkanBackendError>,
+    shutdown: fn() -> std::result::Result<(), VulkanBackendError>,
+    resized: fn(width: i32, height: i32) -> std::result::Result<(), VulkanBackendError>,
+    begin_frame: fn(delta_time: f32) -> std::result::Result<bool, VulkanBackendError>,
     update_global_state: fn(
         projection: Matrix4,
         view: Matrix4,
         view_position: Vec3,
         ambient_colour: Vec4,
         mode: i32,
-    ) -> Result<()>,
-    draw_geometry: fn(data: &mut GeometryRenderData) -> Result<()>,
-    create_texture: fn(pixels: &[u8], texture: &mut Texture) -> Result<()>,
-    destroy_texture: fn(texture: &Texture) -> Result<()>,
-    create_material: fn(material: &'_ mut Material<'a>) -> Result<()>,
-    destroy_material: fn(material: &Material<'a>) -> Result<()>,
+    ) -> std::result::Result<(), VulkanBackendError>,
+    draw_geometry: fn(data: &mut GeometryRenderData) -> std::result::Result<(), VulkanBackendError>,
+    create_texture: fn(pixels: &[u8], texture: &mut Texture) -> std::result::Result<(), VulkanBackendError>,
+    destroy_texture: fn(texture: &Texture) -> std::result::Result<(), VulkanBackendError>,
+    create_material: fn(material: &'_ mut Material<'a>) -> std::result::Result<(), VulkanBackendError>,
+    destroy_material: fn(material: &Material<'a>) -> std::result::Result<(), VulkanBackendError>,
     create_geometry:
-        fn(geometry: &'_ mut Geometry<'a>, vertices: &[Vector3D], indices: &[u32]) -> Result<()>,
-    destroy_geometry: fn(geometry: &Geometry<'a>) -> Result<()>,
-    end_frame: fn(delta_time: f32) -> Result<()>,
+        fn(geometry: &'_ mut Geometry<'a>, vertices: &[Vector3D], indices: &[u32]) -> std::result::Result<(), VulkanBackendError>,
+    destroy_geometry: fn(geometry: &Geometry<'a>) -> std::result::Result<(), VulkanBackendError>,
+    end_frame: fn(delta_time: f32) -> std::result::Result<(), VulkanBackendError>,
 
     projection: Matrix4,
     view: Matrix4,
@@ -77,37 +79,20 @@ pub struct RendererBackend<'a> {
 
 static mut RENDERER_BACKEND: Option<RendererBackend> = None;
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum FrontendRendererError {
+    #[error("frontend renderer error: already initialized {} {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("frontend renderer error: already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("frontend renderer error: not initialized {} {}", file!(), line!())]
     NotInitialized,
-    OperationFailed(&'static str),
+    #[error("frontend renderer error: backend renderer error {} {} {source}", file!(), line!())]
+    BackendRendererError {
+        #[from]
+        source: VulkanBackendError,
+    },
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => {
-                write!(f, "Renderer Already Initialized {}  {}", file!(), line!())
-            }
-            Error::AlreadyShutdown => {
-                write!(f, "Renderer Already Initialized {}  {}", file!(), line!())
-            }
-            Error::NotInitialized => {
-                write!(f, "Renderer Already Initialized {}  {}", file!(), line!())
-            }
-            Error::OperationFailed(e) => write!(
-                f,
-                "Renderer Operation Failed: {e}. {}  {}",
-                file!(),
-                line!()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct Renderer;
 
@@ -115,7 +100,7 @@ impl<'a> Renderer {
     pub fn initialize(app_name: &str, window: &Window) -> Result<()> {
         unsafe {
             if let Some(ref _state) = RENDERER_BACKEND {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(FrontendRendererError::AlreadyInitialized);
             } else {
                 Self::create_renderer_backend(&RendererBackendType::Vulkan)?;
             }
@@ -124,7 +109,7 @@ impl<'a> Renderer {
                 (state.initialize)(app_name, window)?;
                 Ok(())
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -136,7 +121,7 @@ impl<'a> Renderer {
                 RENDERER_BACKEND = None;
                 return Ok(());
             } else {
-                return Err(Error::AlreadyShutdown.into());
+                return Err(FrontendRendererError::AlreadyShutdown);
             }
         }
     }
@@ -144,9 +129,9 @@ impl<'a> Renderer {
     pub fn begin_frame(delta: f32) -> Result<bool> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.begin_frame)(delta)
+                (state.begin_frame)(delta).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -154,9 +139,9 @@ impl<'a> Renderer {
     pub fn create_texture(pixels: &[u8], texture: &mut Texture) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.create_texture)(pixels, texture)
+                (state.create_texture)(pixels, texture).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -164,9 +149,9 @@ impl<'a> Renderer {
     pub fn destroy_texture(texture: &Texture) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.destroy_texture)(&texture)
+                (state.destroy_texture)(&texture).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -174,9 +159,9 @@ impl<'a> Renderer {
     pub fn create_material<'b: 'static>(material: &'a mut Material<'b>) -> Result<()> {
         unsafe {
             if let Some(ref state) = RENDERER_BACKEND {
-                (state.create_material)(material)
+                (state.create_material)(material).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -184,9 +169,9 @@ impl<'a> Renderer {
     pub fn destroy_material<'b: 'static>(material: &'a Material<'b>) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.destroy_material)(material)
+                (state.destroy_material)(material).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -198,9 +183,9 @@ impl<'a> Renderer {
     ) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.create_geometry)(geometry, vertices, indicies)
+                (state.create_geometry)(geometry, vertices, indicies).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -208,9 +193,9 @@ impl<'a> Renderer {
     pub fn destroy_geometry<'b: 'static>(geometry: &'a Geometry<'b>) -> Result<()> {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.destroy_geometry)(geometry)
+                (state.destroy_geometry)(geometry).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -219,9 +204,9 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 state.frame_number += 1;
-                (state.end_frame)(delta)
+                (state.end_frame)(delta).map_err(Into::into)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -231,7 +216,7 @@ impl<'a> Renderer {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         };
 
@@ -260,7 +245,7 @@ impl<'a> Renderer {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 state
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized);
             }
         };
         state.projection = Matrix4::perspective(
@@ -269,7 +254,7 @@ impl<'a> Renderer {
             state.near_clip,
             state.far_clip,
         );
-        (state.resized)(width, height)
+        (state.resized)(width, height).map_err(Into::into)
     }
 
     pub fn set_view(view: Matrix4) -> Result<()> {
@@ -278,7 +263,7 @@ impl<'a> Renderer {
                 state.view = view;
                 Ok(())
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized.into());
             }
         }
     }
@@ -286,7 +271,7 @@ impl<'a> Renderer {
     fn create_renderer_backend(_type_: &RendererBackendType) -> Result<()> {
         unsafe {
             if let Some(ref mut _state) = RENDERER_BACKEND {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(FrontendRendererError::AlreadyInitialized.into());
             } else {
                 RENDERER_BACKEND = Some(RendererBackend {
                     frame_number: 0,
@@ -318,7 +303,7 @@ impl<'a> Renderer {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 Ok((state.shutdown)()?)
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(FrontendRendererError::NotInitialized.into());
             }
         }
     }

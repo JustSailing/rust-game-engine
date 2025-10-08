@@ -6,11 +6,11 @@ use ash::vk::{
     SUBPASS_EXTERNAL, SampleCountFlags, SubpassContents, SubpassDependency, SubpassDescription,
 };
 
-use super::vulkan_backend::Error as VulkanError;
+use super::vulkan_backend::VulkanBackendError;
 use super::vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer};
 use super::vulkan_device::VulkanDevice;
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 pub enum RenderPassState {
     Ready,
@@ -120,7 +120,7 @@ impl VulkanRenderPass {
             {
                 Ok(r) => r,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create renderpass").into());
+                    return Err(VulkanBackendError::OperationFailed { issue: "could not create renderpass"});
                 }
             }
         };

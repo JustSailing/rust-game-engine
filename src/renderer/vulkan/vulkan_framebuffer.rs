@@ -1,11 +1,11 @@
 use ash::vk::{Framebuffer, FramebufferCreateInfo, ImageView};
 
 use super::{
-    vulkan_backend::Error as VulkanError, vulkan_device::VulkanDevice,
+    vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice,
     vulkan_renderpass::VulkanRenderPass,
 };
 
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 pub struct VulkanFramebuffer {
     pub framebuffer: Framebuffer,
@@ -36,7 +36,7 @@ impl VulkanFramebuffer {
             {
                 Ok(f) => f,
                 Err(_) => {
-                    return Err(VulkanError::OperationFailed("could not create framebuffer").into());
+                    return Err(VulkanBackendError::OperationFailed { issue: "could not create framebuffer"});
                 }
             }
         };

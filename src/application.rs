@@ -9,23 +9,25 @@ pub mod resources;
 #[path = "./systems/mod.rs"]
 pub mod systems;
 
-use crate::Game;
-use crate::application::basic::math::matrix4::Matrix4;
-use crate::application::renderer::renderer_types::GeometryRenderData;
-use crate::application::resources::resource_types::Geometry;
-use crate::application::systems::geometry_system::{GeometrySysConfig, GeometrySystem};
-use crate::application::systems::material_system::{MaterialSysConfig, MaterialSystem};
-use crate::application::systems::texture_system::{TextureSysConfig, TextureSystem};
-
-use basic::event::{EventCodes, EventCtx, EventState};
-use basic::input::InputState;
-use basic::window::Window;
-use renderer::renderer_types::{Renderer, RendererPacket};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::thread;
 use std::time::{Duration, Instant};
-use std::{ffi::c_void, fmt, ptr};
+use std::{ffi::c_void, ptr};
+use thiserror::Error;
+
+use crate::Game;
+use basic::event::{EventCodes, EventCtx, EventState, EventSysError};
+use basic::input::{InputState, InputSysError};
+use basic::math::matrix4::Matrix4;
+use basic::window::{Window, WindowError};
+use renderer::renderer_types::{
+    FrontendRendererError, GeometryRenderData, Renderer, RendererPacket,
+};
+use resources::resource_types::Geometry;
+use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
+use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
+use systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
 
 #[derive(Clone, Copy)]
 pub struct AppConfig {
@@ -36,83 +38,60 @@ pub struct AppConfig {
     pub name: &'static str,
 }
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("app error: could not create window {} {}", file!(), line!())]
     CouldNotCreateWindow,
-    NotInitialized,
+    #[error("app error: already initialized {} {}", file!(), line!())]
     AlreadyInitialized,
+    #[error("app error: already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("appp error: not initialized {} {}", file!(), line!())]
+    NotInitialized,
+    #[error("app error: could not initialize game {} {}", file!(), line!())]
     CouldNotInitializeGame,
+    #[error("app error:  could not update game {} {}", file!(), line!())]
     CouldNotUpdateGame,
+    #[error("app error:  could not render game {} {}", file!(), line!())]
     CouldNotRenderGame,
+    #[error("app error:  error from event system {source} {} {}", file!(), line!())]
+    EventSysError {
+        #[from]
+        source: EventSysError,
+    },
+    #[error("app error:  error from input system {source} {} {}", file!(), line!())]
+    InputSysError {
+        #[from]
+        source: InputSysError,
+    },
+    #[error("app error:  error from window {source} {} {}", file!(), line!())]
+    WindowError {
+        #[from]
+        source: WindowError,
+    },
+    #[error("app error:  error from renderer frontend {source} {} {}", file!(), line!())]
+    FrontendRendererError {
+        #[from]
+        source: FrontendRendererError,
+    },
+    #[error("app error:  error from material system {source} {} {}", file!(), line!())]
+    MaterialSysError {
+        #[from]
+        source: MaterialSysError,
+    },
+    #[error("app error:  error from texture system {source} {} {}", file!(), line!())]
+    TextureSysError {
+        #[from]
+        source: TextureSysError,
+    },
+    #[error("app error:  error from geometry system {source} {} {}", file!(), line!())]
+    GeometrySysError {
+        #[from]
+        source: GeometrySysError,
+    },
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::AlreadyInitialized => {
-                write!(
-                    f,
-                    "Application State Already Initialized {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-            Error::NotInitialized => {
-                write!(
-                    f,
-                    "Application State Not Initialized {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-            Error::AlreadyShutdown => {
-                write!(
-                    f,
-                    "Application State Already Shutdown {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-            Error::CouldNotCreateWindow => {
-                write!(
-                    f,
-                    "Application state could not create window {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-            Error::CouldNotInitializeGame => {
-                write!(
-                    f,
-                    "Application state could not intialize game {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-            Error::CouldNotUpdateGame => {
-                write!(
-                    f,
-                    "Application state could not update game {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-            Error::CouldNotRenderGame => {
-                write!(
-                    f,
-                    "Application state could not render game {}  {}",
-                    file!(),
-                    line!()
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-type Result<T> = core::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = std::result::Result<T, AppError>;
 
 pub struct ApplicationState<'a> {
     game: Game,
@@ -132,7 +111,7 @@ impl<'a: 'static> ApplicationState<'a> {
     pub fn create(game: &mut Game) -> Result<()> {
         unsafe {
             if let Some(ref _a) = APP_STATE {
-                return Err(Error::AlreadyInitialized.into());
+                return Err(AppError::AlreadyInitialized);
             }
         }
         let app_config = game.config;
@@ -162,18 +141,6 @@ impl<'a: 'static> ApplicationState<'a> {
             application_on_resize,
         )?;
 
-        EventState::register_event(
-            EventCodes::KeyPressed as usize,
-            ptr::null(),
-            application_on_event,
-        )?;
-
-        EventState::register_event(
-            EventCodes::KeyReleased as usize,
-            ptr::null(),
-            application_on_resize,
-        )?;
-
         EventState::register_event(EventCodes::Debug0 as usize, ptr::null(), on_event_debug)?;
 
         Renderer::initialize(app_config.name, &window)?;
@@ -188,7 +155,7 @@ impl<'a: 'static> ApplicationState<'a> {
         GeometrySystem::initialize(geometry_sys_config)?;
 
         if !(game.initialize)(game) {
-            return Err(Error::CouldNotInitializeGame.into());
+            return Err(AppError::CouldNotInitializeGame);
         }
 
         unsafe {
@@ -213,7 +180,7 @@ impl<'a: 'static> ApplicationState<'a> {
             if let Some(ref mut app) = APP_STATE {
                 app
             } else {
-                return Err(Error::NotInitialized.into());
+                return Err(AppError::NotInitialized);
             }
         };
 
@@ -225,14 +192,14 @@ impl<'a: 'static> ApplicationState<'a> {
         loop {
             if app_state.window.get_event()? {
                 let current_time = Instant::now();
-                let delta = current_time.duration_since(last_frame_time);
-                InputState::update(delta.as_secs_f32())?;
-                if !(app_state.game.update)(&mut app_state.game, delta.as_secs_f32()) {
-                    return Err(Error::CouldNotUpdateGame.into());
+                let delta = current_time.duration_since(last_frame_time).as_secs_f32() / 60.0;
+                InputState::update(delta)?;
+                if !(app_state.game.update)(&mut app_state.game, delta) {
+                    return Err(AppError::CouldNotUpdateGame);
                 }
 
-                if !(app_state.game.render)(&mut app_state.game, delta.as_secs_f32()) {
-                    return Err(Error::CouldNotRenderGame.into());
+                if !(app_state.game.render)(&mut app_state.game, delta) {
+                    return Err(AppError::CouldNotRenderGame);
                 }
                 let geo = Rc::clone(&app_state.test_geometry);
 
@@ -243,7 +210,7 @@ impl<'a: 'static> ApplicationState<'a> {
                 let mut geometries = Vec::new();
                 geometries.push(test_render);
                 let mut render_packet = RendererPacket {
-                    delta_time: delta.as_secs_f32(),
+                    delta_time: delta,
                     geometries: geometries,
                 };
                 Renderer::draw_frame(&mut render_packet)?;
@@ -266,7 +233,7 @@ impl<'a: 'static> ApplicationState<'a> {
                 APP_STATE = None;
                 return Ok(());
             } else {
-                return Err(Error::AlreadyShutdown.into());
+                return Err(AppError::AlreadyShutdown);
             }
         }
     }
