@@ -40,12 +40,12 @@ pub enum GeometrySysError {
     IdIsInvalid,
     #[error("geometry system error: registered geometries has reached max count. adjust config {}  {}", file!(), line!())]
     RegisteredGeometryFull,
-    #[error("geometry system error: error returned from material system {source} {}  {}", file!(), line!())]
+    #[error("{source}\ngeometry system error: error returned from material system {}  {}", file!(), line!())]
     MaterialSysError {
         #[from]
         source: MaterialSysError,
     },
-    #[error("geometry system error: error returned from frontend renderer {source} {}  {}", file!(), line!())]
+    #[error("{source}\ngeometry system error: error returned from frontend renderer {}  {}", file!(), line!())]
     FrontendRendererError {
         #[from]
         source: FrontendRendererError,

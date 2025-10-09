@@ -50,7 +50,8 @@ pub struct RendererPacket<'a> {
 
 pub struct RendererBackend<'a> {
     frame_number: u64,
-    initialize: fn(application_name: &str, window: &Window) -> std::result::Result<(), VulkanBackendError>,
+    initialize:
+        fn(application_name: &str, window: &Window) -> std::result::Result<(), VulkanBackendError>,
     shutdown: fn() -> std::result::Result<(), VulkanBackendError>,
     resized: fn(width: i32, height: i32) -> std::result::Result<(), VulkanBackendError>,
     begin_frame: fn(delta_time: f32) -> std::result::Result<bool, VulkanBackendError>,
@@ -62,12 +63,17 @@ pub struct RendererBackend<'a> {
         mode: i32,
     ) -> std::result::Result<(), VulkanBackendError>,
     draw_geometry: fn(data: &mut GeometryRenderData) -> std::result::Result<(), VulkanBackendError>,
-    create_texture: fn(pixels: &[u8], texture: &mut Texture) -> std::result::Result<(), VulkanBackendError>,
+    create_texture:
+        fn(pixels: &[u8], texture: &mut Texture) -> std::result::Result<(), VulkanBackendError>,
     destroy_texture: fn(texture: &Texture) -> std::result::Result<(), VulkanBackendError>,
-    create_material: fn(material: &'_ mut Material<'a>) -> std::result::Result<(), VulkanBackendError>,
+    create_material:
+        fn(material: &'_ mut Material<'a>) -> std::result::Result<(), VulkanBackendError>,
     destroy_material: fn(material: &Material<'a>) -> std::result::Result<(), VulkanBackendError>,
-    create_geometry:
-        fn(geometry: &'_ mut Geometry<'a>, vertices: &[Vector3D], indices: &[u32]) -> std::result::Result<(), VulkanBackendError>,
+    create_geometry: fn(
+        geometry: &'_ mut Geometry<'a>,
+        vertices: &[Vector3D],
+        indices: &[u32],
+    ) -> std::result::Result<(), VulkanBackendError>,
     destroy_geometry: fn(geometry: &Geometry<'a>) -> std::result::Result<(), VulkanBackendError>,
     end_frame: fn(delta_time: f32) -> std::result::Result<(), VulkanBackendError>,
 
@@ -87,7 +93,7 @@ pub enum FrontendRendererError {
     AlreadyShutdown,
     #[error("frontend renderer error: not initialized {} {}", file!(), line!())]
     NotInitialized,
-    #[error("frontend renderer error: backend renderer error {} {} {source}", file!(), line!())]
+    #[error("{source}\nfrontend renderer error: backend renderer error {} {}", file!(), line!())]
     BackendRendererError {
         #[from]
         source: VulkanBackendError,

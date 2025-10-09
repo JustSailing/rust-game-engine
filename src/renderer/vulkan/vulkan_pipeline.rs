@@ -130,9 +130,9 @@ impl VulkanPipeline {
             {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed{ issue: "could not create pipeline layout"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create pipeline layout",
+                    });
                 }
             }
         };
@@ -160,7 +160,9 @@ impl VulkanPipeline {
             ) {
                 Ok(p) => p,
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed{ issue: "could not create pipeline"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create pipeline",
+                    });
                 }
             }
         };

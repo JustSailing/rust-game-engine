@@ -41,7 +41,7 @@ impl VulkanBuffer {
                 Ok(b) => b,
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
-                        issue : "could not create buffer",
+                        issue: "could not create buffer",
                     });
                 }
             }
@@ -58,7 +58,7 @@ impl VulkanBuffer {
 
         if memory_index == -1 {
             return Err(VulkanBackendError::OperationFailed {
-                issue : "could not find memory index",
+                issue: "could not find memory index",
             });
         }
 
@@ -71,7 +71,7 @@ impl VulkanBuffer {
                 Ok(m) => m,
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
-                        issue : "could not allocate memory",
+                        issue: "could not allocate memory",
                     });
                 }
             }
@@ -120,7 +120,7 @@ impl VulkanBuffer {
                 Ok(b) => b,
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
-                        issue : "failed to create buffer",
+                        issue: "failed to create buffer",
                     });
                 }
             }
@@ -137,7 +137,7 @@ impl VulkanBuffer {
                 Ok(m) => m,
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
-                        issue : "could not allocate memory",
+                        issue: "could not allocate memory",
                     });
                 }
             }
@@ -148,7 +148,7 @@ impl VulkanBuffer {
                 Ok(_) => {}
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
-                        issue : "could not bind new memory",
+                        issue: "could not bind new memory",
                     });
                 }
             }
@@ -187,7 +187,7 @@ impl VulkanBuffer {
         } {
             Ok(_) => Ok(()),
             Err(_) => Err(VulkanBackendError::OperationFailed {
-                issue : "could not bind buffer memory",
+                issue: "could not bind buffer memory",
             }),
         }
     }
@@ -203,7 +203,7 @@ impl VulkanBuffer {
             match device.device.map_memory(self.memory, offset, size, flags) {
                 Ok(d) => Ok(d),
                 Err(_) => Err(VulkanBackendError::OperationFailed {
-                    issue : "could not map memory",
+                    issue: "could not map memory",
                 }),
             }
         }
@@ -228,7 +228,7 @@ impl VulkanBuffer {
                 Ok(d) => d,
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
-                        issue : "could not map memory",
+                        issue: "could not map memory",
                     });
                 }
             }

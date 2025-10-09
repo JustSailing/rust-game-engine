@@ -20,23 +20,26 @@ use crate::application::{
     },
     renderer::renderer_types::GeometryRenderData,
     resources::resource_types::{Geometry, Material, Texture},
+    systems::resource_system::ResourceSysError,
 };
 
 use ash::{
+    Entry, Instance, LoadingError,
     khr::{
         surface::{self, Instance as SurfaceInstance},
         xlib_surface,
-    }, vk::{
+    },
+    vk::{
         self, BorderColor, BufferUsageFlags, CommandPool, CommandPoolResetFlags, CompareOp,
         DeviceSize, Extent2D, Fence, Filter, Format, ImageAspectFlags, ImageLayout, ImageTiling,
         ImageType, ImageUsageFlags, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
         PipelineStageFlags, Queue, Rect2D, SamplerAddressMode, SamplerCreateInfo,
         SamplerMipmapMode, SubmitInfo, SurfaceKHR, Viewport,
-    }, Entry, Instance, LoadingError
+    },
 };
 #[cfg(feature = "debug")]
 use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
-use std::ffi::{c_void, CString, NulError};
+use std::ffi::{CString, NulError, c_void};
 #[cfg(feature = "debug")]
 use std::{borrow::Cow, ffi};
 use thiserror::Error;
@@ -60,7 +63,12 @@ pub enum VulkanBackendError {
     AshResultError {
         #[from]
         source: ash::vk::Result,
-    }
+    },
+    #[error("{source}\nvulkan backend error: resource sys error {} {}", file!(), line!())]
+    ResourceError {
+        #[from]
+        source: ResourceSysError,
+    },
 }
 
 //
@@ -129,9 +137,9 @@ impl<'a> VulkanContext<'a> {
     pub fn initialize(name: &str, window: &Window) -> Result<()> {
         unsafe {
             if let Some(ref _state) = VULKAN_STATE {
-                return Err(
-                    VulkanBackendError::OperationFailed { issue :"Vulkan Context was already initialized"},
-                );
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context was already initialized",
+                });
             }
         }
 
@@ -351,7 +359,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref _state) = VULKAN_STATE {
                 VULKAN_STATE = None;
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context already destroyed"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context already destroyed",
+                });
             }
         }
 
@@ -362,7 +372,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context already destroyed"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context already destroyed",
+                });
             }
         };
 
@@ -382,7 +394,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context already destroyed"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context already destroyed",
+                });
             }
         };
         state.frame_delta_time = delta;
@@ -390,7 +404,9 @@ impl<'a> VulkanContext<'a> {
             match unsafe { state.device.device.device_wait_idle() } {
                 Ok(_) => return Ok(false),
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed { issue :"could not wait on device"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not wait on device",
+                    });
                 }
             }
         }
@@ -402,7 +418,9 @@ impl<'a> VulkanContext<'a> {
                     Err(e) => return Err(e),
                 },
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed { issue :"could not wait on device"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not wait on device",
+                    });
                 }
             }
         }
@@ -507,7 +525,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         state.material_shader.use_shader(
@@ -534,7 +554,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         state.material_shader.use_shader(
@@ -613,7 +635,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
 
@@ -716,7 +740,11 @@ impl<'a> VulkanContext<'a> {
         texture.internal_data.sampler = unsafe {
             match state.device.device.create_sampler(&sampler_info, None) {
                 Ok(s) => s,
-                Err(_) => return Err(VulkanBackendError::OperationFailed { issue :"could not create sampler"}),
+                Err(_) => {
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create sampler",
+                    });
+                }
             }
         };
         Ok(())
@@ -727,7 +755,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
 
@@ -748,7 +778,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         state
@@ -762,7 +794,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         state
@@ -780,7 +814,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         let is_reupload = geometry.internal_id != INVALID_ID;
@@ -806,7 +842,9 @@ impl<'a> VulkanContext<'a> {
             }
         }
         if internal_data.is_none() {
-            return Err(VulkanBackendError::OperationFailed { issue :"Vulkan State Geometries is Full"});
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "Vulkan State Geometries is Full",
+            });
         }
 
         let command_pool = state.device.graphics_command_pool;
@@ -859,7 +897,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         if geometry.internal_id != INVALID_ID {
@@ -873,7 +913,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         let image_index = state.image_index;
@@ -966,7 +1008,9 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
-                return Err(VulkanBackendError::OperationFailed { issue :"Vulkan Context not initialized"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
             }
         };
         println!("recreating swapchain");

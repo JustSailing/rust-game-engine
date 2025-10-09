@@ -45,7 +45,9 @@ impl VulkanSwapchain {
         )?;
 
         if !device.detect_depth_format(instance) {
-            return Err(VulkanBackendError::OperationFailed { issue: "could not detect depth format"});
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "could not detect depth format",
+            });
         }
 
         let mut swapchain_extent = Extent2D { width, height };
@@ -171,7 +173,9 @@ impl VulkanSwapchain {
             match swapchain_loader.create_swapchain(&swapchain_create_info, None) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed { issue: "could not create swapchain"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create swapchain",
+                    });
                 }
             }
         };
@@ -180,9 +184,9 @@ impl VulkanSwapchain {
             match swapchain_loader.get_swapchain_images(swap) {
                 Ok(i) => i,
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed { issue: "could not get swapchain images"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not get swapchain images",
+                    });
                 }
             }
         };
@@ -204,9 +208,9 @@ impl VulkanSwapchain {
                 match device.device.create_image_view(&view_create_info, None) {
                     Ok(v) => v,
                     Err(_) => {
-                        return Err(
-                            VulkanBackendError::OperationFailed { issue: "could not create image views"}
-                        );
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create image views",
+                        });
                     }
                 }
             });
@@ -266,7 +270,9 @@ impl VulkanSwapchain {
         )?;
 
         if !device.detect_depth_format(instance) {
-            return Err(VulkanBackendError::OperationFailed { issue: "could not detect depth format"});
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "could not detect depth format",
+            });
         }
 
         let mut swapchain_extent = Extent2D { width, height };
@@ -392,7 +398,9 @@ impl VulkanSwapchain {
             match swapchain_loader.create_swapchain(&swapchain_create_info, None) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed { issue: "could not create swapchain"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create swapchain",
+                    });
                 }
             }
         };
@@ -410,9 +418,9 @@ impl VulkanSwapchain {
             match swapchain_loader.get_swapchain_images(swap) {
                 Ok(i) => i,
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed { issue: "could not get swapchain images"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not get swapchain images",
+                    });
                 }
             }
         };
@@ -434,9 +442,9 @@ impl VulkanSwapchain {
                 match device.device.create_image_view(&view_create_info, None) {
                     Ok(v) => v,
                     Err(_) => {
-                        return Err(
-                            VulkanBackendError::OperationFailed { issue: "could not create image views"}
-                        );
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create image views",
+                        });
                     }
                 }
             });
@@ -490,9 +498,9 @@ impl VulkanSwapchain {
                 return Ok(());
             }
             _ => {
-                return Err(
-                    VulkanBackendError::OperationFailed { issue: "present queue did not work properly"},
-                );
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "present queue did not work properly",
+                });
             }
         }
     }
@@ -512,7 +520,9 @@ impl VulkanSwapchain {
                 return Ok((true, 0));
             }
             Err(_) => {
-                return Err(VulkanBackendError::OperationFailed { issue: "failure to acqurie next image"});
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "failure to acqurie next image",
+                });
             }
         };
     }

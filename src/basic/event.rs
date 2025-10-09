@@ -1,4 +1,4 @@
-use std::{os::raw::c_void};
+use std::os::raw::c_void;
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, EventSysError>;

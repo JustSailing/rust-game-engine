@@ -120,7 +120,9 @@ impl VulkanRenderPass {
             {
                 Ok(r) => r,
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed { issue: "could not create renderpass"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create renderpass",
+                    });
                 }
             }
         };

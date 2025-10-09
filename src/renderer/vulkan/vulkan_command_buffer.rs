@@ -41,9 +41,9 @@ impl VulkanCommandBuffer {
             match device.device.allocate_command_buffers(&allocate_info) {
                 Ok(c) => c,
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed{ issue: "could not allocate command buffer"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not allocate command buffer",
+                    });
                 }
             }
         };
@@ -88,9 +88,9 @@ impl VulkanCommandBuffer {
             {
                 Ok(_) => self.state = CommandBufferState::Recording,
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed{ issue: "could not begin command buffer"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not begin command buffer",
+                    });
                 }
             }
         }
@@ -108,9 +108,9 @@ impl VulkanCommandBuffer {
                     Ok(())
                 }
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed{ issue: "could not reset command buffer"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not reset command buffer",
+                    });
                 }
             }
         }
@@ -126,7 +126,9 @@ impl VulkanCommandBuffer {
                     self.state = CommandBufferState::RecordingEnded;
                 }
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed{ issue: "ending command buffer failed"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "ending command buffer failed",
+                    });
                 }
             }
         }
@@ -161,14 +163,18 @@ impl VulkanCommandBuffer {
             {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed{ issue: "could not submit queue"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not submit queue",
+                    });
                 }
             }
 
             match device.device.queue_wait_idle(queue) {
                 Ok(_) => {}
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed{ issue: "could not wait for queue"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not wait for queue",
+                    });
                 }
             }
         }

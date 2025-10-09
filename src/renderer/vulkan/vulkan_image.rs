@@ -55,7 +55,9 @@ impl VulkanImage {
             match device.device.create_image(&image_create_info, None) {
                 Ok(i) => i,
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed{ issue: "could not create image"});
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create image",
+                    });
                 }
             }
         };
@@ -69,9 +71,9 @@ impl VulkanImage {
         );
 
         if memory_type == -1 {
-            return Err(VulkanBackendError::OperationFailed{ issue: 
-                "required memory type not found. Image not valid.",
-        });
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "required memory type not found. Image not valid.",
+            });
         }
         let memory_allocate_info = MemoryAllocateInfo::default()
             .allocation_size(memory_requirements.size)
@@ -81,8 +83,8 @@ impl VulkanImage {
             match device.device.allocate_memory(&memory_allocate_info, None) {
                 Ok(dm) => dm,
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed{ issue: 
-                        "could not allocate memory for image",
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not allocate memory for image",
                     });
                 }
             }
@@ -91,9 +93,9 @@ impl VulkanImage {
             match device.device.bind_image_memory(image, device_memory, 0) {
                 Ok(_) => (),
                 Err(_) => {
-                    return Err(
-                        VulkanBackendError::OperationFailed{ issue: "could not bind memory for image"},
-                    );
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not bind memory for image",
+                    });
                 }
             }
         };
@@ -139,7 +141,9 @@ impl VulkanImage {
         unsafe {
             match device.device.create_image_view(&view_create_info, None) {
                 Ok(v) => Ok(v),
-                Err(_) => Err(VulkanBackendError::OperationFailed{ issue: "could not create image view"}),
+                Err(_) => Err(VulkanBackendError::OperationFailed {
+                    issue: "could not create image view",
+                }),
             }
         }
     }
@@ -187,7 +191,9 @@ impl VulkanImage {
             source_stage = PipelineStageFlags::TRANSFER;
             dest_stage = PipelineStageFlags::FRAGMENT_SHADER;
         } else {
-            return Err(VulkanBackendError::OperationFailed{ issue: "unsupported transition"});
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "unsupported transition",
+            });
         }
 
         unsafe {
