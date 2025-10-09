@@ -34,12 +34,21 @@ fn main() -> Result<()> {
         render: game_render,
         on_resize: game_on_resize,
     };
-    let init = ApplicationState::create(&mut game);
-    println!("{:?}", init);
-    let r = ApplicationState::run();
-    println!("{:?}", r);
-    let s = ApplicationState::shutdown();
-    println!("{:?}", s);
+    let _ = ApplicationState::create(&mut game).is_err_and(|e| {
+        println!("{}", e);
+        true
+    });
+
+    let _ = ApplicationState::run().is_err_and(|e| {
+        println!("{}", e);
+        true
+    });
+
+    let _ = ApplicationState::shutdown().is_err_and(|e| {
+        println!("{}", e);
+        true
+    });
+
     Ok(())
 }
 
@@ -70,7 +79,7 @@ pub fn game_initialize(game: &mut Game) -> bool {
 }
 
 pub fn game_update(game: &mut Game, delta: f32) -> bool {
-    let movement = 500.0;
+    let movement = 15000.0;
 
     if InputState::is_key_down(Key::A).unwrap() {
         camera_yaw(&mut game.state, 1.0 * delta * movement);

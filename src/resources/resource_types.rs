@@ -69,7 +69,7 @@ pub struct TextureMap<'a> {
     pub use_type: TextureUse,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MaterialConfig {
     pub name: String,
     pub auto_release: bool,
@@ -139,7 +139,7 @@ impl Default for Geometry<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceType {
     Text,
     Binary,
@@ -152,20 +152,22 @@ pub enum ResourceType {
 #[derive(Debug, Clone)]
 pub enum ResourceData {
     Unknown,
-    ImageResourceData(ImageResourceData),
+    ImageResourceData(ImageData),
+    MaterialResourceData(MaterialConfig),
+    BinaryResourceData(Vec<u8>),
 }
 #[derive(Debug, Clone)]
 pub struct Resource {
-    loader_id: usize,
-    name: String,
-    full_path: String,
-    data: ResourceData,
+    pub loader_id: usize,
+    pub name: String,
+    pub full_path: String,
+    pub data: ResourceData,
 }
 
 #[derive(Debug, Clone)]
-pub struct ImageResourceData {
-    channel_count: u8,
-    width: u32,
-    height: u32,
-    pixels: Vec<u8>,
+pub struct ImageData {
+    pub channel_count: u8,
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
 }

@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use crate::application::{
-    basic::{
-        filesystem::{FileHandle, FileHandleError, FileModes},
-        math::{consts::INVALID_ID, vec4::Vec4},
-    },
+    basic::{filesystem::FileHandleError, math::consts::INVALID_ID},
     renderer::renderer_types::{FrontendRendererError, Renderer},
-    resources::resource_types::{Material, MaterialConfig, TextureUse},
-    systems::texture_system::{TextureSysError, TextureSystem},
+    resources::resource_types::{Material, MaterialConfig, ResourceData, ResourceType, TextureUse},
+    systems::{
+        resource_system::{ResourceSysError, ResourceSystem},
+        texture_system::{TextureSysError, TextureSystem},
+    },
 };
 
 use thiserror::Error;
@@ -31,21 +31,28 @@ pub enum MaterialSysError {
     MaterialRegistedMaterialsFull,
     #[error("material system error:  acquire texture that doesn't exist: {name} {} {}", file!(), line!())]
     FailedToAcquireMaterial { name: String },
-    #[error("material system error:  texture system error in material sys: {source} {} {}", file!(), line!())]
+    #[error("{source}\nmaterial system error:  texture system error in material sys: {} {}", file!(), line!())]
     TexutreSystemError {
         #[from]
         source: TextureSysError,
     },
-    #[error("material system error:  frontend renderer error in material sys: {source} {} {}", file!(), line!())]
+    #[error("{source}\nmaterial system error:  frontend renderer error in material sys: {} {}", file!(), line!())]
     RendererSystemError {
         #[from]
         source: FrontendRendererError,
     },
-    #[error("material system error:  file handle error in material sys: {source} {} {}", file!(), line!())]
+    #[error("{source}\nmaterial system error:  file handle error in material sys: {} {}", file!(), line!())]
     FileHandleError {
         #[from]
         source: FileHandleError,
     },
+    #[error("{source}\nmaterial system error:  texture system error in material sys: {} {}", file!(), line!())]
+    ResourceSystemError {
+        #[from]
+        source: ResourceSysError,
+    },
+    #[error("material system error: wrong resource data type {ty} {} {}", file!(), line!())]
+    WrongResourceDataType { ty: String },
 }
 
 pub struct MaterialSysConfig {
@@ -184,36 +191,29 @@ impl<'a: 'static> MaterialSystem<'a> {
         };
     }
     pub fn acquire(config: &mut MaterialConfig) -> Result<&'a mut Material<'a>> {
-        let full_path = format!("assets/materials/{}.gmt", config.name);
-        Self::load_configuration_file(&full_path, config)?;
-        Ok(Self::acquire_from_config(config)?)
-    }
+        let mut material_res = ResourceSystem::load(&config.name, ResourceType::Material)?;
 
-    pub fn load_configuration_file(path: &String, config: &mut MaterialConfig) -> Result<()> {
-        let mut file_handle = FileHandle::open(path, FileModes::READ, false)?;
-        let lines = file_handle.read_lines()?;
-        for line in lines.iter() {
-            if line.len() == 0 {
-                continue;
-            } else if line.chars().nth(0).unwrap() == '#' {
-                continue;
+        let config = match material_res.data {
+            ResourceData::Unknown => {
+                return Err(MaterialSysError::WrongResourceDataType {
+                    ty: "Unknown".to_string(),
+                });
             }
-            let split: Vec<&str> = line.split('=').collect();
-            match split[0] {
-                "name" => config.name = split[1].to_string(),
-                "diffuse_colour" => {
-                    let values: Vec<&str> = split[1].split(' ').collect();
-                    let mut dif_col = Vec4::new_zeroes();
-                    for (i, value) in values.iter().enumerate() {
-                        dif_col.data[i] = value.trim().parse::<f32>().unwrap();
-                    }
-                    config.diffuse_colour = dif_col;
-                }
-                "diffuse_map_name" => config.diffuse_map_name = split[1].to_string(),
-                _ => println!("{}={} not added to material config", split[0], split[1]),
+            ResourceData::ImageResourceData(_) => {
+                return Err(MaterialSysError::WrongResourceDataType {
+                    ty: "ImageResourceData".to_string(),
+                });
             }
-        }
-        Ok(())
+            ResourceData::BinaryResourceData(_) => {
+                return Err(MaterialSysError::WrongResourceDataType {
+                    ty: "BinaryResourceData".to_string(),
+                });
+            }
+            ResourceData::MaterialResourceData(ref mut material_config) => material_config,
+        };
+        let mat = Self::acquire_from_config(config)?;
+        ResourceSystem::unload(&mut material_res)?;
+        Ok(mat)
     }
 
     pub fn acquire_from_config(config: &mut MaterialConfig) -> Result<&'a mut Material<'a>> {

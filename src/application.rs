@@ -27,6 +27,7 @@ use renderer::renderer_types::{
 use resources::resource_types::Geometry;
 use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
 use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
+use systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
 use systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
 
 #[derive(Clone, Copy)]
@@ -54,40 +55,45 @@ pub enum AppError {
     CouldNotUpdateGame,
     #[error("app error:  could not render game {} {}", file!(), line!())]
     CouldNotRenderGame,
-    #[error("app error:  error from event system {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from event system {} {}", file!(), line!())]
     EventSysError {
         #[from]
         source: EventSysError,
     },
-    #[error("app error:  error from input system {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from input system {} {}", file!(), line!())]
     InputSysError {
         #[from]
         source: InputSysError,
     },
-    #[error("app error:  error from window {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from window {} {}", file!(), line!())]
     WindowError {
         #[from]
         source: WindowError,
     },
-    #[error("app error:  error from renderer frontend {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from renderer frontend {} {}", file!(), line!())]
     FrontendRendererError {
         #[from]
         source: FrontendRendererError,
     },
-    #[error("app error:  error from material system {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from material system {} {}", file!(), line!())]
     MaterialSysError {
         #[from]
         source: MaterialSysError,
     },
-    #[error("app error:  error from texture system {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from texture system {} {}", file!(), line!())]
     TextureSysError {
         #[from]
         source: TextureSysError,
     },
-    #[error("app error:  error from geometry system {source} {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from geometry system {} {}", file!(), line!())]
     GeometrySysError {
         #[from]
         source: GeometrySysError,
+    },
+    #[error("{source}\napp error:  error from resource system {} {}", file!(), line!())]
+    ResourceSysError {
+        #[from]
+        source: ResourceSysError,
     },
 }
 
@@ -124,6 +130,12 @@ impl<'a: 'static> ApplicationState<'a> {
 
         window.set_title(app_config.name);
         window.show();
+
+        let resource_sys_config = ResourceSysConfig {
+            max_loader_count: 32,
+            asset_base_path: "assets".to_string(),
+        };
+        ResourceSystem::initialize(resource_sys_config)?;
 
         InputState::initialize()?;
 

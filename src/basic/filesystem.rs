@@ -1,7 +1,7 @@
-use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+use std::{fs, io};
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, FileHandleError>;
@@ -24,12 +24,17 @@ pub enum FileHandleError {
     CannotWriteToFile,
     #[error("could not flush file {} {}", file!(), line!())]
     CannotFlushFile,
+    #[error("could read all file {} {}", file!(), line!())]
+    Error {
+        #[from]
+        source: io::Error,
+    },
 }
 
 #[derive(Debug)]
 pub struct FileHandle {
     pub file: File,
-    //file_name: &'a str,
+    file_name: String,
     is_valid: bool,
 }
 
@@ -40,8 +45,6 @@ impl FileHandle {
     }
 
     pub fn open(path: &str, modes: FileModes, _binary: bool) -> Result<Self> {
-        let current_dir = env::current_dir().unwrap();
-        println!("current dir: {:?}", current_dir);
         let mut options = OpenOptions::new();
         match modes {
             FileModes::READ => options.read(true),
@@ -52,7 +55,7 @@ impl FileHandle {
         match options.open(path) {
             Ok(f) => Ok(Self {
                 file: f,
-                //file_name: path.clone(),
+                file_name: path.to_string(),
                 is_valid: true,
             }),
             Err(_) => Err(FileHandleError::CannotOpen {
@@ -104,6 +107,15 @@ impl FileHandle {
             Err(_) => return Err(FileHandleError::CannotReadln.into()),
         }
         Ok(line)
+    }
+
+    pub fn read_all_bytes(&mut self) -> Result<Vec<u8>> {
+        match self.file.seek(SeekFrom::Start(0)) {
+            Ok(_) => {}
+            Err(_) => return Err(FileHandleError::CannotSeek.into()),
+        }
+        let v = fs::read(&self.file_name)?;
+        Ok(v)
     }
 
     pub fn write(&mut self, text: &str) -> Result<()> {

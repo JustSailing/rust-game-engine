@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use crate::application::{
     basic::math::consts::INVALID_ID,
     renderer::renderer_types::{FrontendRendererError, Renderer},
-    resources::resource_types::Texture,
+    resources::resource_types::{ResourceData, ResourceType, Texture},
+    systems::resource_system::{ResourceSysError, ResourceSystem},
 };
 
 use image::ImageError;
@@ -54,16 +55,23 @@ pub enum TextureSysError {
     ReleaseTextureDoesNotExist,
     #[error("texture system error: failed to acquire texture: {} {} {}", name,  file!(), line!())]
     FailedToAcquireTexture { name: String },
-    #[error("texture system error: frontend renderer error : {} {} {source}", file!(), line!())]
+    #[error("{source}\ntexture system error: frontend renderer error : {} {}", file!(), line!())]
     FrontendError {
         #[from]
         source: FrontendRendererError,
     },
-    #[error("texture system error: image error from image crate {} {} {source}", file!(), line!())]
+    #[error("{source}\ntexture system error: image error from image crate {} {}", file!(), line!())]
     ImageError {
         #[from]
         source: ImageError,
     },
+    #[error("{source}\ntexture system error: resource system error {} {}", file!(), line!())]
+    ResourceSysError {
+        #[from]
+        source: ResourceSysError,
+    },
+    #[error("texture system error: wrong resource data type {ty} {} {}", file!(), line!())]
+    WrongResourceDataType { ty: String },
 }
 
 type Result<T> = std::result::Result<T, TextureSysError>;
@@ -144,28 +152,41 @@ impl<'a> TextureSystem {
     }
 
     fn load_texture(name: &str) -> Result<Texture> {
-        let file_path = format!("assets/textures/{}.{}", name, "jpg");
-        let data = image::open(file_path)?.flipv().to_rgba8();
-        let width = data.width();
-        let height = data.height();
-        let v = data.into_raw();
-        let channel_count: u32 = 4;
-        let total_size = width * height * channel_count;
+        let mut img_res = ResourceSystem::load(name, ResourceType::Image)?;
+        let data = match img_res.data {
+            ResourceData::Unknown => {
+                return Err(TextureSysError::WrongResourceDataType {
+                    ty: "Unknown".to_string(),
+                });
+            }
+            ResourceData::BinaryResourceData(_) => {
+                return Err(TextureSysError::WrongResourceDataType {
+                    ty: "BinaryResourceData".to_string(),
+                });
+            }
+            ResourceData::ImageResourceData(ref image_resource_data) => image_resource_data,
+            ResourceData::MaterialResourceData(_) => {
+                return Err(TextureSysError::WrongResourceDataType {
+                    ty: "MaterialResourceData".to_string(),
+                });
+            }
+        };
+        let total_size = data.width * data.height * data.channel_count as u32;
         let mut transparancy = false;
         for i in 0..total_size as usize - 3 {
-            if v[i + 3] < 255 {
+            if data.pixels[i + 3] < 255 {
                 transparancy = true;
                 break;
             }
         }
         let mut texture = Texture::default()
             .has_transparency(transparancy)
-            .width(width)
-            .height(height)
-            .channel_count(channel_count as u8)
+            .width(data.width)
+            .height(data.height)
+            .channel_count(data.channel_count)
             .generation(INVALID_ID);
-        Renderer::create_texture(v.as_slice(), &mut texture)?;
-
+        Renderer::create_texture(data.pixels.as_slice(), &mut texture)?;
+        ResourceSystem::unload(&mut img_res)?;
         Ok(texture)
     }
 
@@ -277,20 +298,34 @@ impl<'a> TextureSystem {
     }
 
     pub fn shutdown() -> Result<()> {
-        unsafe {
+        let state = unsafe {
             if let Some(ref mut state) = TEXTURE_STATE {
-                Self::destroy_default_texture()?;
-                for texture in state.registered_textures.iter() {
-                    if texture.id != INVALID_ID {
-                        println!("WARN: did not free texture id: {}", texture.id);
-                        Renderer::destroy_texture(texture)?;
-                    }
-                }
-                TEXTURE_STATE = None;
-                Ok(())
+                state
             } else {
-                Err(TextureSysError::NotInitialized.into())
+                return Err(TextureSysError::NotInitialized);
+            }
+        };
+        Self::destroy_default_texture()?;
+        for texture in state.registered_textures.iter() {
+            if texture.id != INVALID_ID {
+                state
+                    .registered_textures_hashmap
+                    .iter()
+                    .find_map(|(key, value)| {
+                        if value.handle == texture.id && !value.auto_release {
+                            println!("WARN: did not free texture name: {}", key);
+                            Some(())
+                        } else {
+                            None
+                        }
+                    });
+
+                Renderer::destroy_texture(texture)?;
             }
         }
+        unsafe {
+            TEXTURE_STATE = None;
+        }
+        Ok(())
     }
 }

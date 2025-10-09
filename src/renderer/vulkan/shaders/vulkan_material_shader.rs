@@ -18,12 +18,10 @@ use super::super::{
 };
 
 use crate::application::{
-    basic::{
-        filesystem::{FileHandle, FileModes},
-        math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vec3, vec4::Vec4},
-    },
+    basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vec3, vec4::Vec4},
     renderer::renderer_types::{GlobalUniformObj, UniformObject},
-    resources::resource_types::{Material, TextureUse},
+    resources::resource_types::{Material, ResourceData, ResourceType, TextureUse},
+    systems::resource_system::ResourceSystem,
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
@@ -329,26 +327,31 @@ impl<'a> VulkanMaterialShader<'a> {
         stage_type_str: &str,
         stage_flag: ShaderStageFlags,
     ) -> Result<VulkanShaderStage<'a>> {
-        let file_name = format!("bin/assets/shaders/{}.{}.spv", name, stage_type_str);
-        println!("file name: {}", file_name);
-        let mut file_handle = match FileHandle::open(&file_name, FileModes::READ, false) {
-            Ok(f) => f,
-            Err(_) => {
+        let file_name = format!("shaders/{}.{}.spv", name, stage_type_str);
+        //println!("file name: {}", file_name);
+        let bin_res = ResourceSystem::load(&file_name, ResourceType::Binary)?;
+        let data = match bin_res.data {
+            ResourceData::Unknown => {
                 return Err(VulkanBackendError::OperationFailed {
-                    issue: "could not open file",
+                    issue: "wrong resource type: Unknown expected: Binary",
                 });
             }
-        };
-        let code = match ash::util::read_spv(&mut file_handle.file) {
-            Ok(c) => c,
-            Err(_) => {
+            ResourceData::ImageResourceData(_) => {
                 return Err(VulkanBackendError::OperationFailed {
-                    issue: "could not read spirv file",
+                    issue: "wrong resource type: Image expected: Binary",
                 });
             }
+            ResourceData::MaterialResourceData(_) => {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "wrong resource type: Material expected: Binary",
+                });
+            }
+            ResourceData::BinaryResourceData(ref items) => items,
         };
 
-        let module_create_info = ShaderModuleCreateInfo::default().code(&code);
+        let (_, code, _) = unsafe { data.align_to::<u32>() };
+
+        let module_create_info = ShaderModuleCreateInfo::default().code(code);
         let shader_module = unsafe {
             match device
                 .device
