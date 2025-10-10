@@ -8,7 +8,7 @@ use crate::application::{
         },
         window::Window,
     },
-    renderer::vulkan::vulkan_backend::{VulkanBackendError, VulkanContext},
+    renderer::vulkan::vulkan_backend::{BuiltInRenderpass, VulkanBackendError, VulkanContext},
     resources::resource_types::{Geometry, Material, Texture},
 };
 
@@ -25,7 +25,7 @@ pub enum RendererBackendType {
 
 #[derive(Copy, Clone)]
 #[repr(C, align(16))] // both C and align are needed or some funky stuff happens
-pub struct GlobalUniformObj {
+pub struct MaterialGlobalUBO {
     pub projection: Matrix4,
     pub view: Matrix4,
     pub padding: [Matrix4; 2], // for NVidia cards
@@ -33,7 +33,22 @@ pub struct GlobalUniformObj {
 
 #[derive(Clone, Copy)]
 #[repr(C, align(16))]
-pub struct UniformObject {
+pub struct MaterialInstanceUBO {
+    pub diffuse_color: Vec4,
+    pub padding: [Vec4; 3],
+}
+
+#[derive(Copy, Clone)]
+#[repr(C, align(16))] // both C and align are needed or some funky stuff happens
+pub struct UIglobalUBO {
+    pub projection: Matrix4,
+    pub view: Matrix4,
+    pub padding: [Matrix4; 2], // for NVidia cards
+}
+
+#[derive(Clone, Copy)]
+#[repr(C, align(16))]
+pub struct UIinstanceUBO {
     pub diffuse_color: Vec4,
     pub padding: [Vec4; 3],
 }
@@ -46,6 +61,7 @@ pub struct GeometryRenderData<'a> {
 pub struct RendererPacket<'a> {
     pub delta_time: f32,
     pub geometries: Vec<GeometryRenderData<'a>>,
+    pub ui_geometries: Vec<GeometryRenderData<'a>>,
 }
 
 pub struct RendererBackend<'a> {
@@ -55,13 +71,22 @@ pub struct RendererBackend<'a> {
     shutdown: fn() -> std::result::Result<(), VulkanBackendError>,
     resized: fn(width: i32, height: i32) -> std::result::Result<(), VulkanBackendError>,
     begin_frame: fn(delta_time: f32) -> std::result::Result<bool, VulkanBackendError>,
-    update_global_state: fn(
+    update_global_world_state: fn(
         projection: Matrix4,
         view: Matrix4,
         view_position: Vec3,
         ambient_colour: Vec4,
         mode: i32,
     ) -> std::result::Result<(), VulkanBackendError>,
+    update_global_ui_state: fn(
+        projection: Matrix4,
+        view: Matrix4,
+        mode: i32,
+    ) -> std::result::Result<(), VulkanBackendError>,
+    begin_renderpass:
+        fn(renderpass_type: BuiltInRenderpass) -> std::result::Result<(), VulkanBackendError>,
+    end_renderpass:
+        fn(renderpass_type: BuiltInRenderpass) -> std::result::Result<(), VulkanBackendError>,
     draw_geometry: fn(data: &mut GeometryRenderData) -> std::result::Result<(), VulkanBackendError>,
     create_texture:
         fn(pixels: &[u8], texture: &mut Texture) -> std::result::Result<(), VulkanBackendError>,
@@ -79,6 +104,8 @@ pub struct RendererBackend<'a> {
 
     projection: Matrix4,
     view: Matrix4,
+    ui_projection: Matrix4,
+    ui_view: Matrix4,
     far_clip: f32,
     near_clip: f32,
 }
@@ -128,16 +155,6 @@ impl<'a> Renderer {
                 return Ok(());
             } else {
                 return Err(FrontendRendererError::AlreadyShutdown);
-            }
-        }
-    }
-
-    pub fn begin_frame(delta: f32) -> Result<bool> {
-        unsafe {
-            if let Some(ref mut state) = RENDERER_BACKEND {
-                (state.begin_frame)(delta).map_err(Into::into)
-            } else {
-                return Err(FrontendRendererError::NotInitialized);
             }
         }
     }
@@ -206,17 +223,6 @@ impl<'a> Renderer {
         }
     }
 
-    pub fn end_frame(delta: f32) -> Result<()> {
-        unsafe {
-            if let Some(ref mut state) = RENDERER_BACKEND {
-                state.frame_number += 1;
-                (state.end_frame)(delta).map_err(Into::into)
-            } else {
-                return Err(FrontendRendererError::NotInitialized);
-            }
-        }
-    }
-
     pub fn draw_frame(packet: &mut RendererPacket) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
@@ -226,11 +232,13 @@ impl<'a> Renderer {
             }
         };
 
-        if !Self::begin_frame(packet.delta_time)? {
+        if !(state.begin_frame)(packet.delta_time)? {
             return Ok(());
         }
 
-        (state.update_global_state)(
+        (state.begin_renderpass)(BuiltInRenderpass::World)?;
+
+        (state.update_global_world_state)(
             state.projection,
             state.view,
             Vec3::new_zeroes(),
@@ -242,7 +250,18 @@ impl<'a> Renderer {
             (state.draw_geometry)(geo)?;
         }
 
-        Renderer::end_frame(packet.delta_time)?;
+        (state.end_renderpass)(BuiltInRenderpass::World)?;
+
+        (state.begin_renderpass)(BuiltInRenderpass::UI)?;
+        (state.update_global_ui_state)(state.ui_projection, state.ui_view, 0)?;
+        for geo in packet.ui_geometries.iter_mut() {
+            (state.draw_geometry)(geo)?;
+        }
+
+        (state.end_renderpass)(BuiltInRenderpass::UI)?;
+
+        (state.end_frame)(packet.delta_time)?;
+        state.frame_number += 1;
         Ok(())
     }
 
@@ -260,6 +279,8 @@ impl<'a> Renderer {
             state.near_clip,
             state.far_clip,
         );
+        state.ui_projection =
+            Matrix4::orthographic(0.0, width as f32, height as f32, 0.0, -100.0, 100.0);
         (state.resized)(width, height).map_err(Into::into)
     }
 
@@ -286,10 +307,15 @@ impl<'a> Renderer {
                     resized: VulkanContext::on_resize,
                     begin_frame: VulkanContext::begin_frame,
                     end_frame: VulkanContext::end_frame,
-                    update_global_state: VulkanContext::update_global_state,
+                    update_global_world_state: VulkanContext::update_global_world_state,
+                    update_global_ui_state: VulkanContext::update_global_ui_state,
+                    begin_renderpass: VulkanContext::begin_renderpass,
+                    end_renderpass: VulkanContext::end_renderpass,
                     draw_geometry: VulkanContext::draw_geometry,
                     projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 1000.0),
                     view: Matrix4::translation(&Vec3::new(0.0, 0.0, -30.0)),
+                    ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
+                    ui_view: Matrix4::identity(),
                     far_clip: 1000.0,
                     near_clip: 0.1,
                     create_texture: VulkanContext::create_texture,

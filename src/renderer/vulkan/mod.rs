@@ -3,7 +3,6 @@ pub mod vulkan_backend;
 mod vulkan_buffer;
 mod vulkan_command_buffer;
 mod vulkan_device;
-mod vulkan_framebuffer;
 pub mod vulkan_image;
 mod vulkan_pipeline;
 mod vulkan_renderpass;

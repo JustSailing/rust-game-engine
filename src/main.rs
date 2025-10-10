@@ -79,7 +79,7 @@ pub fn game_initialize(game: &mut Game) -> bool {
 }
 
 pub fn game_update(game: &mut Game, delta: f32) -> bool {
-    let movement = 15000.0;
+    let movement = 20000.0;
 
     if InputState::is_key_down(Key::A).unwrap() {
         camera_yaw(&mut game.state, 1.0 * delta * movement);

@@ -131,11 +131,50 @@ impl Vec4 {
     pub fn set_y(&mut self, y: f32) {
         self.data[1] = y;
     }
-    pub fn set_z(&mut self, z: f32) {
-        self.data[2] = z;
-    }
     pub fn set_w(&mut self, w: f32) {
-        self.data[3] = w;
+        self.data[2] = w;
+    }
+    pub fn set_h(&mut self, h: f32) {
+        self.data[3] = h;
+    }
+
+    pub fn set_r(&mut self, r: f32) {
+        self.data[0] = r;
+    }
+    pub fn set_g(&mut self, g: f32) {
+        self.data[1] = g;
+    }
+    pub fn set_b(&mut self, b: f32) {
+        self.data[2] = b;
+    }
+    pub fn set_a(&mut self, a: f32) {
+        self.data[3] = a;
+    }
+
+    pub fn get_x(&self) -> f32 {
+        self.data[0]
+    }
+    pub fn get_y(&self) -> f32 {
+        self.data[1]
+    }
+    pub fn get_w(&self) -> f32 {
+        self.data[2]
+    }
+    pub fn get_h(&self) -> f32 {
+        self.data[3]
+    }
+
+    pub fn get_r(&self) -> f32 {
+        self.data[0]
+    }
+    pub fn get_g(&self) -> f32 {
+        self.data[1]
+    }
+    pub fn get_b(&self) -> f32 {
+        self.data[2]
+    }
+    pub fn get_a(&self) -> f32 {
+        self.data[3]
     }
 }
 

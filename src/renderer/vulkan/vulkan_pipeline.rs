@@ -29,12 +29,14 @@ impl VulkanPipeline {
     pub fn create(
         device: &VulkanDevice,
         renderpass: &VulkanRenderPass,
+        stride: u32,
         attributes: &[VertexInputAttributeDescription],
         descriptor_set_layout: &[DescriptorSetLayout],
         stages: &[PipelineShaderStageCreateInfo],
         viewport: Viewport,
         scissor: Rect2D,
         is_wireframe: bool,
+        depth_test_enabled: bool,
     ) -> Result<VulkanPipeline> {
         //view state
         let viewport_state_create_info = PipelineViewportStateCreateInfo::default()
@@ -67,13 +69,15 @@ impl VulkanPipeline {
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false);
 
-        let depth_stencil = PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(true)
-            .depth_write_enable(true)
-            .depth_compare_op(CompareOp::LESS)
-            .depth_bounds_test_enable(false)
-            .stencil_test_enable(false);
-
+        let mut depth_stencil = PipelineDepthStencilStateCreateInfo::default();
+        if depth_test_enabled {
+            depth_stencil = PipelineDepthStencilStateCreateInfo::default()
+                .depth_test_enable(true)
+                .depth_write_enable(true)
+                .depth_compare_op(CompareOp::LESS)
+                .depth_bounds_test_enable(false)
+                .stencil_test_enable(false);
+        }
         let color_blend_attachement = PipelineColorBlendAttachmentState::default()
             .blend_enable(true)
             .src_color_blend_factor(BlendFactor::SRC_ALPHA)
@@ -100,7 +104,7 @@ impl VulkanPipeline {
 
         let binding_description = VertexInputBindingDescription::default()
             .binding(0)
-            .stride(size_of::<Vector3D>() as u32)
+            .stride(stride)
             .input_rate(VertexInputRate::VERTEX);
 
         let vertex_input_info = PipelineVertexInputStateCreateInfo::default()

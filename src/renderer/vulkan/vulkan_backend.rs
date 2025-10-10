@@ -3,7 +3,6 @@ use super::{
     vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
-    vulkan_framebuffer::VulkanFramebuffer,
     vulkan_renderpass::VulkanRenderPass,
     vulkan_swapchain::VulkanSwapchain,
     vulkan_sync_objects::{InFlightFrames, SyncObjects},
@@ -18,7 +17,10 @@ use crate::application::{
         },
         window::Window,
     },
-    renderer::renderer_types::GeometryRenderData,
+    renderer::{
+        renderer_types::GeometryRenderData,
+        vulkan::{shaders::vulkan_ui_shader::VulkanUIshader, vulkan_renderpass::ClearFlag},
+    },
     resources::resource_types::{Geometry, Material, Texture},
     systems::resource_system::ResourceSysError,
 };
@@ -31,10 +33,10 @@ use ash::{
     },
     vk::{
         self, BorderColor, BufferUsageFlags, CommandPool, CommandPoolResetFlags, CompareOp,
-        DeviceSize, Extent2D, Fence, Filter, Format, ImageAspectFlags, ImageLayout, ImageTiling,
-        ImageType, ImageUsageFlags, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
-        PipelineStageFlags, Queue, Rect2D, SamplerAddressMode, SamplerCreateInfo,
-        SamplerMipmapMode, SubmitInfo, SurfaceKHR, Viewport,
+        DeviceSize, Extent2D, Fence, Filter, Format, Framebuffer, FramebufferCreateInfo,
+        ImageAspectFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags, IndexType,
+        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineStageFlags, Queue, Rect2D,
+        SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, SubmitInfo, SurfaceKHR, Viewport,
     },
 };
 #[cfg(feature = "debug")]
@@ -71,7 +73,6 @@ pub enum VulkanBackendError {
     },
 }
 
-//
 const VULKAN_MAX_GEOMETRY_COUNT: usize = 100;
 
 #[derive(Clone, Copy)]
@@ -101,6 +102,11 @@ impl Default for VulkanGeometryData {
     }
 }
 
+pub enum BuiltInRenderpass {
+    World,
+    UI,
+}
+
 pub struct VulkanContext<'a> {
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
@@ -113,11 +119,14 @@ pub struct VulkanContext<'a> {
     object_index_buffer: VulkanBuffer,
     object_vertex_buffer: VulkanBuffer,
     material_shader: VulkanMaterialShader<'a>,
+    ui_shader: VulkanUIshader<'a>,
     images_in_flight: Vec<Option<&'a SyncObjects>>,
     in_flight_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
-    swapchain_framebuffers: Vec<VulkanFramebuffer>,
+    swapchain_framebuffers: Vec<Framebuffer>,
+    world_framebuffers: Vec<Framebuffer>,
     main_renderpass: VulkanRenderPass,
+    ui_renderpass: VulkanRenderPass,
     image_index: u32,
     recreating_swapchain: bool,
     swapchain: VulkanSwapchain,
@@ -208,35 +217,86 @@ impl<'a> VulkanContext<'a> {
         )?;
 
         // create renderpass
-        let rend_pass = VulkanRenderPass::create(
-            0.0,
-            0.0,
-            window.width as f32,
-            window.height as f32,
-            0.0,
-            0.0,
-            0.2,
-            1.0,
+        let main_renderpass = VulkanRenderPass::create(
+            Vec4::new(0.0, 0.0, window.width as f32, window.height as f32),
+            Vec4::new(0.0, 0.0, 0.2, 1.0),
             1.0,
             0,
             &dev,
             swap.image_format.format,
             dev.depth_format,
+            ClearFlag::ColourBuffer.value()
+                | ClearFlag::DepthBuffer.value()
+                | ClearFlag::StencilBuffer.value(),
+            false,
+            true,
+        )?;
+
+        let ui_renderpass = VulkanRenderPass::create(
+            Vec4::new(0.0, 0.0, window.width as f32, window.height as f32),
+            Vec4::new(0.0, 0.0, 0.0, 0.0),
+            1.0,
+            0,
+            &dev,
+            swap.image_format.format,
+            dev.depth_format,
+            0,
+            true,
+            false,
         )?;
 
         let mut swap_framebuffers = Vec::new();
+        let mut world_framebuffers = Vec::new();
         for i in 0..swap.views.len() {
-            let mut swap_attachments = Vec::new();
-            swap_attachments.push(swap.views[i]);
-            swap_attachments.push(swap.depth_attachment.view.unwrap());
-            let buf = VulkanFramebuffer::create(
-                &dev,
-                &rend_pass,
-                window.height,
-                window.width,
-                &swap_attachments,
-            )?;
-            swap_framebuffers.push(buf);
+            let mut world_attachments = Vec::new();
+            world_attachments.push(swap.views[i]);
+            world_attachments.push(swap.depth_attachment.view.unwrap());
+            let world_framebuffer_create_info = FramebufferCreateInfo::default()
+                .render_pass(main_renderpass.renderpass)
+                .attachments(&world_attachments)
+                .height(window.height)
+                .width(window.width)
+                .layers(1);
+
+            let world_framebuffer = unsafe {
+                match dev
+                    .device
+                    .create_framebuffer(&world_framebuffer_create_info, None)
+                {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create framebuffer",
+                        });
+                    }
+                }
+            };
+            world_framebuffers.push(world_framebuffer);
+
+            let mut ui_attachments = Vec::new();
+            ui_attachments.push(swap.views[i]);
+
+            let ui_framebuffer_create_info = FramebufferCreateInfo::default()
+                .render_pass(ui_renderpass.renderpass)
+                .attachments(&ui_attachments)
+                .height(window.height)
+                .width(window.width)
+                .layers(1);
+
+            let ui_framebuffer = unsafe {
+                match dev
+                    .device
+                    .create_framebuffer(&ui_framebuffer_create_info, None)
+                {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create framebuffer",
+                        });
+                    }
+                }
+            };
+            swap_framebuffers.push(ui_framebuffer);
         }
         // creating command buffer
         let graph_cmd_buf = Self::create_command_buffer(&dev, swap.max_frames_in_flight as usize)?;
@@ -258,7 +318,16 @@ impl<'a> VulkanContext<'a> {
         let material_shader = VulkanMaterialShader::create(
             &instance,
             &dev,
-            &rend_pass,
+            &main_renderpass,
+            window.width,
+            window.height,
+            swap.max_frames_in_flight as u32,
+        )?;
+
+        let ui_shader = VulkanUIshader::create(
+            &instance,
+            &dev,
+            &ui_renderpass,
             window.width,
             window.height,
             swap.max_frames_in_flight as u32,
@@ -308,12 +377,15 @@ impl<'a> VulkanContext<'a> {
                     surface: surface,
                     instance: instance,
                     swapchain: swap,
-                    main_renderpass: rend_pass,
+                    main_renderpass: main_renderpass,
+                    ui_renderpass: ui_renderpass,
                     framebuffer_height: window.height,
                     framebuffer_width: window.width,
                     frame_buffer_size_generation: 0,
                     frame_buffer_last_generation: 0,
                     swapchain_framebuffers: swap_framebuffers,
+                    world_framebuffers: world_framebuffers,
+                    ui_shader: ui_shader,
                     dbg_messenger: debug_messenger,
                     dbg_util_loader: debug_utils_loader,
                 })
@@ -341,12 +413,15 @@ impl<'a> VulkanContext<'a> {
                     surface: surface,
                     surface_loader: surface_loader,
                     swapchain: swap,
-                    main_renderpass: rend_pass,
+                    main_renderpass: main_renderpass,
+                    ui_renderpass: ui_renderpass,
                     framebuffer_height: window.height,
                     framebuffer_width: window.width,
                     frame_buffer_size_generation: 0,
                     frame_buffer_last_generation: 0,
                     swapchain_framebuffers: swap_framebuffers,
+                    world_framebuffers: world_framebuffers,
+                    ui_shader: ui_shader,
                 });
             }
         }
@@ -496,15 +571,6 @@ impl<'a> VulkanContext<'a> {
             )
         };
 
-        state.main_renderpass.w = state.framebuffer_width as f32;
-        state.main_renderpass.h = state.framebuffer_height as f32;
-        state.main_renderpass.begin(
-            &state.device,
-            command_buffer,
-            state.in_flight_frames.current_frame as usize,
-            state.swapchain_framebuffers[state.image_index as usize].framebuffer,
-        );
-
         state.material_shader.use_shader(
             &state.device,
             &state.graphics_cmd_bufs,
@@ -514,7 +580,7 @@ impl<'a> VulkanContext<'a> {
         Ok(true)
     }
 
-    pub fn update_global_state(
+    pub fn update_global_world_state(
         projection: Matrix4,
         view: Matrix4,
         _view_position: Vec3,
@@ -540,6 +606,39 @@ impl<'a> VulkanContext<'a> {
         state.material_shader.global_ubo.view = view;
 
         state.material_shader.update_global_state(
+            &state.device,
+            &state.graphics_cmd_bufs,
+            state.in_flight_frames.current_frame as u32,
+            state.frame_delta_time,
+        )?;
+
+        Ok(())
+    }
+
+    pub fn update_global_ui_state(
+        projection: Matrix4,
+        view: Matrix4,
+        _mode: i32,
+    ) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
+            }
+        };
+        state.ui_shader.use_shader(
+            &state.device,
+            &state.graphics_cmd_bufs,
+            state.in_flight_frames.current_frame as u32,
+        );
+
+        state.ui_shader.global_ubo.projection = projection;
+        state.ui_shader.global_ubo.view = view;
+
+        state.ui_shader.update_global_state(
             &state.device,
             &state.graphics_cmd_bufs,
             state.in_flight_frames.current_frame as u32,
@@ -919,12 +1018,7 @@ impl<'a> VulkanContext<'a> {
             }
         };
         let image_index = state.image_index;
-        let mut command_buff = &mut state.graphics_cmd_bufs;
-        state.main_renderpass.end(
-            &state.device,
-            &mut command_buff,
-            state.in_flight_frames.current_frame as usize,
-        );
+        let command_buff = &mut state.graphics_cmd_bufs;
 
         command_buff.end(&state.device, state.in_flight_frames.current_frame as usize)?;
 
@@ -984,6 +1078,70 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
+    pub fn begin_renderpass(renderpass_type: BuiltInRenderpass) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
+            }
+        };
+
+        let (renderpass, framebuffer) = match renderpass_type {
+            BuiltInRenderpass::World => (
+                &state.main_renderpass,
+                state.world_framebuffers[state.image_index as usize],
+            ),
+            BuiltInRenderpass::UI => (
+                &state.ui_renderpass,
+                state.swapchain_framebuffers[state.image_index as usize],
+            ),
+        };
+        renderpass.begin(
+            &state.device,
+            &mut state.graphics_cmd_bufs,
+            state.in_flight_frames.current_frame,
+            framebuffer,
+        );
+        match renderpass_type {
+            BuiltInRenderpass::World => state.material_shader.use_shader(
+                &state.device,
+                &state.graphics_cmd_bufs,
+                state.in_flight_frames.current_frame as u32,
+            ),
+            BuiltInRenderpass::UI => state.ui_shader.use_shader(
+                &state.device,
+                &state.graphics_cmd_bufs,
+                state.in_flight_frames.current_frame as u32,
+            ),
+        }
+        Ok(())
+    }
+
+    pub fn end_renderpass(renderpass_type: BuiltInRenderpass) -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
+            }
+        };
+        let renderpass = match renderpass_type {
+            BuiltInRenderpass::World => &state.main_renderpass,
+            BuiltInRenderpass::UI => &state.ui_renderpass,
+        };
+        renderpass.end(
+            &state.device,
+            &mut state.graphics_cmd_bufs,
+            state.in_flight_frames.current_frame,
+        );
+        Ok(())
+    }
+
     pub fn find_memory_index(
         instance: &Instance,
         dev: &VulkanDevice,
@@ -1037,8 +1195,14 @@ impl<'a> VulkanContext<'a> {
             state.framebuffer_height,
         )?;
 
-        state.main_renderpass.w = state.framebuffer_width as f32;
-        state.main_renderpass.h = state.framebuffer_height as f32;
+        state
+            .main_renderpass
+            .render_area
+            .set_w(state.framebuffer_width as f32);
+        state
+            .main_renderpass
+            .render_area
+            .set_h(state.framebuffer_height as f32);
 
         state.frame_buffer_last_generation = state.frame_buffer_size_generation;
 
@@ -1050,16 +1214,19 @@ impl<'a> VulkanContext<'a> {
         }
 
         for i in 0..state.swapchain.image_count as usize {
-            state.swapchain_framebuffers[i].destroy(&state.device);
+            unsafe {
+                state
+                    .device
+                    .device
+                    .destroy_framebuffer(state.swapchain_framebuffers[i], None);
+                state
+                    .device
+                    .device
+                    .destroy_framebuffer(state.world_framebuffers[i], None);
+            }
         }
 
-        state.swapchain_framebuffers = Self::regenerate_framebuffers(
-            &state.device,
-            &state.main_renderpass,
-            &state.swapchain,
-            state.framebuffer_height,
-            state.framebuffer_width,
-        )?;
+        Self::regenerate_framebuffers()?;
 
         state.recreating_swapchain = false;
 
@@ -1070,23 +1237,74 @@ impl<'a> VulkanContext<'a> {
         VulkanCommandBuffer::allocate(device, true, device.graphics_command_pool, frames as u32)
     }
 
-    fn regenerate_framebuffers(
-        dev: &VulkanDevice,
-        rend_pass: &VulkanRenderPass,
-        swap: &VulkanSwapchain,
-        height: u32,
-        width: u32,
-    ) -> Result<Vec<VulkanFramebuffer>> {
+    fn regenerate_framebuffers() -> Result<()> {
+        let state = unsafe {
+            if let Some(ref mut state) = VULKAN_STATE {
+                state
+            } else {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "Vulkan Context not initialized",
+                });
+            }
+        };
+        let mut world_framebuffers = Vec::new();
         let mut swap_framebuffers = Vec::new();
-        for i in 0..swap.views.len() {
-            let mut swap_attachments = Vec::new();
-            swap_attachments.push(swap.views[i]);
-            swap_attachments.push(swap.depth_attachment.view.unwrap());
-            let buf =
-                VulkanFramebuffer::create(&dev, &rend_pass, height, width, &swap_attachments)?;
-            swap_framebuffers.push(buf);
+        for i in 0..state.swapchain.views.len() {
+            let mut world_attachments = Vec::new();
+            world_attachments.push(state.swapchain.views[i]);
+            world_attachments.push(state.swapchain.depth_attachment.view.unwrap());
+            let framebuffer_create_info = FramebufferCreateInfo::default()
+                .render_pass(state.main_renderpass.renderpass)
+                .attachments(&world_attachments)
+                .height(state.framebuffer_height)
+                .width(state.framebuffer_width)
+                .layers(1);
+
+            let framebuffer = unsafe {
+                match state
+                    .device
+                    .device
+                    .create_framebuffer(&framebuffer_create_info, None)
+                {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create framebuffer",
+                        });
+                    }
+                }
+            };
+            world_framebuffers.push(framebuffer);
+
+            let mut ui_attachments = Vec::new();
+            ui_attachments.push(state.swapchain.views[i]);
+
+            let ui_framebuffer_create_info = FramebufferCreateInfo::default()
+                .render_pass(state.ui_renderpass.renderpass)
+                .attachments(&ui_attachments)
+                .height(state.framebuffer_height)
+                .width(state.framebuffer_width)
+                .layers(1);
+
+            let ui_framebuffer = unsafe {
+                match state
+                    .device
+                    .device
+                    .create_framebuffer(&ui_framebuffer_create_info, None)
+                {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "could not create framebuffer",
+                        });
+                    }
+                }
+            };
+            swap_framebuffers.push(ui_framebuffer);
         }
-        Ok(swap_framebuffers)
+        state.world_framebuffers = world_framebuffers;
+        state.swapchain_framebuffers = swap_framebuffers;
+        Ok(())
     }
 
     fn create_buffers(
@@ -1178,14 +1396,19 @@ impl<'a> Drop for VulkanContext<'a> {
                 state.object_index_buffer.destroy(&state.device);
                 state.object_vertex_buffer.destroy(&state.device);
                 for frame in &state.swapchain_framebuffers {
-                    frame.destroy(&state.device);
+                    state.device.device.destroy_framebuffer(*frame, None);
                 }
+                for frame in &state.world_framebuffers {
+                    state.device.device.destroy_framebuffer(*frame, None);
+                }
+                state.ui_shader.destroy(&state.device);
                 state.material_shader.destroy(&state.device);
                 state.in_flight_frames.destroy(&state.device);
                 state
                     .device
                     .device
                     .destroy_command_pool(state.device.graphics_command_pool, None);
+                state.ui_renderpass.destroy(&state.device);
                 state.main_renderpass.destroy(&state.device);
                 state.swapchain.destroy(&state.device);
                 state.device.device.destroy_device(None);
@@ -1203,14 +1426,19 @@ impl<'a> Drop for VulkanContext<'a> {
                 state.object_index_buffer.destroy(&state.device);
                 state.object_vertex_buffer.destroy(&state.device);
                 for frame in &state.swapchain_framebuffers {
-                    frame.destroy(&state.device);
+                    state.device.device.destroy_framebuffer(*frame, None);
                 }
+                for frame in &state.world_framebuffers {
+                    state.device.device.destroy_framebuffer(*frame, None);
+                }
+                state.ui_shader.destroy(&state.device);
                 state.material_shader.destroy(&state.device);
                 state.in_flight_frames.destroy(&state.device);
                 state
                     .device
                     .device
                     .destroy_command_pool(state.device.graphics_command_pool, None);
+                state.ui_renderpass.destroy(&state.device);
                 state.main_renderpass.destroy(&state.device);
                 state.swapchain.destroy(&state.device);
                 state.device.device.destroy_device(None);

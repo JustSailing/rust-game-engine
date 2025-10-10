@@ -224,6 +224,7 @@ impl<'a: 'static> ApplicationState<'a> {
                 let mut render_packet = RendererPacket {
                     delta_time: delta,
                     geometries: geometries,
+                    ui_geometries: Vec::new(),
                 };
                 Renderer::draw_frame(&mut render_packet)?;
                 let elapsed_since_last_frame = last_frame_time.elapsed();

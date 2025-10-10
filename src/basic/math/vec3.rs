@@ -207,3 +207,11 @@ pub struct Vector3D {
     pub position: Vec3,
     pub texcoord: Vec2,
 }
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Vector2D {
+    pub position: Vec2,
+    pub texcoord: Vec2,
+}
+
