@@ -4,7 +4,7 @@ use crate::application::{
         vec2::Vec2,
         vec3::{Vec3, Vector2D, Vector3D},
     },
-    renderer::renderer_types::{FrontendRendererError, Renderer},
+    renderer::renderer_types::{RendererError, Renderer},
     resources::resource_types::{Geometry, MaterialConfig},
     systems::material_system::{MaterialSysError, MaterialSystem},
 };
@@ -49,8 +49,8 @@ pub enum GeometrySysError {
         line: u32,
     },
     #[error("{source}\ngeometry system error: error returned from frontend renderer {file} {line}")]
-    FrontendRendererError {
-        source: FrontendRendererError,
+    RendererSysError {
+        source: RendererError,
         file: &'static str,
         line: u32,
     },
@@ -259,7 +259,7 @@ impl<'a: 'static> GeometrySystem<'a> {
 
         let geo = &mut state.registered_geometries[handle];
         Renderer::create_geometry(geo, &config.vertices, &config.indices).map_err(|e| {
-            GeometrySysError::FrontendRendererError {
+            GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -290,7 +290,7 @@ impl<'a: 'static> GeometrySystem<'a> {
             }
         };
         Renderer::destroy_geometry(geometry).map_err(|e| {
-            GeometrySysError::FrontendRendererError {
+            GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -343,7 +343,7 @@ impl<'a: 'static> GeometrySystem<'a> {
         let mut geometry = Geometry::default();
         //geometry.id = 10;
         Renderer::create_geometry(&mut geometry, &verts, &indices).map_err(|e| {
-            GeometrySysError::FrontendRendererError {
+            GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -381,7 +381,7 @@ impl<'a: 'static> GeometrySystem<'a> {
         //geometry_2d.id = 11;
 
         Renderer::create_geometry(&mut geometry_2d, &verts_2d, &indices_2d).map_err(|e| {
-            GeometrySysError::FrontendRendererError {
+            GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),

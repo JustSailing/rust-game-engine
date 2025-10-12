@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::application::{
     basic::math::consts::INVALID_ID,
-    renderer::renderer_types::{FrontendRendererError, Renderer},
+    renderer::renderer_types::{RendererError, Renderer},
     resources::resource_types::{ResourceData, ResourceType, Texture},
     systems::resource_system::{ResourceSysError, ResourceSystem},
 };
@@ -60,8 +60,8 @@ pub enum TextureSysError {
         line: u32,
     },
     #[error("{source}\ntexture system error: frontend renderer error : {file} {line}")]
-    FrontendError {
-        source: FrontendRendererError,
+    RendererSysError {
+        source: RendererError,
         file: &'static str,
         line: u32,
     },
@@ -154,7 +154,7 @@ impl<'a> TextureSystem {
             .channel_count(CHANNELS as u8)
             .generation(INVALID_ID);
         Renderer::create_texture(&pixels, &mut texture).map_err(|e| {
-            TextureSysError::FrontendError {
+            TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -168,7 +168,7 @@ impl<'a> TextureSystem {
         unsafe {
             if let Some(ref mut state) = TEXTURE_STATE {
                 Renderer::destroy_texture(&state.default_texture).map_err(|e| {
-                    TextureSysError::FrontendError {
+                    TextureSysError::RendererSysError {
                         source: e,
                         file: file!(),
                         line: line!(),
@@ -230,7 +230,7 @@ impl<'a> TextureSystem {
             .channel_count(data.channel_count)
             .generation(INVALID_ID);
         Renderer::create_texture(data.pixels.as_slice(), &mut texture).map_err(|e| {
-            TextureSysError::FrontendError {
+            TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -328,7 +328,7 @@ impl<'a> TextureSystem {
         tex_ref.reference_count -= 1;
         if tex_ref.reference_count == 0 && tex_ref.auto_release {
             let t = &state.registered_textures[tex_ref.handle];
-            Renderer::destroy_texture(t).map_err(|e| TextureSysError::FrontendError {
+            Renderer::destroy_texture(t).map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -400,7 +400,7 @@ impl<'a> TextureSystem {
                         }
                     });
 
-                Renderer::destroy_texture(texture).map_err(|e| TextureSysError::FrontendError {
+                Renderer::destroy_texture(texture).map_err(|e| TextureSysError::RendererSysError {
                     source: e,
                     file: file!(),
                     line: line!(),

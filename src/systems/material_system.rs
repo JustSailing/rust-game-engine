@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::application::{
     basic::{filesystem::FileHandleError, math::consts::INVALID_ID},
-    renderer::renderer_types::{FrontendRendererError, Renderer},
+    renderer::renderer_types::{RendererError, Renderer},
     resources::resource_types::{
         Material, MaterialConfig, MaterialType, ResourceData, ResourceType, TextureUse,
     },
@@ -50,7 +50,7 @@ pub enum MaterialSysError {
         line: u32,
     },
     #[error("{source}\nmaterial system error:  texture system error in material sys {file} {line}")]
-    TextureSystemError {
+    TextureSysError {
         source: TextureSysError,
         file: &'static str,
         line: u32,
@@ -58,8 +58,8 @@ pub enum MaterialSysError {
     #[error(
         "{source}\nmaterial system error:  frontend renderer error in material sys {file} {line}"
     )]
-    RendererSystemError {
-        source: FrontendRendererError,
+    RendererSysError {
+        source: RendererError,
         file: &'static str,
         line: u32,
     },
@@ -70,7 +70,7 @@ pub enum MaterialSysError {
         line: u32,
     },
     #[error("{source}\nmaterial system error:  texture system error in material sys {file} {line}")]
-    ResourceSystemError {
+    ResourceSysError {
         source: ResourceSysError,
         file: &'static str,
         line: u32,
@@ -153,7 +153,7 @@ impl<'a: 'static> MaterialSystem<'a> {
         material.name = String::from(DEFAULT_MATERIAL_NAME);
         material.material_type = MaterialType::World;
         material.diffuse_map.texture = Some(TextureSystem::get_default_texture().map_err(|e| {
-            MaterialSysError::TextureSystemError {
+            MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -162,7 +162,7 @@ impl<'a: 'static> MaterialSystem<'a> {
 
         material.diffuse_map.use_type = TextureUse::MapDiffuse;
         Renderer::create_material(&mut material).map_err(|e| {
-            MaterialSysError::RendererSystemError {
+            MaterialSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -217,7 +217,7 @@ impl<'a: 'static> MaterialSystem<'a> {
         mat_ref.reference_count -= 1;
         if mat_ref.reference_count == 0 && mat_ref.auto_release {
             let mat = &state.registered_materials[mat_ref.handle];
-            Renderer::destroy_material(mat).map_err(|e| MaterialSysError::RendererSystemError {
+            Renderer::destroy_material(mat).map_err(|e| MaterialSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -249,7 +249,7 @@ impl<'a: 'static> MaterialSystem<'a> {
     pub fn acquire(config: &mut MaterialConfig) -> Result<&'a mut Material<'a>> {
         let mut material_res =
             ResourceSystem::load(&config.name, ResourceType::Material).map_err(|e| {
-                MaterialSysError::ResourceSystemError {
+                MaterialSysError::ResourceSysError {
                     source: e,
                     file: file!(),
                     line: line!(),
@@ -284,7 +284,7 @@ impl<'a: 'static> MaterialSystem<'a> {
         let mat = Self::acquire_from_config(config)?;
 
         ResourceSystem::unload(&mut material_res).map_err(|e| {
-            MaterialSysError::ResourceSystemError {
+            MaterialSysError::ResourceSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -378,7 +378,7 @@ impl<'a: 'static> MaterialSystem<'a> {
         if config.diffuse_map_name.len() > 0 {
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
             let tex = TextureSystem::acquire(config.diffuse_map_name.clone(), config.auto_release)
-                .map_err(|e| MaterialSysError::TextureSystemError {
+                .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),
                     line: line!(),
@@ -387,7 +387,7 @@ impl<'a: 'static> MaterialSystem<'a> {
         }
 
         let res = Renderer::create_material(&mut mat).map_err(|e| {
-            MaterialSysError::RendererSystemError {
+            MaterialSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -422,14 +422,14 @@ impl<'a: 'static> MaterialSystem<'a> {
 
     pub fn destroy_material(material: &'a Material) -> Result<()> {
         TextureSystem::release(&material.name).map_err(|e| {
-            MaterialSysError::TextureSystemError {
+            MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             }
         })?;
         Renderer::destroy_material(&material).map_err(|e| {
-            MaterialSysError::RendererSystemError {
+            MaterialSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),

@@ -11,7 +11,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use thiserror::Error;
 
-type Result<T> = std::result::Result<T, FrontendRendererError>;
+type Result<T> = std::result::Result<T, RendererError>;
 pub enum RendererBackendType {
     Vulkan,
     OpenGL,
@@ -110,7 +110,7 @@ pub struct RendererBackend<'a> {
 static mut RENDERER_BACKEND: Option<RendererBackend> = None;
 
 #[derive(Error, Debug)]
-pub enum FrontendRendererError {
+pub enum RendererError {
     #[error("frontend renderer error: already initialized {} {}", file, line)]
     AlreadyInitialized { file: &'static str, line: u32 },
     #[error("frontend renderer error: already shutdown {} {}", file, line)]
@@ -134,7 +134,7 @@ impl<'a> Renderer {
     pub fn initialize(app_name: &str, window: &Window) -> Result<()> {
         unsafe {
             if let Some(ref _state) = RENDERER_BACKEND {
-                return Err(FrontendRendererError::AlreadyInitialized {
+                return Err(RendererError::AlreadyInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -144,7 +144,7 @@ impl<'a> Renderer {
 
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.initialize)(app_name, window).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
@@ -152,7 +152,7 @@ impl<'a> Renderer {
                 })?;
                 Ok(())
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -167,7 +167,7 @@ impl<'a> Renderer {
                 RENDERER_BACKEND = None;
                 return Ok(());
             } else {
-                return Err(FrontendRendererError::AlreadyShutdown {
+                return Err(RendererError::AlreadyShutdown {
                     file: file!(),
                     line: line!(),
                 });
@@ -179,14 +179,14 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.create_texture)(pixels, texture).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     }
                 })
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -198,14 +198,14 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.destroy_texture)(&texture).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     }
                 })
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -217,14 +217,14 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref state) = RENDERER_BACKEND {
                 (state.create_material)(material).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     }
                 })
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -236,14 +236,14 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.destroy_material)(material).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     }
                 })
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -259,14 +259,14 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut _state) = RENDERER_BACKEND {
                 VulkanContext::create_geometry(geometry, vertices, indicies).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     }
                 })
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -278,14 +278,14 @@ impl<'a> Renderer {
         unsafe {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 (state.destroy_geometry)(geometry).map_err(|e| {
-                    FrontendRendererError::BackendRendererError {
+                    RendererError::BackendRendererError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     }
                 })
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -298,7 +298,7 @@ impl<'a> Renderer {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 state
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -306,7 +306,7 @@ impl<'a> Renderer {
         };
 
         if !(state.begin_frame)(packet.delta_time).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -316,7 +316,7 @@ impl<'a> Renderer {
         }
 
         (state.begin_renderpass)(BuiltInRenderpass::World).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -330,7 +330,7 @@ impl<'a> Renderer {
             Vec4::new_zeroes(),
             0,
         )
-        .map_err(|e| FrontendRendererError::BackendRendererError {
+        .map_err(|e| RendererError::BackendRendererError {
             source: e,
             file: file!(),
             line: line!(),
@@ -338,7 +338,7 @@ impl<'a> Renderer {
 
         for geo in packet.geometries.iter_mut() {
             (state.draw_geometry)(geo).map_err(|e| {
-                FrontendRendererError::BackendRendererError {
+                RendererError::BackendRendererError {
                     source: e,
                     file: file!(),
                     line: line!(),
@@ -347,7 +347,7 @@ impl<'a> Renderer {
         }
 
         (state.end_renderpass)(BuiltInRenderpass::World).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -355,14 +355,14 @@ impl<'a> Renderer {
         })?;
 
         (state.begin_renderpass)(BuiltInRenderpass::UI).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
             }
         })?;
         (state.update_global_ui_state)(state.ui_projection, state.ui_view, 0).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -370,7 +370,7 @@ impl<'a> Renderer {
         })?;
         for geo in packet.ui_geometries.iter_mut() {
             (state.draw_geometry)(geo).map_err(|e| {
-                FrontendRendererError::BackendRendererError {
+                RendererError::BackendRendererError {
                     source: e,
                     file: file!(),
                     line: line!(),
@@ -379,7 +379,7 @@ impl<'a> Renderer {
         }
 
         (state.end_renderpass)(BuiltInRenderpass::UI).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -387,7 +387,7 @@ impl<'a> Renderer {
         })?;
 
         (state.end_frame)(packet.delta_time).map_err(|e| {
-            FrontendRendererError::BackendRendererError {
+            RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -402,7 +402,7 @@ impl<'a> Renderer {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 state
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -416,7 +416,7 @@ impl<'a> Renderer {
         );
         state.ui_projection =
             Matrix4::orthographic(0.0, width as f32, height as f32, 0.0, -100.0, 100.0);
-        (state.resized)(width, height).map_err(|e| FrontendRendererError::BackendRendererError {
+        (state.resized)(width, height).map_err(|e| RendererError::BackendRendererError {
             source: e,
             file: file!(),
             line: line!(),
@@ -429,7 +429,7 @@ impl<'a> Renderer {
                 state.view = view;
                 Ok(())
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -440,7 +440,7 @@ impl<'a> Renderer {
     fn create_renderer_backend(_type_: &RendererBackendType) -> Result<()> {
         unsafe {
             if let Some(ref mut _state) = RENDERER_BACKEND {
-                return Err(FrontendRendererError::AlreadyInitialized {
+                return Err(RendererError::AlreadyInitialized {
                     file: file!(),
                     line: line!(),
                 });
@@ -480,7 +480,7 @@ impl<'a> Renderer {
             if let Some(ref mut state) = RENDERER_BACKEND {
                 Ok(
                     (state.shutdown)().map_err(|e| {
-                        FrontendRendererError::BackendRendererError {
+                        RendererError::BackendRendererError {
                             source: e,
                             file: file!(),
                             line: line!(),
@@ -488,7 +488,7 @@ impl<'a> Renderer {
                     })?,
                 )
             } else {
-                return Err(FrontendRendererError::NotInitialized {
+                return Err(RendererError::NotInitialized {
                     file: file!(),
                     line: line!(),
                 });

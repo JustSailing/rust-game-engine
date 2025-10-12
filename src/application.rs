@@ -24,9 +24,7 @@ use basic::event::{EventCodes, EventCtx, EventState, EventSysError};
 use basic::input::{InputState, InputSysError};
 use basic::math::matrix4::Matrix4;
 use basic::window::{Window, WindowError};
-use renderer::renderer_types::{
-    FrontendRendererError, GeometryRenderData, Renderer, RendererPacket,
-};
+use renderer::renderer_types::{GeometryRenderData, Renderer, RendererError, RendererPacket};
 use resources::resource_types::Geometry;
 use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
 use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
@@ -77,8 +75,8 @@ pub enum AppError {
         line: u32,
     },
     #[error("{source}\napp error:  error from renderer frontend {file} {line}")]
-    FrontendRendererError {
-        source: FrontendRendererError,
+    RendererSysError {
+        source: RendererError,
         file: &'static str,
         line: u32,
     },
@@ -205,7 +203,7 @@ impl<'a: 'static> ApplicationState<'a> {
             })?;
 
         Renderer::initialize(app_config.name, &window).map_err(|e| {
-            AppError::FrontendRendererError {
+            AppError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -375,7 +373,7 @@ impl<'a: 'static> ApplicationState<'a> {
                     ui_geometries: ui_geometries,
                 };
                 Renderer::draw_frame(&mut render_packet).map_err(|e| {
-                    AppError::FrontendRendererError {
+                    AppError::RendererSysError {
                         source: e,
                         file: file!(),
                         line: line!(),
