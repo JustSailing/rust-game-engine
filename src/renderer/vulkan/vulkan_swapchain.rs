@@ -47,6 +47,8 @@ impl VulkanSwapchain {
         if !device.detect_depth_format(instance) {
             return Err(VulkanBackendError::OperationFailed {
                 issue: "could not detect depth format",
+                file: file!(),
+                line: line!(),
             });
         }
 
@@ -175,6 +177,8 @@ impl VulkanSwapchain {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create swapchain",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -186,6 +190,8 @@ impl VulkanSwapchain {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not get swapchain images",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -210,6 +216,8 @@ impl VulkanSwapchain {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create image views",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -272,6 +280,8 @@ impl VulkanSwapchain {
         if !device.detect_depth_format(instance) {
             return Err(VulkanBackendError::OperationFailed {
                 issue: "could not detect depth format",
+                file: file!(),
+                line: line!(),
             });
         }
 
@@ -400,6 +410,8 @@ impl VulkanSwapchain {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create swapchain",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -420,6 +432,8 @@ impl VulkanSwapchain {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not get swapchain images",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -444,6 +458,8 @@ impl VulkanSwapchain {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create image views",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -500,6 +516,8 @@ impl VulkanSwapchain {
             _ => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "present queue did not work properly",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         }
@@ -522,6 +540,8 @@ impl VulkanSwapchain {
             Err(_) => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "failure to acqurie next image",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };

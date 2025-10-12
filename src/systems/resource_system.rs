@@ -10,37 +10,51 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ResourceSysError {
-    #[error("resource system error: system already initialized {} {}", file!(), line!())]
-    AlreadyInitialized,
-    #[error("resource system error: system not initialized {} {}", file!(), line!())]
-    NotInitialized,
-    #[error("resource system error: system already shutdown {} {}", file!(), line!())]
-    AlreadyShutdown,
-    #[error("resource system error: config provide has a max count less than 1 {} {}", file!(), line!())]
-    MaxLoaderCountZero,
-    #[error("resource system error: loader already exists {} {}", file!(), line!())]
-    LoaderAlreadyExists,
-    #[error("resource system error: custom loader already exists {} {}", file!(), line!())]
-    CustomLoaderAlreadyExists,
-    #[error("resource system error: registered loaders is full. change max count in sys config {} {}", file!(), line!())]
-    RegisteredLoadersFull,
-    #[error("resource system error: loading resourse loader: {name} {} {}", file!(), line!())]
-    ResourceLoadError { name: String },
-    #[error("resource system error: loading resourse loader: {name} {} {}", file!(), line!())]
-    ResourceUnloadError { name: String },
-    #[error("resource system error: resource id is invalid {} {}", file!(), line!())]
-    ResourceIdInvalid,
-    #[error("resource system error: image loader error {} {}", file!(), line!())]
-    ImageLoaderError,
-    #[error("{source}\nresource system error: image loader error when opening texture file failed {} {}", file!(), line!())]
-    ImageError {
-        #[from]
-        source: image::ImageError,
+    #[error("resource system error: system already initialized {file} {line}")]
+    AlreadyInitialized { file: &'static str, line: u32 },
+    #[error("resource system error: system not initialized {file} {line}")]
+    NotInitialized { file: &'static str, line: u32 },
+    #[error("resource system error: system already shutdown {file} {line}")]
+    AlreadyShutdown { file: &'static str, line: u32 },
+    #[error("resource system error: config provide has a max count less than 1 {file} {line}")]
+    MaxLoaderCountZero { file: &'static str, line: u32 },
+    #[error("resource system error: loader already exists {file} {line}")]
+    LoaderAlreadyExists { file: &'static str, line: u32 },
+    #[error("resource system error: custom loader already exists {file} {line}")]
+    CustomLoaderAlreadyExists { file: &'static str, line: u32 },
+    #[error(
+        "resource system error: registered loaders is full. change max count in sys config {file} {line}"
+    )]
+    RegisteredLoadersFull { file: &'static str, line: u32 },
+    #[error("resource system error: loading resourse loader: {name} {file} {line}")]
+    ResourceLoadError {
+        name: String,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\nresource system error: opening file failed {} {}", file!(), line!())]
+    #[error("resource system error: loading resourse loader: {name} {file} {line}")]
+    ResourceUnloadError {
+        name: String,
+        file: &'static str,
+        line: u32,
+    },
+    #[error("resource system error: resource id is invalid {file} {line}")]
+    ResourceIdInvalid { file: &'static str, line: u32 },
+    #[error("resource system error: image loader error {file} {line}")]
+    ImageLoaderError { file: &'static str, line: u32 },
+    #[error(
+        "{source}\nresource system error: image loader error when opening texture file failed {file} {line}"
+    )]
+    ImageError {
+        source: image::ImageError,
+        file: &'static str,
+        line: u32,
+    },
+    #[error("{source}\nresource system error: opening file failed {file} {line}")]
     FileError {
-        #[from]
         source: FileHandleError,
+        file: &'static str,
+        line: u32,
     },
 }
 
@@ -105,11 +119,17 @@ impl ResourceSystem {
     pub fn initialize(config: ResourceSysConfig) -> Result<()> {
         unsafe {
             if let Some(ref _state) = RESOURCE_STATE {
-                return Err(ResourceSysError::AlreadyInitialized);
+                return Err(ResourceSysError::AlreadyInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
         if config.max_loader_count < 1 {
-            return Err(ResourceSysError::MaxLoaderCountZero);
+            return Err(ResourceSysError::MaxLoaderCountZero {
+                file: file!(),
+                line: line!(),
+            });
         }
 
         let mut registered_loaders =
@@ -138,18 +158,27 @@ impl ResourceSystem {
             if let Some(ref mut state) = RESOURCE_STATE {
                 state
             } else {
-                return Err(ResourceSysError::NotInitialized);
+                return Err(ResourceSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
         for ld in state.registered_loaders.iter() {
             if let Some(l) = ld {
                 if loader.res_type != ResourceType::Custom && loader.res_type == l.res_type {
-                    return Err(ResourceSysError::LoaderAlreadyExists);
+                    return Err(ResourceSysError::LoaderAlreadyExists {
+                        file: file!(),
+                        line: line!(),
+                    });
                 } else if let Some(ref ld_cus_typ) = l.custom_type
                     && let Some(ref cus_type) = loader.custom_type
                     && cus_type == ld_cus_typ
                 {
-                    return Err(ResourceSysError::CustomLoaderAlreadyExists);
+                    return Err(ResourceSysError::CustomLoaderAlreadyExists {
+                        file: file!(),
+                        line: line!(),
+                    });
                 }
             }
         }
@@ -169,7 +198,10 @@ impl ResourceSystem {
             });
 
         if new_id.is_none() {
-            return Err(ResourceSysError::RegisteredLoadersFull);
+            return Err(ResourceSysError::RegisteredLoadersFull {
+                file: file!(),
+                line: line!(),
+            });
         }
         state.registered_loaders[new_id.unwrap()] = Some(loader);
         state.registered_loaders[new_id.unwrap()]
@@ -184,7 +216,10 @@ impl ResourceSystem {
             if let Some(ref mut state) = RESOURCE_STATE {
                 state
             } else {
-                return Err(ResourceSysError::NotInitialized);
+                return Err(ResourceSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
         let res = state.registered_loaders.iter().find_map(|ld| {
@@ -205,6 +240,8 @@ impl ResourceSystem {
         if res.is_none() {
             return Err(ResourceSysError::ResourceLoadError {
                 name: name.to_string(),
+                file: file!(),
+                line: line!(),
             });
         }
         return Ok(res.unwrap());
@@ -215,17 +252,25 @@ impl ResourceSystem {
             if let Some(ref mut state) = RESOURCE_STATE {
                 state
             } else {
-                return Err(ResourceSysError::NotInitialized);
+                return Err(ResourceSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
         if resouce.loader_id == INVALID_ID {
-            return Err(ResourceSysError::ResourceIdInvalid);
+            return Err(ResourceSysError::ResourceIdInvalid {
+                file: file!(),
+                line: line!(),
+            });
         }
         if let Some(ref ld) = state.registered_loaders[resouce.loader_id] {
             return (ld.unload)(resouce);
         } else {
             return Err(ResourceSysError::ResourceUnloadError {
                 name: resouce.name.clone(),
+                file: file!(),
+                line: line!(),
             });
         }
     }
@@ -235,7 +280,10 @@ impl ResourceSystem {
             if let Some(ref mut state) = RESOURCE_STATE {
                 return Ok(state.config.asset_base_path.clone());
             } else {
-                return Err(ResourceSysError::NotInitialized);
+                return Err(ResourceSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
     }

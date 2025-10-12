@@ -3,37 +3,42 @@ use crate::application::{
         filesystem::{FileHandle, FileModes},
         math::{consts::INVALID_ID, vec4::Vec4},
     },
-    resources::resource_types::{MaterialConfig, Resource, ResourceData},
+    resources::resource_types::{MaterialConfig, MaterialType, Resource, ResourceData},
     systems::resource_system::{ResourceSysError, ResourceSystem},
 };
-use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum MaterialLoaderError {
-    // #[error("material loader error: opening file failed {} {}", file!(), line!())]
-    // FileError {
-    //     #[from]
-    //     source: FileHandleError,
-    // },
-}
 type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct MaterialLoader;
 
 impl MaterialLoader {
     pub fn load(name: &str, path: &str) -> Result<Resource> {
         let full_path = format!("{}/{}/{}.gmt", ResourceSystem::base_path()?, path, name);
-        let mut file_handle = FileHandle::open(&full_path, FileModes::READ, false)?;
+        let mut file_handle =
+            FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
+                ResourceSysError::FileError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                }
+            })?;
         let mut config = MaterialConfig::default();
-        let lines = file_handle.read_lines()?;
+        let lines = file_handle
+            .read_lines()
+            .map_err(|e| ResourceSysError::FileError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
         for line in lines.iter() {
             if line.len() == 0 {
                 continue;
             } else if line.chars().nth(0).unwrap() == '#' {
                 continue;
             }
+            
             let split: Vec<&str> = line.split('=').collect();
             match split[0] {
-                "name" => config.name = split[1].to_string(),
+                "name" => config.name = split[1].trim().to_string(),
                 "diffuse_colour" => {
                     let values: Vec<&str> = split[1].split(' ').collect();
                     let mut dif_col = Vec4::new_zeroes();
@@ -42,8 +47,19 @@ impl MaterialLoader {
                     }
                     config.diffuse_colour = dif_col;
                 }
-                "diffuse_map_name" => config.diffuse_map_name = split[1].to_string(),
-                _ => println!("{}={} not added to material config", split[0], split[1]),
+                "diffuse_map_name" => config.diffuse_map_name = split[1].trim().to_string(),
+                "type" => {
+                    config.material_type = match split[1].trim() {
+                        "ui" => MaterialType::UI,
+                        "world" => MaterialType::World,
+                        _ => MaterialType::Unknown,
+                    }
+                }
+                _ => println!(
+                    "{}={} not added to material config",
+                    split[0].trim(),
+                    split[1].trim()
+                ),
             }
         }
 

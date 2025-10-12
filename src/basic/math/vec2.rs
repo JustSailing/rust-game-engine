@@ -2,6 +2,7 @@ use super::consts::FLOAT_EPSILON;
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct Vec2 {
     data: [f32; 2],
 }
@@ -15,6 +16,11 @@ impl Vec2 {
     pub fn new_ones() -> Self {
         Self { data: [1.0, 1.0] }
     }
+
+    pub fn new_zeroes() -> Self {
+        Self { data: [0.0, 0.0] }
+    }
+
     pub fn new_right() -> Self {
         Self { data: [1.0, 0.0] }
     }

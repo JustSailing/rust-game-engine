@@ -57,6 +57,8 @@ impl VulkanImage {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create image",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -73,6 +75,8 @@ impl VulkanImage {
         if memory_type == -1 {
             return Err(VulkanBackendError::OperationFailed {
                 issue: "required memory type not found. Image not valid.",
+                file: file!(),
+                line: line!(),
             });
         }
         let memory_allocate_info = MemoryAllocateInfo::default()
@@ -85,6 +89,8 @@ impl VulkanImage {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not allocate memory for image",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -95,6 +101,8 @@ impl VulkanImage {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not bind memory for image",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -143,6 +151,8 @@ impl VulkanImage {
                 Ok(v) => Ok(v),
                 Err(_) => Err(VulkanBackendError::OperationFailed {
                     issue: "could not create image view",
+                    file: file!(),
+                    line: line!(),
                 }),
             }
         }
@@ -193,6 +203,8 @@ impl VulkanImage {
         } else {
             return Err(VulkanBackendError::OperationFailed {
                 issue: "unsupported transition",
+                file: file!(),
+                line: line!(),
             });
         }
 

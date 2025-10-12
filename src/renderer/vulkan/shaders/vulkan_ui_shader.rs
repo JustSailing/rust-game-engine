@@ -1,16 +1,28 @@
 use ash::{
+    Instance,
     vk::{
-        BufferUsageFlags, DescriptorBufferInfo, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo, DescriptorType, Extent2D, Format, ImageLayout, MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineBindPoint, PipelineShaderStageCreateInfo, Rect2D, ShaderModule, ShaderModuleCreateInfo, ShaderStageFlags, VertexInputAttributeDescription, Viewport, WriteDescriptorSet
-    }, Instance
+        BufferUsageFlags, DescriptorBufferInfo, DescriptorImageInfo, DescriptorPool,
+        DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
+        DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
+        DescriptorType, Extent2D, Format, ImageLayout, MemoryMapFlags, MemoryPropertyFlags,
+        Offset2D, PipelineBindPoint, PipelineShaderStageCreateInfo, Rect2D, ShaderModule,
+        ShaderModuleCreateInfo, ShaderStageFlags, VertexInputAttributeDescription, Viewport,
+        WriteDescriptorSet,
+    },
 };
 
 use crate::application::{
-    basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vector2D, vec4::Vec4}, renderer::{
+    basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec2::Vec2, vec3::Vector2D, vec4::Vec4},
+    renderer::{
         renderer_types::{UIglobalUBO, UIinstanceUBO},
         vulkan::{
-            vulkan_backend::VulkanBackendError, vulkan_buffer::VulkanBuffer, vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice, vulkan_pipeline::VulkanPipeline, vulkan_renderpass::VulkanRenderPass
+            vulkan_backend::VulkanBackendError, vulkan_buffer::VulkanBuffer,
+            vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
+            vulkan_pipeline::VulkanPipeline, vulkan_renderpass::VulkanRenderPass,
         },
-    }, resources::resource_types::{Material, ResourceData, ResourceType, TextureUse}, systems::resource_system::ResourceSystem
+    },
+    resources::resource_types::{Material, ResourceData, ResourceType, TextureUse},
+    systems::resource_system::ResourceSystem,
 };
 
 const VULKAN_MAX_UI_COUNT: usize = 1024;
@@ -98,6 +110,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create global descriptor set layout",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -120,6 +134,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create descritpor pool",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -152,6 +168,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create object descriptor layout",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -162,8 +180,7 @@ impl<'a> VulkanUIshader<'a> {
         object_pool_sizes[0].descriptor_count = VULKAN_MAX_UI_COUNT as u32;
         object_pool_sizes[0].ty = DescriptorType::UNIFORM_BUFFER;
 
-        object_pool_sizes[1].descriptor_count =
-            LOCAL_SAMPLER_COUNT * VULKAN_MAX_UI_COUNT as u32;
+        object_pool_sizes[1].descriptor_count = LOCAL_SAMPLER_COUNT * VULKAN_MAX_UI_COUNT as u32;
         object_pool_sizes[1].ty = DescriptorType::COMBINED_IMAGE_SAMPLER;
 
         let object_pool_info = DescriptorPoolCreateInfo::default()
@@ -179,6 +196,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create descriptor pool",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -270,6 +289,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not allocate descriptor sets".into(),
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -323,16 +344,22 @@ impl<'a> VulkanUIshader<'a> {
             ResourceData::Unknown => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "wrong resource type: Unknown expected: Binary",
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::ImageResourceData(_) => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "wrong resource type: Image expected: Binary",
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::MaterialResourceData(_) => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "wrong resource type: Material expected: Binary",
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::BinaryResourceData(ref items) => items,
@@ -350,6 +377,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create shader module".into(),
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -470,6 +499,8 @@ impl<'a> VulkanUIshader<'a> {
                 TextureUse::Unknown => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "unable to bind sample to unknown use",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
                 TextureUse::MapDiffuse => {}
@@ -602,6 +633,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not allocate descriptor sets",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -621,6 +654,8 @@ impl<'a> VulkanUIshader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not free descriptor sets",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }

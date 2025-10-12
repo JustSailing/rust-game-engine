@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use crate::application::{
     basic::{filesystem::FileHandleError, math::consts::INVALID_ID},
     renderer::renderer_types::{FrontendRendererError, Renderer},
-    resources::resource_types::{Material, MaterialConfig, ResourceData, ResourceType, TextureUse},
+    resources::resource_types::{
+        Material, MaterialConfig, MaterialType, ResourceData, ResourceType, TextureUse,
+    },
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
         texture_system::{TextureSysError, TextureSystem},
@@ -17,42 +19,62 @@ type Result<T> = std::result::Result<T, MaterialSysError>;
 
 #[derive(Error, Debug)]
 pub enum MaterialSysError {
-    #[error("material system error: already initialized {} {}", file!(), line!())]
-    AlreadyInitialized,
-    #[error("material system error: not initialized {} {}", file!(), line!())]
-    NotInitialized,
-    #[error("material system error: already shutdown {} {}", file!(), line!())]
-    AlreadyShutdown,
-    #[error("material system error: config provided has a max count less than 1 {} {}", file!(), line!())]
-    MaterialCountZero,
-    #[error("material system error:  releasing texture that doesn't exist: {name} {} {}", file!(), line!())]
-    ReleaseTextureDoesNotExist { name: String },
-    #[error("material system error: registered materials are at max count increase config max count {} {}", file!(), line!())]
-    MaterialRegistedMaterialsFull,
-    #[error("material system error:  acquire texture that doesn't exist: {name} {} {}", file!(), line!())]
-    FailedToAcquireMaterial { name: String },
-    #[error("{source}\nmaterial system error:  texture system error in material sys: {} {}", file!(), line!())]
-    TexutreSystemError {
-        #[from]
+    #[error("material system error: already initialized {file} {line}")]
+    AlreadyInitialized { file: &'static str, line: u32 },
+    #[error("material system error: not initialized {file} {line}")]
+    NotInitialized { file: &'static str, line: u32 },
+    #[error("material system error: already shutdown {file} {line}")]
+    AlreadyShutdown { file: &'static str, line: u32 },
+    #[error("material system error: config provided has a max count less than 1 {file} {line}")]
+    MaterialCountZero { file: &'static str, line: u32 },
+    #[error("material system error:  releasing texture that doesn't exist: {name} {file} {line}")]
+    ReleaseTextureDoesNotExist {
+        name: String,
+        file: &'static str,
+        line: u32,
+    },
+    #[error(
+        "material system error: registered materials are at max count increase config max count {file} {line}"
+    )]
+    MaterialRegistedMaterialsFull { file: &'static str, line: u32 },
+    #[error("material system error:  acquire texture that doesn't exist: {name} {file} {line}")]
+    FailedToAcquireMaterial {
+        name: String,
+        file: &'static str,
+        line: u32,
+    },
+    #[error("material system error: wrong resource data type {ty} {file} {line}")]
+    WrongResourceDataType {
+        ty: String,
+        file: &'static str,
+        line: u32,
+    },
+    #[error("{source}\nmaterial system error:  texture system error in material sys {file} {line}")]
+    TextureSystemError {
         source: TextureSysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\nmaterial system error:  frontend renderer error in material sys: {} {}", file!(), line!())]
+    #[error(
+        "{source}\nmaterial system error:  frontend renderer error in material sys {file} {line}"
+    )]
     RendererSystemError {
-        #[from]
         source: FrontendRendererError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\nmaterial system error:  file handle error in material sys: {} {}", file!(), line!())]
+    #[error("{source}\nmaterial system error:  file handle error in material sys {file} {line}")]
     FileHandleError {
-        #[from]
         source: FileHandleError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\nmaterial system error:  texture system error in material sys: {} {}", file!(), line!())]
+    #[error("{source}\nmaterial system error:  texture system error in material sys {file} {line}")]
     ResourceSystemError {
-        #[from]
         source: ResourceSysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("material system error: wrong resource data type {ty} {} {}", file!(), line!())]
-    WrongResourceDataType { ty: String },
 }
 
 pub struct MaterialSysConfig {
@@ -96,11 +118,17 @@ impl<'a: 'static> MaterialSystem<'a> {
     pub fn initialize(config: MaterialSysConfig) -> Result<()> {
         unsafe {
             if let Some(ref _state) = MATERIAL_STATE {
-                return Err(MaterialSysError::AlreadyInitialized);
+                return Err(MaterialSysError::AlreadyInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
         if config.max_count == 0 {
-            return Err(MaterialSysError::MaterialCountZero);
+            return Err(MaterialSysError::MaterialCountZero {
+                file: file!(),
+                line: line!(),
+            });
         }
 
         let mut registered_array = Vec::<Material>::with_capacity(config.max_count);
@@ -123,9 +151,24 @@ impl<'a: 'static> MaterialSystem<'a> {
     fn create_default_material() -> Result<Material<'a>> {
         let mut material = Material::default();
         material.name = String::from(DEFAULT_MATERIAL_NAME);
-        material.diffuse_map.texture = Some(TextureSystem::get_default_texture()?);
+        material.material_type = MaterialType::World;
+        material.diffuse_map.texture = Some(TextureSystem::get_default_texture().map_err(|e| {
+            MaterialSysError::TextureSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?);
+
         material.diffuse_map.use_type = TextureUse::MapDiffuse;
-        Renderer::create_material(&mut material)?;
+        Renderer::create_material(&mut material).map_err(|e| {
+            MaterialSysError::RendererSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
+
         Ok(material)
     }
 
@@ -134,7 +177,10 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 Ok(&mut state.default_material)
             } else {
-                return Err(MaterialSysError::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
     }
@@ -147,7 +193,10 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 state
             } else {
-                return Err(MaterialSysError::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
 
@@ -156,6 +205,8 @@ impl<'a: 'static> MaterialSystem<'a> {
             None => {
                 return Err(MaterialSysError::ReleaseTextureDoesNotExist {
                     name: name.to_string(),
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -166,10 +217,12 @@ impl<'a: 'static> MaterialSystem<'a> {
         mat_ref.reference_count -= 1;
         if mat_ref.reference_count == 0 && mat_ref.auto_release {
             let mat = &state.registered_materials[mat_ref.handle];
-            Renderer::destroy_material(mat)?;
-            //cannot borrow `state.registered_materials` as mutable because it is also borrowed as immutable
-            //use `.split_at_mut(position)` to obtain two mutable non-overlapping sub-slices
-            //state.registered_materials[mat_ref.handle] = Material::default();
+            Renderer::destroy_material(mat).map_err(|e| MaterialSysError::RendererSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
             Self::reset_material_at_index(mat_ref.handle)?;
             // don't think i need the 2 lines below
             mat_ref.handle = INVALID_ID;
@@ -186,33 +239,58 @@ impl<'a: 'static> MaterialSystem<'a> {
                 state.registered_materials[index] = Material::default();
                 return Ok(());
             } else {
-                return Err(MaterialSysError::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
     }
     pub fn acquire(config: &mut MaterialConfig) -> Result<&'a mut Material<'a>> {
-        let mut material_res = ResourceSystem::load(&config.name, ResourceType::Material)?;
+        let mut material_res =
+            ResourceSystem::load(&config.name, ResourceType::Material).map_err(|e| {
+                MaterialSysError::ResourceSystemError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                }
+            })?;
 
         let config = match material_res.data {
             ResourceData::Unknown => {
                 return Err(MaterialSysError::WrongResourceDataType {
                     ty: "Unknown".to_string(),
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::ImageResourceData(_) => {
                 return Err(MaterialSysError::WrongResourceDataType {
                     ty: "ImageResourceData".to_string(),
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::BinaryResourceData(_) => {
                 return Err(MaterialSysError::WrongResourceDataType {
                     ty: "BinaryResourceData".to_string(),
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::MaterialResourceData(ref mut material_config) => material_config,
         };
+
         let mat = Self::acquire_from_config(config)?;
-        ResourceSystem::unload(&mut material_res)?;
+
+        ResourceSystem::unload(&mut material_res).map_err(|e| {
+            MaterialSysError::ResourceSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
+
         Ok(mat)
     }
 
@@ -221,7 +299,10 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 state
             } else {
-                return Err(MaterialSysError::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
         if config.name == DEFAULT_MATERIAL_NAME {
@@ -253,7 +334,10 @@ impl<'a: 'static> MaterialSystem<'a> {
                 }
             }
             if mat_ref.handle == INVALID_ID {
-                return Err(MaterialSysError::MaterialRegistedMaterialsFull);
+                return Err(MaterialSysError::MaterialRegistedMaterialsFull {
+                    file: file!(),
+                    line: line!(),
+                });
             }
             //let name = config.name.clone().as_str();
             state.registered_materials[mat_ref.handle] = Self::load_material(config)?;
@@ -263,9 +347,7 @@ impl<'a: 'static> MaterialSystem<'a> {
                 state.registered_materials[mat_ref.handle].generation += 1;
             }
             state.registered_materials[mat_ref.handle].id = mat_ref.handle;
-            //state.registered_materials[mat_ref.handle].diffuse_map.use_type = TextureUse::MapDiffuse;
         }
-        //let n = String::from(config.name.clone());
 
         Self::insert_hashmap(&config.name, mat_ref)?;
         Ok(&mut state.registered_materials[mat_ref.handle])
@@ -276,7 +358,10 @@ impl<'a: 'static> MaterialSystem<'a> {
             if let Some(ref mut state) = MATERIAL_STATE {
                 state
             } else {
-                return Err(MaterialSysError::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
         state
@@ -287,18 +372,31 @@ impl<'a: 'static> MaterialSystem<'a> {
 
     fn load_material(config: &mut MaterialConfig) -> Result<Material<'a>> {
         let mut mat = Material::default();
+        mat.material_type = config.material_type;
         mat.name = config.name.clone();
         mat.diffuse_colour = config.diffuse_colour.clone();
         if config.diffuse_map_name.len() > 0 {
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
-            //let name = config.diffuse_map_name.clone();
-            mat.diffuse_map.texture = Some(TextureSystem::acquire(
-                config.diffuse_map_name.clone(),
-                config.auto_release,
-            )?);
+            let tex = TextureSystem::acquire(config.diffuse_map_name.clone(), config.auto_release)
+                .map_err(|e| MaterialSysError::TextureSystemError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            mat.diffuse_map.texture = Some(tex);
         }
 
-        Renderer::create_material(&mut mat)?;
+        let res = Renderer::create_material(&mut mat).map_err(|e| {
+            MaterialSysError::RendererSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        });
+        if res.is_err() {
+            return Err(res.err().unwrap());
+        }
+
         Ok(mat)
     }
 
@@ -312,7 +410,10 @@ impl<'a: 'static> MaterialSystem<'a> {
                 }
                 MATERIAL_STATE = None;
             } else {
-                return Err(MaterialSysError::NotInitialized.into());
+                return Err(MaterialSysError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
 
@@ -320,8 +421,20 @@ impl<'a: 'static> MaterialSystem<'a> {
     }
 
     pub fn destroy_material(material: &'a Material) -> Result<()> {
-        TextureSystem::release(&material.name)?;
-        Renderer::destroy_material(&material)?;
+        TextureSystem::release(&material.name).map_err(|e| {
+            MaterialSysError::TextureSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
+        Renderer::destroy_material(&material).map_err(|e| {
+            MaterialSysError::RendererSystemError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
         Ok(())
     }
 }

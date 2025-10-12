@@ -21,7 +21,7 @@ use crate::application::{
         renderer_types::GeometryRenderData,
         vulkan::{shaders::vulkan_ui_shader::VulkanUIshader, vulkan_renderpass::ClearFlag},
     },
-    resources::resource_types::{Geometry, Material, Texture},
+    resources::resource_types::{Geometry, Material, MaterialType, Texture},
     systems::resource_system::ResourceSysError,
 };
 
@@ -49,24 +49,28 @@ type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 #[derive(Error, Debug)]
 pub enum VulkanBackendError {
-    #[error("vulkan backend error: {issue} {} {}",file!(),line!())]
-    OperationFailed { issue: &'static str },
-    #[error("vulkan backend error: loading error => {source} {} {}", file!(), line!())]
+    #[error("vulkan backend error: {issue} {file} {line}")]
+    OperationFailed {
+        issue: &'static str,
+        file: &'static str,
+        line: u32,
+    },
+    #[error("{source}\nvulkan backend error: loading error")]
     AshLoadingError {
         #[from]
         source: LoadingError,
     },
-    #[error("vulkan backend error: CString error => {source} {} {}", file!(), line!())]
+    #[error("{source}\nvulkan backend error: CString error")]
     CStringError {
         #[from]
         source: NulError,
     },
-    #[error("vulkan backend error: ash result error => {source} {} {}", file!(), line!())]
+    #[error("{source}\nvulkan backend error: ash result error")]
     AshResultError {
         #[from]
         source: ash::vk::Result,
     },
-    #[error("{source}\nvulkan backend error: resource sys error {} {}", file!(), line!())]
+    #[error("{source}\nvulkan backend error: resource sys error")]
     ResourceError {
         #[from]
         source: ResourceSysError,
@@ -148,6 +152,8 @@ impl<'a> VulkanContext<'a> {
             if let Some(ref _state) = VULKAN_STATE {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context was already initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         }
@@ -267,6 +273,8 @@ impl<'a> VulkanContext<'a> {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create framebuffer",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -292,6 +300,8 @@ impl<'a> VulkanContext<'a> {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create framebuffer",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -436,6 +446,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context already destroyed",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         }
@@ -449,6 +461,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context already destroyed",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -471,6 +485,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context already destroyed",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -481,6 +497,8 @@ impl<'a> VulkanContext<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not wait on device",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -495,6 +513,8 @@ impl<'a> VulkanContext<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not wait on device",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -593,6 +613,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -615,17 +637,15 @@ impl<'a> VulkanContext<'a> {
         Ok(())
     }
 
-    pub fn update_global_ui_state(
-        projection: Matrix4,
-        view: Matrix4,
-        _mode: i32,
-    ) -> Result<()> {
+    pub fn update_global_ui_state(projection: Matrix4, view: Matrix4, _mode: i32) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
                 state
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -655,37 +675,53 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
-        state.material_shader.use_shader(
-            &state.device,
-            &state.graphics_cmd_bufs,
-            state.in_flight_frames.current_frame as u32,
-        );
 
-        state.material_shader.set_model(
-            &state.device,
-            &state.graphics_cmd_bufs,
-            state.in_flight_frames.current_frame as u32,
-            data.model,
-        )?;
+        let mut geo = data.geometry.borrow_mut();
 
-        state.material_shader.apply_material(
-            &state.device,
-            &state.graphics_cmd_bufs,
-            state.in_flight_frames.current_frame as u32,
-            data.geometry
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .material
-                .as_mut()
-                .unwrap(),
-        )?;
+        match geo.material.as_ref().unwrap().material_type {
+            MaterialType::Unknown => {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "material type was unknown",
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            MaterialType::World => {
+                state.material_shader.set_model(
+                    &state.device,
+                    &state.graphics_cmd_bufs,
+                    state.in_flight_frames.current_frame as u32,
+                    data.model,
+                )?;
+                state.material_shader.apply_material(
+                    &state.device,
+                    &state.graphics_cmd_bufs,
+                    state.in_flight_frames.current_frame as u32,
+                    geo.material.as_mut().unwrap(),
+                )?;
+            }
+            MaterialType::UI => {
+                state.ui_shader.set_model(
+                    &state.device,
+                    &state.graphics_cmd_bufs,
+                    state.in_flight_frames.current_frame as u32,
+                    data.model,
+                )?;
+                state.ui_shader.apply_material(
+                    &state.device,
+                    &state.graphics_cmd_bufs,
+                    state.in_flight_frames.current_frame as u32,
+                    geo.material.as_mut().unwrap(),
+                )?;
+            }
+        }
 
-        let buffer_data =
-            &state.geometries[data.geometry.borrow_mut().as_mut().unwrap().internal_id];
+        let buffer_data = &state.geometries[geo.internal_id];
 
         let offsets: [DeviceSize; 1] = [buffer_data.vertex_buffer_offset.into()];
         unsafe {
@@ -701,7 +737,7 @@ impl<'a> VulkanContext<'a> {
                     state.graphics_cmd_bufs.command_buffer
                         [state.in_flight_frames.current_frame as usize],
                     state.object_index_buffer.buffer,
-                    0,
+                    buffer_data.index_buffer_offset.into(),
                     IndexType::UINT32,
                 );
 
@@ -736,6 +772,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -842,6 +880,8 @@ impl<'a> VulkanContext<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create sampler",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -856,6 +896,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -879,12 +921,25 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
-        state
-            .material_shader
-            .acquire_resources(&state.device, material)?;
+        match material.material_type {
+            MaterialType::Unknown => {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "material type was unknown",
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            MaterialType::World => state
+                .material_shader
+                .acquire_resources(&state.device, material)?,
+            MaterialType::UI => state.ui_shader.acquire_resources(&state.device, material)?,
+        }
+
         Ok(())
     }
 
@@ -895,19 +950,32 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
-        state
-            .material_shader
-            .release_resources(&state.device, material)?;
+        match material.material_type {
+            MaterialType::Unknown => {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "material type was unknown",
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            MaterialType::World => state
+                .material_shader
+                .release_resources(&state.device, material)?,
+            MaterialType::UI => state.ui_shader.release_resources(&state.device, material)?,
+        }
+
         Ok(())
     }
 
-    pub fn create_geometry(
+    pub fn create_geometry<T: Clone, U: Clone>(
         geometry: &mut Geometry<'a>,
-        vertices: &[Vector3D],
-        indices: &[u32],
+        vertices: &[T],
+        indices: &[U],
     ) -> Result<()> {
         let state = unsafe {
             if let Some(ref mut state) = VULKAN_STATE {
@@ -915,6 +983,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -923,7 +993,7 @@ impl<'a> VulkanContext<'a> {
         let mut internal_data: Option<&mut VulkanGeometryData> = None;
         if is_reupload {
             internal_data = Some(&mut state.geometries[geometry.internal_id]);
-            let int_data = internal_data.as_ref().unwrap();
+            let int_data = internal_data.as_mut().unwrap();
             old_range.index_buffer_offset = int_data.index_buffer_offset;
             old_range.index_count = int_data.index_count;
             old_range.index_size = int_data.index_size;
@@ -934,7 +1004,7 @@ impl<'a> VulkanContext<'a> {
             for (i, geo) in state.geometries.iter_mut().enumerate() {
                 if geo.id == INVALID_ID {
                     geometry.internal_id = i;
-                    geo.id = geometry.id;
+                    geo.id = i;
                     internal_data = Some(geo);
                     break;
                 }
@@ -943,6 +1013,8 @@ impl<'a> VulkanContext<'a> {
         if internal_data.is_none() {
             return Err(VulkanBackendError::OperationFailed {
                 issue: "Vulkan State Geometries is Full",
+                file: file!(),
+                line: line!(),
             });
         }
 
@@ -951,7 +1023,7 @@ impl<'a> VulkanContext<'a> {
         let int_data = internal_data.unwrap();
         int_data.vertex_buffer_offset = state.geometry_vertex_offset as u32;
         int_data.vertex_count = vertices.len() as u32;
-        int_data.vertex_size = vertices.len() as u32 * size_of::<Vector3D>() as u32;
+        int_data.vertex_size = vertices.len() as u32 * size_of::<T>() as u32;
         Self::upload_data_range(
             &state.instance,
             &state.device,
@@ -968,7 +1040,7 @@ impl<'a> VulkanContext<'a> {
         if indices.len() > 0 {
             int_data.index_buffer_offset = state.geometry_index_offset as u32;
             int_data.index_count = indices.len() as u32;
-            int_data.index_size = indices.len() as u32 * size_of::<u32>() as u32;
+            int_data.index_size = indices.len() as u32 * size_of::<U>() as u32;
 
             Self::upload_data_range(
                 &state.instance,
@@ -998,6 +1070,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -1014,6 +1088,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -1085,6 +1161,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -1127,6 +1205,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -1168,6 +1248,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -1244,6 +1326,8 @@ impl<'a> VulkanContext<'a> {
             } else {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Vulkan Context not initialized",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -1270,6 +1354,8 @@ impl<'a> VulkanContext<'a> {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create framebuffer",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -1296,6 +1382,8 @@ impl<'a> VulkanContext<'a> {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create framebuffer",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -1341,7 +1429,7 @@ impl<'a> VulkanContext<'a> {
         Ok((vertex_buffer, index_buffer))
     }
 
-    fn upload_data_range<T: Copy>(
+    fn upload_data_range<T>(
         instance: &Instance,
         device: &VulkanDevice,
         pool: CommandPool,
@@ -1363,7 +1451,7 @@ impl<'a> VulkanContext<'a> {
 
         staging_buffer.load_data(
             device,
-            offset,
+            0,
             size_of_val(data) as u64,
             MemoryMapFlags::empty(),
             data,

@@ -43,6 +43,8 @@ impl VulkanCommandBuffer {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not allocate command buffer",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -90,6 +92,8 @@ impl VulkanCommandBuffer {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not begin command buffer",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -110,6 +114,8 @@ impl VulkanCommandBuffer {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not reset command buffer",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -128,6 +134,8 @@ impl VulkanCommandBuffer {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "ending command buffer failed",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -165,6 +173,8 @@ impl VulkanCommandBuffer {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not submit queue",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -174,6 +184,8 @@ impl VulkanCommandBuffer {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not wait for queue",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }

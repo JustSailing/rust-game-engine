@@ -7,10 +7,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ImageLoaderError {
-    #[error("image loader error: opening texture file failed {} {}", file!(), line!())]
+    #[error("image loader error: opening texture file failed {file} {line}")]
     ImageError {
-        #[from]
         source: image::ImageError,
+        file: &'static str,
+        line: u32,
     },
 }
 type Result<T> = std::result::Result<T, ResourceSysError>;
@@ -18,14 +19,26 @@ pub struct ImageLoader;
 
 impl ImageLoader {
     pub fn load(name: &str, path: &str) -> Result<Resource> {
-        let file_path = format!(
+        let mut file_path = format!(
             "{}/{}/{}.{}",
             ResourceSystem::base_path()?,
             path,
             name,
             "jpg"
         );
-        let data = image::open(&file_path)?.flipv().to_rgba8();
+        file_path = file_path
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '\n')
+            .collect();
+
+        let data = image::open(&file_path)
+            .map_err(|e| ResourceSysError::ImageError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?
+            .flipv()
+            .to_rgba8();
         let width = data.width();
         let height = data.height();
         let pixels = data.into_raw();

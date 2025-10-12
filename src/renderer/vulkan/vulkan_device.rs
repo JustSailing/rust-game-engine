@@ -65,6 +65,8 @@ impl VulkanDevice {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "Could not enumerate physical devices",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -160,6 +162,8 @@ impl VulkanDevice {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create logical device",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -179,6 +183,8 @@ impl VulkanDevice {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not create graphics command pool",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -202,6 +208,8 @@ impl VulkanDevice {
         }
         return Err(VulkanBackendError::OperationFailed {
             issue: "Could not find suitable device",
+            file: file!(),
+            line: line!(),
         });
     }
 
@@ -217,6 +225,8 @@ impl VulkanDevice {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not get surface capabilities",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -227,6 +237,8 @@ impl VulkanDevice {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not get surface formats",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -237,6 +249,8 @@ impl VulkanDevice {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not get present modes",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -300,6 +314,8 @@ impl VulkanDevice {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "Failed to get physical device surface support",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 }
@@ -313,6 +329,8 @@ impl VulkanDevice {
             Err(_) => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "Could not get device name",
+                    file: file!(),
+                    line: line!(),
                 });
             }
         };
@@ -354,6 +372,8 @@ impl VulkanDevice {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not get extension properties",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -367,6 +387,8 @@ impl VulkanDevice {
                     Err(_) => {
                         return Err(VulkanBackendError::OperationFailed {
                             issue: "could not get extension name",
+                            file: file!(),
+                            line: line!(),
                         });
                     }
                 };

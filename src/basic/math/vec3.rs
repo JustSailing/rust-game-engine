@@ -2,6 +2,7 @@ use super::{consts::FLOAT_EPSILON, vec2::Vec2};
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct Vec3 {
     pub data: [f32; 3],
 }
@@ -214,4 +215,3 @@ pub struct Vector2D {
     pub position: Vec2,
     pub texcoord: Vec2,
 }
-

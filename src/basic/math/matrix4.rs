@@ -42,26 +42,16 @@ impl Matrix4 {
     pub fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
         let mut matrix = Matrix4::identity();
 
-        let r_minus_l = right - left;
-        let t_minus_b = top - bottom;
-        let f_minus_n = far - near;
+        let lr = 1.0 / (left - right);
+        let bt = 1.0 / (bottom - top);
+        let nf = 1.0 / (near - far);
 
-        if r_minus_l == 0.0 || t_minus_b == 0.0 || f_minus_n == 0.0 {
-            // Return identity to prevent division by zero, or handle error
-            return Matrix4::identity();
-        }
-
-        // X component
-        matrix.data[0] = 2.0 / r_minus_l;
-        matrix.data[12] = -(right + left) / r_minus_l;
-
-        // Y component
-        matrix.data[5] = 2.0 / t_minus_b;
-        matrix.data[13] = -(top + bottom) / t_minus_b;
-
-        // Z component (maps [near, far] to [-1, 1])
-        matrix.data[10] = -2.0 / f_minus_n;
-        matrix.data[14] = -(far + near) / f_minus_n;
+        matrix.data[0] = -2.0 * lr;
+        matrix.data[5] = -2.0 * bt;
+        matrix.data[10] = 2.0 * nf;
+        matrix.data[12] = (left + right) * lr;
+        matrix.data[13] = (top + bottom) * bt;
+        matrix.data[14] = (far + near) * nf;
 
         matrix
     }

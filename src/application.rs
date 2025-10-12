@@ -17,6 +17,9 @@ use std::{ffi::c_void, ptr};
 use thiserror::Error;
 
 use crate::Game;
+use crate::application::basic::math::vec2::Vec2;
+use crate::application::basic::math::vec3::{Vec3, Vector2D};
+use crate::application::systems::geometry_system::GeometryConfig;
 use basic::event::{EventCodes, EventCtx, EventState, EventSysError};
 use basic::input::{InputState, InputSysError};
 use basic::math::matrix4::Matrix4;
@@ -41,59 +44,67 @@ pub struct AppConfig {
 
 #[derive(Error, Debug)]
 pub enum AppError {
-    #[error("app error: could not create window {} {}", file!(), line!())]
-    CouldNotCreateWindow,
-    #[error("app error: already initialized {} {}", file!(), line!())]
-    AlreadyInitialized,
-    #[error("app error: already shutdown {} {}", file!(), line!())]
-    AlreadyShutdown,
-    #[error("appp error: not initialized {} {}", file!(), line!())]
-    NotInitialized,
-    #[error("app error: could not initialize game {} {}", file!(), line!())]
-    CouldNotInitializeGame,
-    #[error("app error:  could not update game {} {}", file!(), line!())]
-    CouldNotUpdateGame,
-    #[error("app error:  could not render game {} {}", file!(), line!())]
-    CouldNotRenderGame,
-    #[error("{source}\napp error:  error from event system {} {}", file!(), line!())]
+    #[error("app error: could not create window {file} {line}")]
+    CouldNotCreateWindow { file: &'static str, line: u32 },
+    #[error("app error: already initialized {file} {line}")]
+    AlreadyInitialized { file: &'static str, line: u32 },
+    #[error("app error: already shutdown {file} {line}")]
+    AlreadyShutdown { file: &'static str, line: u32 },
+    #[error("app error: not initialized {file} {line}")]
+    NotInitialized { file: &'static str, line: u32 },
+    #[error("app error: could not initialize game {file} {line}")]
+    CouldNotInitializeGame { file: &'static str, line: u32 },
+    #[error("app error:  could not update game {file} {line}")]
+    CouldNotUpdateGame { file: &'static str, line: u32 },
+    #[error("app error:  could not render game {file} {line}")]
+    CouldNotRenderGame { file: &'static str, line: u32 },
+    #[error("{source}\napp error:  error from event system ")]
     EventSysError {
-        #[from]
         source: EventSysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from input system {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from input system {file} {line}")]
     InputSysError {
-        #[from]
         source: InputSysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from window {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from window {file} {line}")]
     WindowError {
-        #[from]
         source: WindowError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from renderer frontend {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from renderer frontend {file} {line}")]
     FrontendRendererError {
-        #[from]
         source: FrontendRendererError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from material system {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from material system {file} {line}")]
     MaterialSysError {
-        #[from]
         source: MaterialSysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from texture system {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from texture system {file} {line}")]
     TextureSysError {
-        #[from]
         source: TextureSysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from geometry system {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from geometry system {file} {line}")]
     GeometrySysError {
-        #[from]
         source: GeometrySysError,
+        file: &'static str,
+        line: u32,
     },
-    #[error("{source}\napp error:  error from resource system {} {}", file!(), line!())]
+    #[error("{source}\napp error:  error from resource system {file} {line}")]
     ResourceSysError {
-        #[from]
         source: ResourceSysError,
+        file: &'static str,
+        line: u32,
     },
 }
 
@@ -108,7 +119,8 @@ pub struct ApplicationState<'a> {
     pos_y: i32,
     width: i32,
     height: i32,
-    test_geometry: Rc<RefCell<Option<&'a mut Geometry<'a>>>>,
+    test_geometry: Rc<RefCell<&'a mut Geometry<'a>>>,
+    test_ui_geometry: Rc<RefCell<&'a mut Geometry<'a>>>,
 }
 
 static mut APP_STATE: Option<ApplicationState> = None;
@@ -117,7 +129,10 @@ impl<'a: 'static> ApplicationState<'a> {
     pub fn create(game: &mut Game) -> Result<()> {
         unsafe {
             if let Some(ref _a) = APP_STATE {
-                return Err(AppError::AlreadyInitialized);
+                return Err(AppError::AlreadyInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
         let app_config = game.config;
@@ -126,7 +141,12 @@ impl<'a: 'static> ApplicationState<'a> {
             app_config.start_pos_y,
             app_config.start_width,
             app_config.start_height,
-        )?;
+        )
+        .map_err(|e| AppError::WindowError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
         window.set_title(app_config.name);
         window.show();
@@ -135,40 +155,122 @@ impl<'a: 'static> ApplicationState<'a> {
             max_loader_count: 32,
             asset_base_path: "assets".to_string(),
         };
-        ResourceSystem::initialize(resource_sys_config)?;
+        ResourceSystem::initialize(resource_sys_config).map_err(|e| {
+            AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
 
-        InputState::initialize()?;
+        InputState::initialize().map_err(|e| AppError::InputSysError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
-        EventState::initialize()?;
+        EventState::initialize().map_err(|e| AppError::EventSysError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
         EventState::register_event(
             EventCodes::ApplicationQuit as usize,
             ptr::null(),
             application_on_event,
-        )?;
+        )
+        .map_err(|e| AppError::EventSysError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
         EventState::register_event(
             EventCodes::WindowResized as usize,
             ptr::null(),
             application_on_resize,
-        )?;
+        )
+        .map_err(|e| AppError::EventSysError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
-        EventState::register_event(EventCodes::Debug0 as usize, ptr::null(), on_event_debug)?;
+        EventState::register_event(EventCodes::Debug0 as usize, ptr::null(), on_event_debug)
+            .map_err(|e| AppError::EventSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
-        Renderer::initialize(app_config.name, &window)?;
+        Renderer::initialize(app_config.name, &window).map_err(|e| {
+            AppError::FrontendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
 
         let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
-        TextureSystem::initialize(texture_sys_config)?;
+        TextureSystem::initialize(texture_sys_config).map_err(|e| AppError::TextureSysError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
         let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 100 };
-        MaterialSystem::initialize(material_sys_config)?;
+        MaterialSystem::initialize(material_sys_config).map_err(|e| {
+            AppError::MaterialSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
 
         let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 100 };
-        GeometrySystem::initialize(geometry_sys_config)?;
+        GeometrySystem::initialize(geometry_sys_config).map_err(|e| {
+            AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
 
         if !(game.initialize)(game) {
-            return Err(AppError::CouldNotInitializeGame);
+            return Err(AppError::CouldNotInitializeGame {
+                file: file!(),
+                line: line!(),
+            });
         }
+
+        let f = 512.0;
+
+        let verts_2d: [Vector2D; 4] = [
+            Vector2D {
+                position: Vec2::new_zeroes(),
+                texcoord: Vec2::new_zeroes(),
+            },
+            Vector2D {
+                position: Vec2::new(f, f),
+                texcoord: Vec2::new_ones(),
+            },
+            Vector2D {
+                position: Vec2::new(0.0, f),
+                texcoord: Vec2::new(0.0, 1.0),
+            },
+            Vector2D {
+                position: Vec2::new(f, 0.0),
+                texcoord: Vec2::new(1.0, 0.0),
+            },
+        ];
+        let indices_2d: [u32; 6] = [2, 1, 0, 3, 0, 1];
+        let ui_config = GeometryConfig::<Vector2D, u32> {
+            vertices: Vec::from(verts_2d),
+            indices: Vec::from(indices_2d),
+            name: String::from("test_ui_geometry"),
+            material_name: String::from("test_ui"),
+        };
 
         unsafe {
             APP_STATE = Some(ApplicationState {
@@ -180,7 +282,24 @@ impl<'a: 'static> ApplicationState<'a> {
                 pos_y: app_config.start_pos_y,
                 width: app_config.start_width,
                 height: app_config.start_height,
-                test_geometry: Rc::new(RefCell::new(Some(GeometrySystem::get_default_geometry()?))),
+                test_geometry: Rc::new(RefCell::new(
+                    GeometrySystem::get_default_geometry().map_err(|e| {
+                        AppError::GeometrySysError {
+                            source: e,
+                            file: file!(),
+                            line: line!(),
+                        }
+                    })?,
+                )),
+                test_ui_geometry: Rc::new(RefCell::new(
+                    GeometrySystem::acquire_from_config(ui_config, true).map_err(|e| {
+                        AppError::GeometrySysError {
+                            source: e,
+                            file: file!(),
+                            line: line!(),
+                        }
+                    })?,
+                )),
             });
         }
 
@@ -192,7 +311,10 @@ impl<'a: 'static> ApplicationState<'a> {
             if let Some(ref mut app) = APP_STATE {
                 app
             } else {
-                return Err(AppError::NotInitialized);
+                return Err(AppError::NotInitialized {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         };
 
@@ -202,16 +324,34 @@ impl<'a: 'static> ApplicationState<'a> {
         let frame_duration: Duration = Duration::from_secs_f32(1.0 / FPS);
         let mut last_frame_time = Instant::now();
         loop {
-            if app_state.window.get_event()? {
+            if app_state
+                .window
+                .get_event()
+                .map_err(|e| AppError::WindowError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?
+            {
                 let current_time = Instant::now();
                 let delta = current_time.duration_since(last_frame_time).as_secs_f32() / 60.0;
-                InputState::update(delta)?;
+                InputState::update(delta).map_err(|e| AppError::InputSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
                 if !(app_state.game.update)(&mut app_state.game, delta) {
-                    return Err(AppError::CouldNotUpdateGame);
+                    return Err(AppError::CouldNotUpdateGame {
+                        file: file!(),
+                        line: line!(),
+                    });
                 }
 
                 if !(app_state.game.render)(&mut app_state.game, delta) {
-                    return Err(AppError::CouldNotRenderGame);
+                    return Err(AppError::CouldNotRenderGame {
+                        file: file!(),
+                        line: line!(),
+                    });
                 }
                 let geo = Rc::clone(&app_state.test_geometry);
 
@@ -221,12 +361,26 @@ impl<'a: 'static> ApplicationState<'a> {
                 };
                 let mut geometries = Vec::new();
                 geometries.push(test_render);
+
+                let test_ui_render = GeometryRenderData {
+                    model: Matrix4::translation(&Vec3::new(0.0, 0.0, 0.0)),
+                    geometry: Rc::clone(&app_state.test_ui_geometry),
+                };
+                let mut ui_geometries = Vec::new();
+                ui_geometries.push(test_ui_render);
+
                 let mut render_packet = RendererPacket {
                     delta_time: delta,
                     geometries: geometries,
-                    ui_geometries: Vec::new(),
+                    ui_geometries: ui_geometries,
                 };
-                Renderer::draw_frame(&mut render_packet)?;
+                Renderer::draw_frame(&mut render_packet).map_err(|e| {
+                    AppError::FrontendRendererError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    }
+                })?;
                 let elapsed_since_last_frame = last_frame_time.elapsed();
                 if elapsed_since_last_frame < frame_duration {
                     thread::sleep(frame_duration - elapsed_since_last_frame);
@@ -246,7 +400,10 @@ impl<'a: 'static> ApplicationState<'a> {
                 APP_STATE = None;
                 return Ok(());
             } else {
-                return Err(AppError::AlreadyShutdown);
+                return Err(AppError::AlreadyShutdown {
+                    file: file!(),
+                    line: line!(),
+                });
             }
         }
     }
@@ -337,8 +494,6 @@ pub fn on_event_debug(
     state
         .test_geometry
         .borrow_mut()
-        .as_mut()
-        .unwrap()
         .material
         .as_mut()
         .unwrap()

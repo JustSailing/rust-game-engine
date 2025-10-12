@@ -69,9 +69,23 @@ pub struct TextureMap<'a> {
     pub use_type: TextureUse,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialType {
+    Unknown,
+    World,
+    UI,
+}
+
+impl Default for MaterialType {
+    fn default() -> Self {
+        MaterialType::Unknown
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MaterialConfig {
     pub name: String,
+    pub material_type: MaterialType,
     pub auto_release: bool,
     pub diffuse_colour: Vec4,
     pub diffuse_map_name: String,
@@ -84,6 +98,7 @@ impl Default for MaterialConfig {
             auto_release: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             diffuse_map_name: Default::default(),
+            material_type: Default::default(),
         }
     }
 }
@@ -100,6 +115,7 @@ pub struct Material<'a> {
     pub id: usize,
     pub generation: usize,
     pub internal_id: usize,
+    pub material_type: MaterialType,
     pub name: String,
     pub diffuse_colour: Vec4,
     pub diffuse_map: TextureMap<'a>,
@@ -111,6 +127,7 @@ impl<'a> Default for Material<'_> {
             id: INVALID_ID,
             generation: INVALID_ID,
             internal_id: INVALID_ID,
+            material_type: Default::default(),
             name: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             diffuse_map: unsafe { std::mem::zeroed() },

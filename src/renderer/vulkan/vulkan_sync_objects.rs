@@ -23,6 +23,8 @@ impl SyncObjects {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create fence",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -34,6 +36,8 @@ impl SyncObjects {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create semaphore",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -45,6 +49,8 @@ impl SyncObjects {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create semaphore",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -70,19 +76,27 @@ impl SyncObjects {
                 }
                 Err(vk::Result::ERROR_DEVICE_LOST) => Err(VulkanBackendError::OperationFailed {
                     issue: "fence: device lost",
+                    file: file!(),
+                    line: line!(),
                 }),
                 Err(vk::Result::ERROR_OUT_OF_HOST_MEMORY) => {
                     Err(VulkanBackendError::OperationFailed {
                         issue: "fence: out of host memory",
+                        file: file!(),
+                        line: line!(),
                     })
                 }
                 Err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY) => {
                     Err(VulkanBackendError::OperationFailed {
                         issue: "fence: out of device memory",
+                        file: file!(),
+                        line: line!(),
                     })
                 }
                 Err(_) => Err(VulkanBackendError::OperationFailed {
                     issue: "fence: unknown error occured",
+                    file: file!(),
+                    line: line!(),
                 }),
             }
         }
@@ -97,6 +111,8 @@ impl SyncObjects {
                 Ok(_) => Ok(()),
                 Err(_) => Err(VulkanBackendError::OperationFailed {
                     issue: "could not reset fence",
+                    file: file!(),
+                    line: line!(),
                 }),
             }
         }

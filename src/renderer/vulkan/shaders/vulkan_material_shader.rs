@@ -115,6 +115,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create global descriptor set layout",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -137,6 +139,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create descritpor pool",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -169,6 +173,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create object descriptor layout",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -196,6 +202,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create descriptor pool",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -287,6 +295,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not allocate descriptor sets".into(),
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -341,16 +351,22 @@ impl<'a> VulkanMaterialShader<'a> {
             ResourceData::Unknown => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "wrong resource type: Unknown expected: Binary",
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::ImageResourceData(_) => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "wrong resource type: Image expected: Binary",
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::MaterialResourceData(_) => {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "wrong resource type: Material expected: Binary",
+                    file: file!(),
+                    line: line!(),
                 });
             }
             ResourceData::BinaryResourceData(ref items) => items,
@@ -368,6 +384,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create shader module".into(),
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -488,6 +506,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 TextureUse::Unknown => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "unable to bind sample to unknown use",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
                 TextureUse::MapDiffuse => {}
@@ -620,6 +640,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not allocate descriptor sets",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -639,6 +661,8 @@ impl<'a> VulkanMaterialShader<'a> {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not free descriptor sets",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }

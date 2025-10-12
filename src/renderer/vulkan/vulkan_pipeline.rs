@@ -11,7 +11,7 @@ use ash::vk::{
     VertexInputBindingDescription, VertexInputRate, Viewport,
 };
 
-use crate::application::basic::math::{matrix4::Matrix4, vec3::Vector3D};
+use crate::application::basic::math::matrix4::Matrix4;
 
 use super::{
     vulkan_backend::VulkanBackendError, vulkan_command_buffer::VulkanCommandBuffer,
@@ -136,6 +136,8 @@ impl VulkanPipeline {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create pipeline layout",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
@@ -166,6 +168,8 @@ impl VulkanPipeline {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create pipeline",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }

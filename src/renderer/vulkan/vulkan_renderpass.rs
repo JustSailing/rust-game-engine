@@ -131,6 +131,8 @@ impl VulkanRenderPass {
 
             subpass.p_depth_stencil_attachment = &depth_attachment_ref;
             attachment_description_ct += 1;
+        } else {
+            unsafe { attachment_descriptions[attachment_description_ct] = std::mem::zeroed() }
         }
 
         let dependency = SubpassDependency::default()
@@ -158,6 +160,8 @@ impl VulkanRenderPass {
                 Err(_) => {
                     return Err(VulkanBackendError::OperationFailed {
                         issue: "could not create renderpass",
+                        file: file!(),
+                        line: line!(),
                     });
                 }
             }
