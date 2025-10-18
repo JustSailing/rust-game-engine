@@ -1,7 +1,7 @@
 use crate::application::{
     basic::math::consts::INVALID_ID,
     resources::resource_types::{ImageData, Resource, ResourceData},
-    systems::resource_system::{ResourceSysError, ResourceSystem},
+    systems::resource_system::ResourceSysError,
 };
 use thiserror::Error;
 
@@ -18,14 +18,8 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ImageLoader;
 
 impl ImageLoader {
-    pub fn load(name: &str, path: &str) -> Result<Resource> {
-        let mut file_path = format!(
-            "{}/{}/{}.{}",
-            ResourceSystem::base_path()?,
-            path,
-            name,
-            "jpg"
-        );
+    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+        let mut file_path = format!("{}/{}/{}.{}", base_path, path, name, "jpg");
         file_path = file_path
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '\n')

@@ -12,6 +12,8 @@ use ash::vk::{
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
+
+#[derive(Clone)]
 pub struct VulkanBuffer {
     pub buffer: Buffer,
     size: u64,

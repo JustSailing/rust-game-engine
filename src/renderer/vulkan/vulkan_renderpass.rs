@@ -112,8 +112,10 @@ impl VulkanRenderPass {
 
         subpass.p_color_attachments = &color_attachment_ref;
         subpass.color_attachment_count = 1;
+        let mut depth_attachment_ref = AttachmentReference::default();
+        let mut depth_attachment = AttachmentDescription::default();
         if ClearFlag::is_set(ClearFlag::DepthBuffer, clear_flag) {
-            let depth_attachment = AttachmentDescription::default()
+            depth_attachment = AttachmentDescription::default()
                 .format(depth_format)
                 .samples(SampleCountFlags::TYPE_1)
                 .load_op(AttachmentLoadOp::CLEAR)
@@ -123,7 +125,7 @@ impl VulkanRenderPass {
                 .initial_layout(ImageLayout::UNDEFINED)
                 .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-            let depth_attachment_ref = AttachmentReference::default()
+            depth_attachment_ref = AttachmentReference::default()
                 .attachment(1)
                 .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 

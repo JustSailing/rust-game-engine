@@ -11,7 +11,7 @@ use ash::vk::{
     VertexInputBindingDescription, VertexInputRate, Viewport,
 };
 
-use crate::application::basic::math::matrix4::Matrix4;
+use crate::application::systems::shader_system::Range;
 
 use super::{
     vulkan_backend::VulkanBackendError, vulkan_command_buffer::VulkanCommandBuffer,
@@ -20,6 +20,7 @@ use super::{
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
+#[derive(Clone)]
 pub struct VulkanPipeline {
     pipeline: Pipeline,
     pub layout: PipelineLayout,
@@ -30,13 +31,18 @@ impl VulkanPipeline {
         device: &VulkanDevice,
         renderpass: &VulkanRenderPass,
         stride: u32,
+        attribute_count: u32,
         attributes: &[VertexInputAttributeDescription],
+        descriptor_set_count: u32,
         descriptor_set_layout: &[DescriptorSetLayout],
+        stage_count: u32,
         stages: &[PipelineShaderStageCreateInfo],
         viewport: Viewport,
         scissor: Rect2D,
         is_wireframe: bool,
         depth_test_enabled: bool,
+        push_constant_ranges: &[Range],
+        push_constant_count: usize,
     ) -> Result<VulkanPipeline> {
         //view state
         let viewport_state_create_info = PipelineViewportStateCreateInfo::default()
@@ -107,25 +113,31 @@ impl VulkanPipeline {
             .stride(stride)
             .input_rate(VertexInputRate::VERTEX);
 
-        let vertex_input_info = PipelineVertexInputStateCreateInfo::default()
-            .vertex_binding_descriptions(std::slice::from_ref(&binding_description))
-            .vertex_attribute_descriptions(attributes);
+        let mut vertex_input_info = PipelineVertexInputStateCreateInfo::default()
+            .vertex_binding_descriptions(std::slice::from_ref(&binding_description));
+        vertex_input_info.p_vertex_attribute_descriptions = attributes.as_ptr();
+        vertex_input_info.vertex_attribute_description_count = attribute_count;
 
         let input_assembly = PipelineInputAssemblyStateCreateInfo::default()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
 
-        let mut pipeline_layout_create_info =
-            PipelineLayoutCreateInfo::default().set_layouts(descriptor_set_layout);
-
-        let push_constant = PushConstantRange::default()
-            .stage_flags(ShaderStageFlags::VERTEX)
-            .size((size_of::<Matrix4>() * 2) as u32)
-            .offset(0);
-
-        pipeline_layout_create_info.p_push_constant_ranges =
-            std::slice::from_ref(&push_constant).as_ptr();
-        pipeline_layout_create_info.push_constant_range_count = 1;
+        let mut pipeline_layout_create_info = PipelineLayoutCreateInfo::default();
+        pipeline_layout_create_info.p_set_layouts = descriptor_set_layout.as_ptr();
+        pipeline_layout_create_info.set_layout_count = descriptor_set_count;
+        let mut push_consts = Vec::<PushConstantRange>::with_capacity(push_constant_count);
+        if push_constant_count > 0 {
+            for i in 0..push_constant_count {
+                push_consts.push(
+                    PushConstantRange::default()
+                        .offset(push_constant_ranges[i].offset as u32)
+                        .size(push_constant_ranges[i].size as u32)
+                        .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT),
+                );
+            }
+            pipeline_layout_create_info.p_push_constant_ranges = push_consts.as_ptr();
+            pipeline_layout_create_info.push_constant_range_count = push_constant_count as u32;
+        }
 
         let pipeline_layout = unsafe {
             match device
@@ -143,8 +155,8 @@ impl VulkanPipeline {
             }
         };
 
-        let pipeline_create_info = GraphicsPipelineCreateInfo::default()
-            .stages(stages)
+        let mut pipeline_create_info = GraphicsPipelineCreateInfo::default()
+            //.stages(stages)
             .vertex_input_state(&vertex_input_info)
             .input_assembly_state(&input_assembly)
             .viewport_state(&viewport_state_create_info)
@@ -157,6 +169,9 @@ impl VulkanPipeline {
             .render_pass(renderpass.renderpass)
             .base_pipeline_handle(Pipeline::null())
             .base_pipeline_index(-1);
+
+        pipeline_create_info.p_stages = stages.as_ptr();
+        pipeline_create_info.stage_count = stage_count;
 
         let pipeline = unsafe {
             match device.device.create_graphics_pipelines(

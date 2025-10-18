@@ -1,7 +1,9 @@
+use std::num::ParseIntError;
+
 use crate::application::{
     basic::{filesystem::FileHandleError, math::consts::INVALID_ID},
     resources::{
-        loaders::{binary_loader, image_loader, material_loader},
+        loaders::{binary_loader, image_loader, material_loader, shader_loader},
         resource_types::{Resource, ResourceType},
     },
 };
@@ -56,6 +58,12 @@ pub enum ResourceSysError {
         file: &'static str,
         line: u32,
     },
+    #[error("{source}\nresource system error: parse int failed {file} {line}")]
+    ParseErr {
+        source: ParseIntError,
+        file: &'static str,
+        line: u32,
+    },
 }
 
 type Result<T> = std::result::Result<T, ResourceSysError>;
@@ -71,7 +79,7 @@ pub struct ResourceLoader {
     res_type: ResourceType,
     custom_type: Option<String>,
     path_type: String,
-    load: fn(&str, &str) -> Result<Resource>,
+    load: fn(&str, &str, &str) -> Result<Resource>,
     unload: fn(&mut Resource) -> Result<()>,
 }
 
@@ -106,6 +114,17 @@ impl ResourceLoader {
             unload: binary_loader::BinaryLoader::unload,
         }
     }
+
+    pub fn new_shader_loader() -> ResourceLoader {
+        ResourceLoader {
+            id: INVALID_ID,
+            res_type: ResourceType::Shader,
+            custom_type: None,
+            path_type: "shaders".to_string(),
+            load: shader_loader::ShaderLoader::load,
+            unload: shader_loader::ShaderLoader::unload,
+        }
+    }
 }
 
 pub struct ResourceSystem {
@@ -113,18 +132,8 @@ pub struct ResourceSystem {
     registered_loaders: Vec<Option<ResourceLoader>>,
 }
 
-static mut RESOURCE_STATE: Option<ResourceSystem> = None;
-
 impl ResourceSystem {
-    pub fn initialize(config: ResourceSysConfig) -> Result<()> {
-        unsafe {
-            if let Some(ref _state) = RESOURCE_STATE {
-                return Err(ResourceSysError::AlreadyInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        }
+    pub fn initialize(config: ResourceSysConfig) -> Result<Self> {
         if config.max_loader_count < 1 {
             return Err(ResourceSysError::MaxLoaderCountZero {
                 file: file!(),
@@ -144,27 +153,16 @@ impl ResourceSystem {
         registered_loaders[1].as_mut().unwrap().id = 1;
         registered_loaders[2] = Some(ResourceLoader::new_binary_loader());
         registered_loaders[2].as_mut().unwrap().id = 2;
-        unsafe {
-            RESOURCE_STATE = Some(ResourceSystem {
-                config: config,
-                registered_loaders: registered_loaders,
-            })
-        }
-        Ok(())
+        registered_loaders[3] = Some(ResourceLoader::new_shader_loader());
+        registered_loaders[3].as_mut().unwrap().id = 3;
+        Ok(Self {
+            config: config,
+            registered_loaders: registered_loaders,
+        })
     }
 
-    pub fn register_loader(loader: ResourceLoader) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut state) = RESOURCE_STATE {
-                state
-            } else {
-                return Err(ResourceSysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-        for ld in state.registered_loaders.iter() {
+    pub fn register_loader(&mut self, loader: ResourceLoader) -> Result<()> {
+        for ld in self.registered_loaders.iter() {
             if let Some(l) = ld {
                 if loader.res_type != ResourceType::Custom && loader.res_type == l.res_type {
                     return Err(ResourceSysError::LoaderAlreadyExists {
@@ -183,7 +181,7 @@ impl ResourceSystem {
             }
         }
 
-        let new_id = state
+        let new_id = self
             .registered_loaders
             .iter_mut()
             .enumerate()
@@ -203,31 +201,22 @@ impl ResourceSystem {
                 line: line!(),
             });
         }
-        state.registered_loaders[new_id.unwrap()] = Some(loader);
-        state.registered_loaders[new_id.unwrap()]
+        self.registered_loaders[new_id.unwrap()] = Some(loader);
+        self.registered_loaders[new_id.unwrap()]
             .as_mut()
             .unwrap()
             .id = new_id.unwrap();
         Ok(())
     }
 
-    pub fn load(name: &str, res_typ: ResourceType) -> Result<Resource> {
-        let state = unsafe {
-            if let Some(ref mut state) = RESOURCE_STATE {
-                state
-            } else {
-                return Err(ResourceSysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-        let res = state.registered_loaders.iter().find_map(|ld| {
+    pub fn load(&self, name: &str, res_typ: ResourceType) -> Result<Resource> {
+        let res = self.registered_loaders.iter().find_map(|ld| {
             if let Some(l) = ld
                 && l.id != INVALID_ID
                 && l.res_type == res_typ
             {
-                let mut res = match (l.load)(name, &l.path_type) {
+                let mut res = match (l.load)(name, &l.path_type, self.base_path().unwrap().as_str())
+                {
                     Ok(r) => r,
                     Err(_) => return None,
                 };
@@ -247,24 +236,14 @@ impl ResourceSystem {
         return Ok(res.unwrap());
     }
 
-    pub fn unload(resouce: &mut Resource) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut state) = RESOURCE_STATE {
-                state
-            } else {
-                return Err(ResourceSysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
+    pub fn unload(&self, resouce: &mut Resource) -> Result<()> {
         if resouce.loader_id == INVALID_ID {
             return Err(ResourceSysError::ResourceIdInvalid {
                 file: file!(),
                 line: line!(),
             });
         }
-        if let Some(ref ld) = state.registered_loaders[resouce.loader_id] {
+        if let Some(ref ld) = self.registered_loaders[resouce.loader_id] {
             return (ld.unload)(resouce);
         } else {
             return Err(ResourceSysError::ResourceUnloadError {
@@ -275,16 +254,7 @@ impl ResourceSystem {
         }
     }
 
-    pub fn base_path() -> Result<String> {
-        unsafe {
-            if let Some(ref mut state) = RESOURCE_STATE {
-                return Ok(state.config.asset_base_path.clone());
-            } else {
-                return Err(ResourceSysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        }
+    pub fn base_path(&self) -> Result<String> {
+        return Ok(self.config.asset_base_path.clone());
     }
 }

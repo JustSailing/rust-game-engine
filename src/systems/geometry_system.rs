@@ -4,11 +4,11 @@ use crate::application::{
         vec2::Vec2,
         vec3::{Vec3, Vector2D, Vector3D},
     },
-    renderer::renderer_types::{RendererError, Renderer},
+    renderer::renderer_types::{Renderer, RendererError},
     resources::resource_types::{Geometry, MaterialConfig},
     systems::material_system::{MaterialSysError, MaterialSystem},
 };
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use thiserror::Error;
 pub struct GeometrySysConfig {
     pub max_count: usize,
@@ -82,24 +82,20 @@ impl GeometryRef {
 
 pub struct GeometrySystem<'a> {
     config: GeometrySysConfig,
-    default_geometry: Geometry<'a>,
-    default_geometry_2d: Geometry<'a>,
-    registered_geometries: Vec<Geometry<'a>>,
+    default_geometry: Rc<RefCell<Geometry>>,
+    default_geometry_2d: Rc<RefCell<Geometry>>,
+    registered_geometries: Vec<Rc<RefCell<Geometry>>>,
     registered_geometries_hashmap: HashMap<usize, GeometryRef>,
+    frontend_renderer: Rc<RefCell<Renderer>>,
+    material_system: Rc<RefCell<MaterialSystem<'a>>>,
 }
 
-static mut GEOMETRY_STATE: Option<GeometrySystem> = None;
-
-impl<'a: 'static> GeometrySystem<'a> {
-    pub fn initialize(config: GeometrySysConfig) -> Result<()> {
-        unsafe {
-            if let Some(ref _state) = GEOMETRY_STATE {
-                return Err(GeometrySysError::AlreadyInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        }
+impl<'a> GeometrySystem<'a> {
+    pub fn initialize(
+        config: GeometrySysConfig,
+        frontend_renderer: Rc<RefCell<Renderer>>,
+        material_system: Rc<RefCell<MaterialSystem<'a>>>,
+    ) -> Result<Self> {
         if config.max_count == 0 {
             return Err(GeometrySysError::GeometryCountZero {
                 file: file!(),
@@ -107,64 +103,64 @@ impl<'a: 'static> GeometrySystem<'a> {
             });
         }
 
-        let mut registered_array = Vec::<Geometry>::with_capacity(config.max_count);
+        let mut registered_array = Vec::<Rc<RefCell<Geometry>>>::with_capacity(config.max_count);
         let registered_hash_map = HashMap::<usize, GeometryRef>::with_capacity(config.max_count);
         for _ in 0..config.max_count {
-            registered_array.push(Geometry::default());
+            registered_array.push(Rc::new(RefCell::new(Geometry::default())));
         }
-        let (geo, geo_2d) = Self::create_default_geometries()?;
+        let (geo, geo_2d) = (Geometry::default(), Geometry::default());
 
-        unsafe {
-            GEOMETRY_STATE = Some(GeometrySystem {
-                config: config,
-                default_geometry: geo,
-                default_geometry_2d: geo_2d,
-                registered_geometries: registered_array,
-                registered_geometries_hashmap: registered_hash_map,
-            })
+        Ok(Self {
+            config: config,
+            default_geometry: Rc::new(RefCell::new(geo)),
+            default_geometry_2d: Rc::new(RefCell::new(geo_2d)),
+            registered_geometries: registered_array,
+            registered_geometries_hashmap: registered_hash_map,
+            frontend_renderer,
+            material_system,
+        })
+    }
+
+    pub fn get_default_geometry(&self) -> Result<Rc<RefCell<Geometry>>> {
+        return Ok(Rc::clone(&self.default_geometry));
+    }
+
+    pub fn get_default_geometry_2d(&self) -> Result<Rc<RefCell<Geometry>>> {
+        return Ok(Rc::clone(&self.default_geometry_2d));
+    }
+
+    pub fn destroy_default_geometry(&self) -> Result<()> {
+        if self.default_geometry.borrow().id == INVALID_ID {
+            return Ok(());
         }
-
-        Ok(())
+        return Ok(self
+            .frontend_renderer
+            .borrow_mut()
+            .destroy_geometry(&self.default_geometry.borrow())
+            .map_err(|e| GeometrySysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?);
     }
 
-    pub fn get_default_geometry() -> Result<&'a mut Geometry<'a>> {
-        unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                return Ok(&mut state.default_geometry);
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
+    pub fn destroy_default_geometry2d(&self) -> Result<()> {
+        if self.default_geometry_2d.borrow().id == INVALID_ID {
+            return Ok(());
+        }
+        return Ok(self
+            .frontend_renderer
+            .borrow_mut()
+            .destroy_geometry(&self.default_geometry_2d.borrow())
+            .map_err(|e| GeometrySysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?);
     }
 
-    pub fn get_default_geometry_2d() -> Result<&'a mut Geometry<'a>> {
-        unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                return Ok(&mut state.default_geometry_2d);
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-    }
-
-    pub fn acquire_by_id(id: usize) -> Result<&'a mut Geometry<'a>> {
-        let state = unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                state
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-        let geo_ref = match state.registered_geometries_hashmap.get_mut(&id) {
+    pub fn acquire_by_id(&mut self, id: usize) -> Result<Rc<RefCell<Geometry>>> {
+        let geo_ref = match self.registered_geometries_hashmap.get_mut(&id) {
             Some(gr) => gr,
             None => {
                 return Err(GeometrySysError::IdIsInvalid {
@@ -175,31 +171,23 @@ impl<'a: 'static> GeometrySystem<'a> {
         };
 
         geo_ref.reference_count += 1;
-        return Ok(&mut state.registered_geometries[geo_ref.handle]);
+        return Ok(Rc::clone(&self.registered_geometries[geo_ref.handle]));
     }
 
     pub fn acquire_from_config<T: Clone, U: Clone>(
+        &mut self,
         config: GeometryConfig<T, U>,
         auto_release: bool,
-    ) -> Result<&'a mut Geometry<'a>> {
-        let state = unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                state
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
+    ) -> Result<Rc<RefCell<Geometry>>> {
         let mut geo_ref = GeometryRef::default();
-        for (i, geo) in state.registered_geometries.iter_mut().enumerate() {
-            if geo.id == INVALID_ID {
+        for (i, geo) in self.registered_geometries.iter_mut().enumerate() {
+            if geo.borrow().id == INVALID_ID {
                 geo_ref = geo_ref
                     .auto_release(auto_release)
                     .handle(i)
                     .reference_count(1);
-                state.registered_geometries_hashmap.insert(i, geo_ref);
+                self.registered_geometries_hashmap.insert(i, geo_ref);
+                break;
             }
         }
         if geo_ref.handle == INVALID_ID {
@@ -208,34 +196,50 @@ impl<'a: 'static> GeometrySystem<'a> {
                 line: line!(),
             });
         }
-        let geometry = &mut state.registered_geometries[geo_ref.handle];
-        Self::create_geometry(geo_ref.handle, config)?;
-        return Ok(geometry);
+        let geometry = &self.registered_geometries[geo_ref.handle];
+        self.create_geometry(geo_ref.handle, config)?;
+        return Ok(Rc::clone(geometry));
     }
 
-    pub fn release(geometry: &mut Geometry<'a>) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                state
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-        if geometry.id != INVALID_ID {
-            let geo_ref = state
+    pub fn shutdown(&mut self) -> Result<()> {
+        for i in 0..self.registered_geometries.len() {
+            self.destroy_geometry(i)?;
+        }
+        Ok(())
+    }
+
+    pub fn release(&mut self, geometry: Rc<RefCell<Geometry>>) -> Result<()> {
+        if geometry.borrow().id != INVALID_ID {
+            let geo_ref = self
                 .registered_geometries_hashmap
-                .get_mut(&geometry.id)
+                .get_mut(&geometry.borrow().id)
                 .unwrap();
             if geo_ref.reference_count > 0 {
                 geo_ref.reference_count -= 1;
             }
 
             if geo_ref.reference_count < 1 && geo_ref.auto_release {
-                Self::destroy_geometry(&mut state.registered_geometries[geo_ref.handle])?;
-                state.registered_geometries_hashmap.remove(&geometry.id);
+                self.frontend_renderer
+                    .borrow_mut()
+                    .destroy_geometry(&self.registered_geometries[geo_ref.handle].borrow())
+                    .map_err(|e| GeometrySysError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow_mut()
+                    .release(&geometry.borrow().material.borrow().name)
+                    .map_err(|e| GeometrySysError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                *self.registered_geometries[geo_ref.handle].borrow_mut() = Geometry::default();
+                self.registered_geometries_hashmap
+                    .remove(&geometry.borrow().id);
             }
         }
         // maybe warn if invalid id
@@ -243,79 +247,70 @@ impl<'a: 'static> GeometrySystem<'a> {
     }
 
     pub fn create_geometry<T: Clone, U: Clone>(
+        &self,
         handle: usize,
         config: GeometryConfig<T, U>,
     ) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                state
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
+        let geo = &self.registered_geometries[handle];
 
-        let geo = &mut state.registered_geometries[handle];
-        Renderer::create_geometry(geo, &config.vertices, &config.indices).map_err(|e| {
-            GeometrySysError::RendererSysError {
+        self.frontend_renderer
+            .borrow_mut()
+            .create_geometry(&mut geo.borrow_mut(), &config.vertices, &config.indices)
+            .map_err(|e| GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
         let mut material_config = MaterialConfig::default().name(&config.material_name);
 
-        geo.material = Some(MaterialSystem::acquire(&mut material_config).map_err(|e| {
-            GeometrySysError::MaterialSysError {
+        geo.borrow_mut().material = self
+            .material_system
+            .borrow_mut()
+            .acquire(&mut material_config)
+            .map_err(|e| GeometrySysError::MaterialSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?);
+            })?;
         Ok(())
     }
 
-    pub fn destroy_geometry(geometry: &'a Geometry) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut state) = GEOMETRY_STATE {
-                state
-            } else {
-                return Err(GeometrySysError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-        Renderer::destroy_geometry(geometry).map_err(|e| {
-            GeometrySysError::RendererSysError {
+    pub fn destroy_geometry(&mut self, index: usize) -> Result<()> {
+        let geometry = &self.registered_geometries[index].borrow();
+        if geometry.id == INVALID_ID {
+            //WARN
+            return Ok(());
+        }
+        self.frontend_renderer
+            .borrow_mut()
+            .destroy_geometry(&self.registered_geometries[index].borrow())
+            .map_err(|e| GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
-        let geo_ref = state
+        let geo_ref = self
             .registered_geometries_hashmap
             .get_mut(&geometry.id)
             .unwrap();
 
-        MaterialSystem::release(&geometry.material.as_ref().unwrap().name).map_err(|e| {
-            GeometrySysError::MaterialSysError {
+        self.material_system
+            .borrow_mut()
+            .release(&geometry.material.borrow().name)
+            .map_err(|e| GeometrySysError::MaterialSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
-        state.registered_geometries[geo_ref.handle] = Geometry::default();
-        state.registered_geometries_hashmap.remove(&geometry.id);
+        *self.registered_geometries[geo_ref.handle].borrow_mut() = Geometry::default();
+        self.registered_geometries_hashmap.remove(&geometry.id);
         Ok(())
     }
 
-    pub fn create_default_geometries() -> Result<(Geometry<'a>, Geometry<'a>)> {
+    pub fn create_default_geometries(&mut self) -> Result<()> {
         const FACTOR: f32 = 10.0;
         const VERT_COUNT: usize = 4;
         let verts: [Vector3D; VERT_COUNT] = [
@@ -342,21 +337,24 @@ impl<'a: 'static> GeometrySystem<'a> {
 
         let mut geometry = Geometry::default();
         //geometry.id = 10;
-        Renderer::create_geometry(&mut geometry, &verts, &indices).map_err(|e| {
-            GeometrySysError::RendererSysError {
+        self.frontend_renderer
+            .borrow_mut()
+            .create_geometry(&mut geometry, &verts, &indices)
+            .map_err(|e| GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
-        geometry.material = Some(MaterialSystem::get_default_material().map_err(|e| {
-            GeometrySysError::MaterialSysError {
+        geometry.material = self
+            .material_system
+            .borrow()
+            .get_default_material()
+            .map_err(|e| GeometrySysError::MaterialSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?);
+            })?;
 
         let verts_2d: [Vector2D; VERT_COUNT] = [
             Vector2D {
@@ -380,21 +378,39 @@ impl<'a: 'static> GeometrySystem<'a> {
         let mut geometry_2d = Geometry::default();
         //geometry_2d.id = 11;
 
-        Renderer::create_geometry(&mut geometry_2d, &verts_2d, &indices_2d).map_err(|e| {
-            GeometrySysError::RendererSysError {
+        self.frontend_renderer
+            .borrow_mut()
+            .create_geometry(&mut geometry_2d, &verts_2d, &indices_2d)
+            .map_err(|e| GeometrySysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
-        geometry_2d.material = Some(MaterialSystem::get_default_material().map_err(|e| {
-            GeometrySysError::MaterialSysError {
+        geometry_2d.material = self
+            .material_system
+            .borrow()
+            .get_default_material()
+            .map_err(|e| GeometrySysError::MaterialSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
+            })?;
+        self.default_geometry.replace(geometry);
+        self.default_geometry_2d.replace(geometry_2d);
+        Ok(())
+    }
+}
+
+impl<'a> Drop for GeometrySystem<'a> {
+    fn drop(&mut self) {
+        let _ = self.destroy_default_geometry();
+        let _ = self.destroy_default_geometry2d();
+        for i in 0..self.registered_geometries.len() {
+            if self.registered_geometries[i].borrow().id == INVALID_ID {
+                continue;
             }
-        })?);
-        Ok((geometry, geometry_2d))
+            let _ = self.destroy_geometry(i);
+        }
     }
 }

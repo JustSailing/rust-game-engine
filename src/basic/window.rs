@@ -1,14 +1,16 @@
+use std::cell::RefCell;
 use std::ffi::CString;
 use std::mem;
 use std::ptr;
 
 use std::os::raw::*;
+use std::rc::Rc;
 use x11::keysym::*;
 use x11::xlib::Display as Display_;
 use x11::xlib::Window as Window_;
 use x11::xlib::*;
 
-use crate::application::basic::event::{EventCodes, EventCtx, EventState, EventSysError};
+use crate::application::basic::event::{EventCodes, EventCtx, EventSysError, EventSystem};
 
 use super::input::{InputState, InputSysError};
 
@@ -60,17 +62,26 @@ impl Drop for Display {
     }
 }
 
-pub struct Window {
+pub struct Window<'a> {
     pub display: Display,
     pub window_id: Window_,
     wm_protocols: Atom,
     wm_delete: Atom,
     pub width: u32,
     pub height: u32,
+    input_system: Rc<RefCell<InputState<'a>>>,
+    event_system: Rc<RefCell<EventSystem<'a>>>,
 }
 
-impl Window {
-    pub fn create(x: i32, y: i32, width: i32, height: i32) -> Result<Self> {
+impl<'a> Window<'a> {
+    pub fn create(
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        input_system: Rc<RefCell<InputState<'a>>>,
+        event_system: Rc<RefCell<EventSystem<'a>>>,
+    ) -> Result<Self> {
         let display = match Display::open() {
             Ok(d) => d,
             Err(_) => {
@@ -156,6 +167,8 @@ impl Window {
             wm_delete: wm_delete_window,
             width: width as u32,
             height: height as u32,
+            input_system,
+            event_system,
         })
     }
 
@@ -191,7 +204,7 @@ impl Window {
                             && event.client_message.data.as_longs()[0] as Atom == self.wm_delete
                         {
                             let ctx = EventCtx::None;
-                            EventState::fire_event(
+                            self.event_system.borrow_mut().fire_event(
                                 EventCodes::ApplicationQuit as usize,
                                 ptr::null(),
                                 &ctx,
@@ -206,7 +219,7 @@ impl Window {
                             event.configure.x,
                             event.configure.y,
                         ]);
-                        EventState::fire_event(
+                        self.event_system.borrow_mut().fire_event(
                             EventCodes::WindowResized as usize,
                             ptr::null(),
                             &ctx,
@@ -217,14 +230,14 @@ impl Window {
                             XkbKeycodeToKeysym(self.display.raw, event.key.keycode as u8, 0, 0);
                         let key = Window::keysym_to_key(key_sym);
                         println!("key press {:?}", key);
-                        InputState::process_key(key, true)?;
+                        self.input_system.borrow_mut().process_key(key, true)?;
                     }
                     KeyRelease => {
                         let key_sym =
                             XkbKeycodeToKeysym(self.display.raw, event.key.keycode as u8, 0, 0);
                         let key = Window::keysym_to_key(key_sym);
                         println!("key release {:?}", key);
-                        InputState::process_key(key, false)?;
+                        self.input_system.borrow_mut().process_key(key, false)?;
                     }
                     ButtonPress => {
                         let mut button = Button::MaxButtons;
@@ -236,7 +249,9 @@ impl Window {
                         };
 
                         println!("button press {:?}", button);
-                        InputState::process_button(button, true)?;
+                        self.input_system
+                            .borrow_mut()
+                            .process_button(button, true)?;
                     }
                     ButtonRelease => {
                         let mut button = Button::MaxButtons;
@@ -248,7 +263,9 @@ impl Window {
                         };
 
                         println!("button release {:?}", button);
-                        InputState::process_button(button, true)?;
+                        self.input_system
+                            .borrow_mut()
+                            .process_button(button, true)?;
                     }
 
                     _ => {} //return Ok(false),
@@ -387,7 +404,7 @@ impl Window {
     }
 }
 
-impl Drop for Window {
+impl<'a> Drop for Window<'a> {
     fn drop(&mut self) {
         unsafe { XDestroyWindow(self.display.raw, self.window_id) };
     }

@@ -11,16 +11,18 @@ pub mod systems;
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::thread;
 use std::time::{Duration, Instant};
-use std::{ffi::c_void, ptr};
+use std::{ptr, thread};
 use thiserror::Error;
 
-use crate::Game;
 use crate::application::basic::math::vec2::Vec2;
 use crate::application::basic::math::vec3::{Vec3, Vector2D};
+use crate::application::resources::resource_types::{ResourceData, ResourceType};
 use crate::application::systems::geometry_system::GeometryConfig;
-use basic::event::{EventCodes, EventCtx, EventState, EventSysError};
+use crate::application::systems::material_system::BUILTIN_SHADER_NAME_UI;
+use crate::application::systems::shader_system::{ShaderSysConfig, ShaderSysError, ShaderSystem};
+use crate::{Game, GameState};
+use basic::event::{EventCallback, EventCodes, EventSysError, EventSystem};
 use basic::input::{InputState, InputSysError};
 use basic::math::matrix4::Matrix4;
 use basic::window::{Window, WindowError};
@@ -56,6 +58,12 @@ pub enum AppError {
     CouldNotUpdateGame { file: &'static str, line: u32 },
     #[error("app error:  could not render game {file} {line}")]
     CouldNotRenderGame { file: &'static str, line: u32 },
+    #[error("app error: operation failed: {issue} {file} {line}")]
+    OperationFailed {
+        issue: String,
+        file: &'static str,
+        line: u32,
+    },
     #[error("{source}\napp error:  error from event system ")]
     EventSysError {
         source: EventSysError,
@@ -104,41 +112,85 @@ pub enum AppError {
         file: &'static str,
         line: u32,
     },
+    #[error("{source}\napp error:  error from shader system {file} {line}")]
+    ShaderSysError {
+        source: ShaderSysError,
+        file: &'static str,
+        line: u32,
+    },
 }
 
 type Result<T> = std::result::Result<T, AppError>;
 
 pub struct ApplicationState<'a> {
-    game: Game,
+    game: Rc<RefCell<Game>>,
     is_running: bool,
     is_suspended: bool,
-    window: Window,
+    window: Window<'a>,
     pos_x: i32,
     pos_y: i32,
     width: i32,
     height: i32,
-    test_geometry: Rc<RefCell<&'a mut Geometry<'a>>>,
-    test_ui_geometry: Rc<RefCell<&'a mut Geometry<'a>>>,
+    test_geometry: Rc<RefCell<Geometry>>,
+    test_ui_geometry: Rc<RefCell<Geometry>>,
+    resource_system: Rc<RefCell<ResourceSystem>>,
+    renderer_system: Rc<RefCell<Renderer>>,
+    texture_system: Rc<RefCell<TextureSystem>>,
+    material_system: Rc<RefCell<MaterialSystem<'a>>>,
+    geometry_system: Rc<RefCell<GeometrySystem<'a>>>,
+    input_system: Rc<RefCell<InputState<'a>>>,
+    shader_system: Rc<RefCell<ShaderSystem<'a>>>,
+    //temporary
+    event_system: Rc<RefCell<EventSystem<'a>>>,
 }
 
-static mut APP_STATE: Option<ApplicationState> = None;
+impl<'a> ApplicationState<'a> {
+    pub fn create() -> Result<Self> {
+        let app_config = AppConfig {
+            start_pos_x: 0,
+            start_pos_y: 0,
+            start_width: 1280,
+            start_height: 720,
+            name: "Hello William",
+        };
 
-impl<'a: 'static> ApplicationState<'a> {
-    pub fn create(game: &mut Game) -> Result<()> {
-        unsafe {
-            if let Some(ref _a) = APP_STATE {
-                return Err(AppError::AlreadyInitialized {
+        let resource_sys_config = ResourceSysConfig {
+            max_loader_count: 32,
+            asset_base_path: "assets".to_string(),
+        };
+        let resource_system = Rc::new(RefCell::new(
+            ResourceSystem::initialize(resource_sys_config).map_err(|e| {
+                AppError::ResourceSysError {
+                    source: e,
                     file: file!(),
                     line: line!(),
-                });
+                }
+            })?,
+        ));
+
+        let event_system = Rc::new(RefCell::new(EventSystem::initialize().map_err(|e| {
+            AppError::EventSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
             }
-        }
-        let app_config = game.config;
+        })?));
+
+        let input_system = Rc::new(RefCell::new(
+            InputState::initialize(event_system.clone()).map_err(|e| AppError::InputSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?,
+        ));
+
         let window = Window::create(
             app_config.start_pos_x,
             app_config.start_pos_y,
             app_config.start_width,
             app_config.start_height,
+            input_system.clone(),
+            event_system.clone(),
         )
         .map_err(|e| AppError::WindowError {
             source: e,
@@ -149,98 +201,253 @@ impl<'a: 'static> ApplicationState<'a> {
         window.set_title(app_config.name);
         window.show();
 
-        let resource_sys_config = ResourceSysConfig {
-            max_loader_count: 32,
-            asset_base_path: "assets".to_string(),
-        };
-        ResourceSystem::initialize(resource_sys_config).map_err(|e| {
-            AppError::ResourceSysError {
+        let renderer_system = Rc::new(RefCell::new(
+            Renderer::initialize(app_config.name, &window, resource_system.clone()).map_err(
+                |e| AppError::RendererSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                },
+            )?,
+        ));
+
+        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
+        let texture_system = Rc::new(RefCell::new(
+            TextureSystem::initialize(
+                texture_sys_config,
+                Rc::clone(&renderer_system),
+                Rc::clone(&resource_system),
+            )
+            .map_err(|e| AppError::TextureSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
+            })?,
+        ));
+
+        texture_system
+            .borrow_mut()
+            .create_default_texture()
+            .map_err(|e| AppError::TextureSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        renderer_system
+            .borrow_mut()
+            .set_default_texture(texture_system.borrow().get_default_texture().map_err(|e| {
+                AppError::TextureSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                }
+            })?)
+            .map_err(|e| AppError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        let shader_config = ShaderSysConfig {
+            max_shader_count: 1024,
+            max_uniform_count: 128,
+            max_global_textures: 31,
+            max_instance_textures: 31,
+        };
+        let shader_system = Rc::new(RefCell::new(
+            ShaderSystem::initialize(
+                shader_config,
+                renderer_system.clone(),
+                texture_system.clone(),
+            )
+            .map_err(|e| AppError::ShaderSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?,
+        ));
+
+        let ui_shader_resource = resource_system
+            .borrow()
+            .load(BUILTIN_SHADER_NAME_UI, ResourceType::Shader)
+            .map_err(|e| AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        let ui_shader_config = match ui_shader_resource.data {
+            ResourceData::ShaderResourceData(ref shader_config) => shader_config,
+            ResourceData::Unknown => {
+                return Err(AppError::OperationFailed {
+                    issue: "resource data issue: expected ShaderConfing given Unknown".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
             }
-        })?;
+            ResourceData::ImageResourceData(_) => {
+                return Err(AppError::OperationFailed {
+                    issue: "resource data issue: expected ShaderConfing given ImageResourceData"
+                        .to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            ResourceData::MaterialResourceData(_) => {
+                return Err(AppError::OperationFailed {
+                    issue: "resource data issue: expected ShaderConfing given MaterialResourceData"
+                        .to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            ResourceData::BinaryResourceData(_) => {
+                return Err(AppError::OperationFailed {
+                    issue: "resource data issue: expected ShaderConfing given BinaryResourceData"
+                        .to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+        };
 
-        InputState::initialize().map_err(|e| AppError::InputSysError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
+        shader_system
+            .borrow_mut()
+            .create(ui_shader_config)
+            .map_err(|e| AppError::ShaderSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
-        EventState::initialize().map_err(|e| AppError::EventSysError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
+        let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 100 };
+        let material_system = Rc::new(RefCell::new(
+            MaterialSystem::initialize(
+                material_sys_config,
+                Rc::clone(&texture_system),
+                Rc::clone(&renderer_system),
+                Rc::clone(&resource_system),
+                Rc::clone(&shader_system),
+            )
+            .map_err(|e| AppError::MaterialSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?,
+        ));
 
-        EventState::register_event(
-            EventCodes::ApplicationQuit as usize,
-            ptr::null(),
-            application_on_event,
-        )
-        .map_err(|e| AppError::EventSysError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
+        material_system
+            .borrow_mut()
+            .create_default_material()
+            .map_err(|e| AppError::MaterialSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
-        EventState::register_event(
-            EventCodes::WindowResized as usize,
-            ptr::null(),
-            application_on_resize,
-        )
-        .map_err(|e| AppError::EventSysError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
+        let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 100 };
+        let geometry_system = Rc::new(RefCell::new(
+            GeometrySystem::initialize(
+                geometry_sys_config,
+                Rc::clone(&renderer_system),
+                Rc::clone(&material_system),
+            )
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?,
+        ));
 
-        EventState::register_event(EventCodes::Debug0 as usize, ptr::null(), on_event_debug)
+        geometry_system
+            .borrow_mut()
+            .create_default_geometries()
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        let game = Rc::new(RefCell::new(Game {
+            config: app_config,
+            state: GameState {
+                delta_time: 0.0,
+                view: Matrix4::new_zeros(),
+                camera_position: Vec3::new_zeroes(),
+                camera_euler: Vec3::new_zeroes(),
+                view_dirty: false,
+            },
+            texture_system: texture_system.clone(),
+            renderer_system: renderer_system.clone(),
+            test_geometry: geometry_system
+                .borrow()
+                .get_default_geometry()
+                .map_err(|e| AppError::GeometrySysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?,
+        }));
+
+        if !game.borrow_mut().initialize() {
+            return Err(AppError::CouldNotInitializeGame {
+                file: file!(),
+                line: line!(),
+            });
+        }
+
+        event_system
+            .borrow_mut()
+            .register_event(
+                EventCodes::ApplicationQuit as usize,
+                ptr::null(),
+                Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
+            )
             .map_err(|e| AppError::EventSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
 
-        Renderer::initialize(app_config.name, &window).map_err(|e| {
-            AppError::RendererSysError {
+        event_system
+            .borrow_mut()
+            .register_event(
+                EventCodes::WindowResized as usize,
+                ptr::null(),
+                Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
+            )
+            .map_err(|e| AppError::EventSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
-        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
-        TextureSystem::initialize(texture_sys_config).map_err(|e| AppError::TextureSysError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
-
-        let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 100 };
-        MaterialSystem::initialize(material_sys_config).map_err(|e| {
-            AppError::MaterialSysError {
+        event_system
+            .borrow_mut()
+            .register_event(
+                EventCodes::Debug0 as usize,
+                ptr::null(),
+                Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
+            )
+            .map_err(|e| AppError::EventSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
 
-        let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 100 };
-        GeometrySystem::initialize(geometry_sys_config).map_err(|e| {
-            AppError::GeometrySysError {
+        event_system
+            .borrow_mut()
+            .register_event(
+                1,
+                ptr::null(),
+                Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
+            )
+            .map_err(|e| AppError::EventSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
-
-        if !(game.initialize)(game) {
-            return Err(AppError::CouldNotInitializeGame {
-                file: file!(),
-                line: line!(),
-            });
-        }
+            })?;
 
         let f = 512.0;
 
@@ -270,88 +477,87 @@ impl<'a: 'static> ApplicationState<'a> {
             material_name: String::from("test_ui"),
         };
 
-        unsafe {
-            APP_STATE = Some(ApplicationState {
-                game: *game,
-                is_running: false,
-                is_suspended: false,
-                window: window,
-                pos_x: app_config.start_pos_x,
-                pos_y: app_config.start_pos_y,
-                width: app_config.start_width,
-                height: app_config.start_height,
-                test_geometry: Rc::new(RefCell::new(
-                    GeometrySystem::get_default_geometry().map_err(|e| {
-                        AppError::GeometrySysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?,
-                )),
-                test_ui_geometry: Rc::new(RefCell::new(
-                    GeometrySystem::acquire_from_config(ui_config, true).map_err(|e| {
-                        AppError::GeometrySysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?,
-                )),
-            });
-        }
+        let test_ui_geometry = geometry_system
+            .borrow_mut()
+            .acquire_from_config(ui_config, true)
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
-        Ok(())
-    }
-
-    pub fn run() -> Result<()> {
-        let app_state = unsafe {
-            if let Some(ref mut app) = APP_STATE {
-                app
-            } else {
-                return Err(AppError::NotInitialized {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
+        let test_geometry = geometry_system
+            .borrow()
+            .get_default_geometry()
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        let app_state = Self {
+            game: game,
+            is_running: false,
+            is_suspended: false,
+            window: window,
+            pos_x: app_config.start_pos_x,
+            pos_y: app_config.start_pos_y,
+            width: app_config.start_width,
+            height: app_config.start_height,
+            test_geometry,
+            test_ui_geometry,
+            resource_system,
+            renderer_system,
+            texture_system,
+            material_system,
+            geometry_system,
+            event_system,
+            input_system,
+            shader_system,
         };
 
-        app_state.is_running = true;
-        app_state.is_suspended = false;
+        Ok(app_state)
+    }
+
+    pub fn run(&mut self) -> Result<()> {
+        self.is_running = true;
+        self.is_suspended = false;
         const FPS: f32 = 60.0;
         let frame_duration: Duration = Duration::from_secs_f32(1.0 / FPS);
         let mut last_frame_time = Instant::now();
         loop {
-            if app_state
-                .window
-                .get_event()
-                .map_err(|e| AppError::WindowError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?
-            {
+            if self.window.get_event().map_err(|e| AppError::WindowError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })? {
                 let current_time = Instant::now();
                 let delta = current_time.duration_since(last_frame_time).as_secs_f32() / 60.0;
-                InputState::update(delta).map_err(|e| AppError::InputSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
+                self.input_system.borrow_mut().update(delta).map_err(|e| {
+                    AppError::InputSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    }
                 })?;
-                if !(app_state.game.update)(&mut app_state.game, delta) {
+                if !self.game.borrow_mut().update(
+                    delta,
+                    &self.input_system.borrow(),
+                    &mut self.renderer_system.borrow_mut(),
+                    &mut self.event_system.borrow_mut(),
+                ) {
                     return Err(AppError::CouldNotUpdateGame {
                         file: file!(),
                         line: line!(),
                     });
                 }
 
-                if !(app_state.game.render)(&mut app_state.game, delta) {
+                if !self.game.borrow_mut().render(delta) {
                     return Err(AppError::CouldNotRenderGame {
                         file: file!(),
                         line: line!(),
                     });
                 }
-                let geo = Rc::clone(&app_state.test_geometry);
+                let geo = Rc::clone(&self.test_geometry);
 
                 let test_render = GeometryRenderData {
                     model: Matrix4::identity(),
@@ -362,7 +568,7 @@ impl<'a: 'static> ApplicationState<'a> {
 
                 let test_ui_render = GeometryRenderData {
                     model: Matrix4::translation(&Vec3::new(0.0, 0.0, 0.0)),
-                    geometry: Rc::clone(&app_state.test_ui_geometry),
+                    geometry: Rc::clone(&self.test_ui_geometry),
                 };
                 let mut ui_geometries = Vec::new();
                 ui_geometries.push(test_ui_render);
@@ -372,13 +578,14 @@ impl<'a: 'static> ApplicationState<'a> {
                     geometries: geometries,
                     ui_geometries: ui_geometries,
                 };
-                Renderer::draw_frame(&mut render_packet).map_err(|e| {
-                    AppError::RendererSysError {
+                self.renderer_system
+                    .borrow_mut()
+                    .draw_frame(&mut render_packet)
+                    .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),
                         line: line!(),
-                    }
-                })?;
+                    })?;
                 let elapsed_since_last_frame = last_frame_time.elapsed();
                 if elapsed_since_last_frame < frame_duration {
                     thread::sleep(frame_duration - elapsed_since_last_frame);
@@ -390,119 +597,5 @@ impl<'a: 'static> ApplicationState<'a> {
             }
         }
         Ok(())
-    }
-
-    pub fn shutdown() -> Result<()> {
-        unsafe {
-            if let Some(ref mut _state) = APP_STATE {
-                APP_STATE = None;
-                return Ok(());
-            } else {
-                return Err(AppError::AlreadyShutdown {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        }
-    }
-}
-
-impl<'a> Drop for ApplicationState<'a> {
-    fn drop(&mut self) {
-        unsafe {
-            if let Some(ref mut _state) = APP_STATE {
-                // probably log to console
-                let _ = MaterialSystem::shutdown();
-                let _ = TextureSystem::shutdown();
-                let _ = Renderer::shutdown();
-                let _ = EventState::shutdown();
-                let _ = InputState::shutdown();
-            }
-        }
-    }
-}
-
-fn application_on_event(
-    code: usize,
-    _sender: *const c_void,
-    _listener_inst: *const c_void,
-    _context: &EventCtx,
-) -> bool {
-    match EventCodes::from(code) {
-        EventCodes::ApplicationQuit => unsafe {
-            if let Some(ref mut state) = APP_STATE {
-                println!("in application on event");
-                state.is_running = false;
-                return true;
-            } else {
-                return false;
-            }
-        },
-        _ => return false,
-    }
-}
-
-fn application_on_resize(
-    code: usize,
-    _sender: *const c_void,
-    _listener_inst: *const c_void,
-    context: &EventCtx,
-) -> bool {
-    match EventCodes::from(code) {
-        EventCodes::WindowResized => {
-            let arr = match context {
-                EventCtx::I32(arr) => arr,
-                _ => return false,
-            };
-            println!(
-                "in application on resize: width {} height {} x {} y {}",
-                arr[0], arr[1], arr[2], arr[3]
-            );
-
-            match Renderer::on_resize(arr[0], arr[1]) {
-                Ok(_) => true,
-                Err(_) => false,
-            }
-        }
-        _ => return false,
-    }
-}
-
-pub fn on_event_debug(
-    _code: usize,
-    _sender: *const std::ffi::c_void,
-    _listener: *const std::ffi::c_void,
-    _ctx: &EventCtx,
-) -> bool {
-    let state = unsafe {
-        if let Some(ref mut state) = APP_STATE {
-            state
-        } else {
-            return false;
-        }
-    };
-    let names = ["brick-wall", "door", "stone-wall", "tile"];
-    static mut CHOICE: usize = 3;
-    let old_name = unsafe { names[CHOICE] };
-    unsafe {
-        CHOICE += 1;
-        CHOICE %= 4;
-    }
-
-    state
-        .test_geometry
-        .borrow_mut()
-        .material
-        .as_mut()
-        .unwrap()
-        .diffuse_map
-        .texture = match TextureSystem::acquire(unsafe { names[CHOICE].to_string() }, true) {
-        Ok(t) => Some(t),
-        Err(_) => return false,
-    };
-
-    match TextureSystem::release(old_name) {
-        Ok(_) => true,
-        Err(_) => false,
     }
 }

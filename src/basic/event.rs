@@ -1,4 +1,4 @@
-use std::os::raw::c_void;
+use std::{cell::RefCell, os::raw::c_void, rc::Rc};
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, EventSysError>;
@@ -56,18 +56,27 @@ impl From<usize> for EventCodes {
     }
 }
 
+pub trait EventCallback {
+    fn handle_event(
+        &mut self,
+        code: usize,
+        sender: *const c_void,
+        listener: *const c_void,
+        data: &EventCtx,
+    ) -> bool;
+}
+
 type PfnOnEvent =
     fn(code: usize, sender: *const c_void, listener: *const c_void, data: &EventCtx) -> bool;
 
-#[derive(Clone, Copy, Debug)]
-struct RegisteredEvent {
+//#[derive(Default)]
+struct RegisteredEvent<'a> {
     listener: *const c_void,
-    callback: PfnOnEvent,
+    callback: Box<Rc<RefCell<dyn EventCallback + 'a>>>,
 }
-
-#[derive(Clone, Debug)]
-struct EventCodeEntry {
-    events: Vec<RegisteredEvent>,
+#[derive(Default)]
+struct EventCodeEntry<'a> {
+    events: Vec<RegisteredEvent<'a>>,
 }
 
 #[derive(Error, Debug)]
@@ -80,94 +89,52 @@ pub enum EventSysError {
     AlreadyShutdown,
 }
 
-pub struct EventState {
-    registered: [EventCodeEntry; EventCodes::MaxCodes as usize],
+pub struct EventSystem<'a> {
+    registered: [EventCodeEntry<'a>; EventCodes::MaxCodes as usize],
 }
 
-static mut EVENT_STATE: Option<EventState> = None;
-
-impl EventState {
-    pub fn initialize() -> Result<()> {
-        unsafe {
-            if let Some(ref _a) = EVENT_STATE {
-                return Err(EventSysError::AlreadyInitialized);
-            }
-        };
-
+impl<'a> EventSystem<'a> {
+    pub fn initialize() -> Result<Self> {
         let codes: [EventCodeEntry; EventCodes::MaxCodes as usize] =
-            std::iter::repeat_with(|| EventCodeEntry { events: Vec::new() })
-                .take(EventCodes::MaxCodes as usize)
-                .collect::<Vec<_>>()
-                .try_into()
-                .unwrap();
+            [(); EventCodes::MaxCodes as usize].map(|_| EventCodeEntry { events: Vec::new() });
 
-        let state: EventState = EventState { registered: codes };
-
-        unsafe { EVENT_STATE = Some(state) };
-
-        Ok(())
-    }
-
-    pub fn shutdown() -> Result<()> {
-        unsafe {
-            if let Some(ref mut state) = EVENT_STATE {
-                for elem in &mut state.registered {
-                    elem.events.clear();
-                }
-                EVENT_STATE = None;
-            } else {
-                return Err(EventSysError::AlreadyShutdown);
-            }
-        };
-
-        Ok(())
+        Ok(EventSystem { registered: codes })
     }
 
     pub fn register_event(
+        &mut self,
         code: usize,
         listener: *const c_void,
-        on_event: PfnOnEvent,
+        on_event: Box<Rc<RefCell<dyn EventCallback + 'a>>>,
     ) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut s) = EVENT_STATE {
-                s
-            } else {
-                return Err(EventSysError::NotInitialized);
-            }
-        };
-
-        for v in &state.registered[code].events {
+        for v in &self.registered[code].events {
             if v.listener == listener {
                 // TODO: Warn
                 return Ok(());
             }
         }
 
-        state.registered[code].events.push(RegisteredEvent {
+        self.registered[code].events.push(RegisteredEvent {
             listener: listener,
             callback: on_event,
         });
         Ok(())
     }
 
+    //FIXME
     pub fn unregister_event(
+        &mut self,
         code: usize,
         listener: *const c_void,
-        on_event: PfnOnEvent,
+        _on_event: Box<Rc<RefCell<dyn EventCallback + 'a>>>,
     ) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut s) = EVENT_STATE {
-                s
-            } else {
-                return Err(EventSysError::NotInitialized);
-            }
-        };
-
         let mut i: usize = 0;
         let mut check: bool = false;
 
-        for (it, reg) in state.registered[code].events.iter().enumerate() {
-            if reg.listener == listener && std::ptr::fn_addr_eq(reg.callback, on_event) {
+        for (it, reg) in self.registered[code].events.iter().enumerate() {
+            if reg.listener == listener
+            //&& (_on_event.borrow() as Any).type_id() == (reg.callback.borrow() as Any).type_id()
+            {
                 check = true;
                 i = it;
                 break;
@@ -175,22 +142,19 @@ impl EventState {
         }
 
         if check {
-            state.registered[code].events.remove(i);
+            self.registered[code].events.remove(i);
         }
 
         Ok(())
     }
 
-    pub fn fire_event(code: usize, sender: *const c_void, ctx: &EventCtx) -> Result<()> {
-        let state = unsafe {
-            if let Some(ref mut s) = EVENT_STATE {
-                s
-            } else {
-                return Err(EventSysError::NotInitialized);
-            }
-        };
-        for reg in &state.registered[code].events {
-            if (reg.callback)(code, sender, reg.listener, &ctx) {
+    pub fn fire_event(&mut self, code: usize, sender: *const c_void, ctx: &EventCtx) -> Result<()> {
+        for reg in &mut self.registered[code].events {
+            if reg
+                .callback
+                .borrow_mut()
+                .handle_event(code, sender, reg.listener, &ctx)
+            {
                 return Ok(());
             }
         }

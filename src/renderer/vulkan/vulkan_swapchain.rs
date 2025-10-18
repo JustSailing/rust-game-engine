@@ -1,7 +1,5 @@
 use super::{
-    vulkan_backend::{VulkanBackendError, VulkanContext},
-    vulkan_device::VulkanDevice,
-    vulkan_image::VulkanImage,
+    vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice, vulkan_image::VulkanImage,
 };
 use ash::{
     Instance,
@@ -510,7 +508,8 @@ impl VulkanSwapchain {
             Ok(_) => return Ok(()),
             // recreate swapchain
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
-                VulkanContext::recreate_swapchain()?;
+                //TODO: recreate swapchain
+                //VulkanContext::recreate_swapchain()?;
                 return Ok(());
             }
             _ => {

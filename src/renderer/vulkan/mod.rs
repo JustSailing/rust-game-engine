@@ -1,4 +1,3 @@
-mod shaders;
 pub mod vulkan_backend;
 mod vulkan_buffer;
 mod vulkan_command_buffer;
