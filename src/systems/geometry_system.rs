@@ -289,7 +289,13 @@ impl<'a> GeometrySystem<'a> {
 
         self.material_system
             .borrow_mut()
-            .release(&self.registered_geometries[index].borrow().material.borrow().name)
+            .release(
+                &self.registered_geometries[index]
+                    .borrow()
+                    .material
+                    .borrow()
+                    .name,
+            )
             .map_err(|e| GeometrySysError::MaterialSysError {
                 source: e,
                 file: file!(),
@@ -297,7 +303,8 @@ impl<'a> GeometrySystem<'a> {
             })?;
 
         *self.registered_geometries[geo_ref.handle].borrow_mut() = Geometry::default();
-        self.registered_geometries_hashmap.remove(&self.registered_geometries[index].borrow().id);
+        self.registered_geometries_hashmap
+            .remove(&self.registered_geometries[index].borrow().id);
         Ok(())
     }
 

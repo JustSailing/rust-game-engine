@@ -341,8 +341,6 @@ impl TextureSystem {
     pub fn get_default_texture(&self) -> Result<Rc<RefCell<Texture>>> {
         Ok(Rc::clone(&self.default_texture))
     }
-
-    
 }
 
 impl Drop for TextureSystem {

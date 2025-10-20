@@ -652,7 +652,7 @@ impl<'a> ApplicationState<'a> {
                     .borrow_mut()
                     .apply_global(
                         test_render.geometry.borrow().material.borrow().shader_id as u32,
-                         &self.renderer_system.borrow().projection,
+                        &self.renderer_system.borrow().projection,
                         &self.renderer_system.borrow().view,
                     )
                     .map_err(|e| AppError::MaterialSysError {

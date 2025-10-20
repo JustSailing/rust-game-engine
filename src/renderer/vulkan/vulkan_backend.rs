@@ -1443,10 +1443,16 @@ impl<'a> VulkanContext {
             &shader.push_constant_ranges,
             shader.push_constant_range_count,
         )?;
-
+        let required_ubo_alignment = self
+            .device
+            .properties
+            .limits
+            .min_uniform_buffer_offset_alignment;
         //
-        shader.global_ubo_stride = shader.global_ubo_size;
-        shader.ubo_stride = shader.ubo_size;
+        shader.global_ubo_stride = (shader.global_ubo_size + (required_ubo_alignment as usize - 1))
+            & !(required_ubo_alignment as usize - 1);
+        shader.ubo_stride = (shader.ubo_size + (required_ubo_alignment as usize - 1))
+            & !(required_ubo_alignment as usize - 1);
         let total_buffer_size =
             shader.global_ubo_stride + (shader.ubo_stride * VULKAN_MAX_MATERIAL_COUNT);
 
@@ -1648,20 +1654,22 @@ impl<'a> VulkanContext {
         Ok(())
     }
     pub fn shader_bind_instance(&self, shader: &mut Shader, instance_id: u32) -> Result<()> {
-        let internal_data = match shader.internal_data {
-            ShaderInternalData::Vulkan(ref vulkan_shader) => vulkan_shader,
-            ShaderInternalData::Unknown => {
-                return Err(VulkanBackendError::OperationFailed {
-                    issue: "unknown shader internal data",
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
+        // let internal_data = match shader.internal_data {
+        //     ShaderInternalData::Vulkan(ref vulkan_shader) => vulkan_shader,
+        //     ShaderInternalData::Unknown => {
+        //         return Err(VulkanBackendError::OperationFailed {
+        //             issue: "unknown shader internal data",
+        //             file: file!(),
+        //             line: line!(),
+        //         });
+        //     }
+        // };
 
         shader.bound_instance_id = instance_id as usize;
-        let object_state = &internal_data.instance_states[instance_id as usize];
-        shader.bound_ubo_offset = object_state.offset as usize;
+        //let object_state = &internal_data.instance_states[instance_id as usize];
+        shader.bound_ubo_offset = (shader.global_ubo_stride as u64
+            + (shader.ubo_stride as u64 * shader.bound_instance_id as u64))
+            as usize;
         Ok(())
     }
 
@@ -1760,7 +1768,7 @@ impl<'a> VulkanContext {
 
         let buffer_info = DescriptorBufferInfo::default()
             .buffer(internal_data.uniform_buffer.buffer)
-            .offset(object_state.offset)
+            .offset(shader.bound_ubo_offset as u64)
             .range(shader.ubo_stride as u64);
 
         if *instance_ubo_generation == INVALID_ID as u8 {
@@ -2002,11 +2010,23 @@ impl<'a> VulkanContext {
                     );
                 }
             } else {
-                let mut addr = internal_data.mapped_uniform_block;
-                addr = unsafe { addr.add(shader.bound_ubo_offset + uniform.offset) };
-                unsafe {
-                    std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size)
-                };
+                if uniform.shader_scope == ShaderScope::Global {
+                    let mut addr = internal_data.mapped_uniform_block;
+                    addr = unsafe { addr.add(shader.global_ubo_offset + uniform.offset) };
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size)
+                    };
+                } else if uniform.shader_scope == ShaderScope::Instance {
+                    let mut addr = internal_data.mapped_uniform_block;
+                    addr = unsafe {
+                        addr.add(
+                            shader.global_ubo_offset + shader.bound_ubo_offset + uniform.offset,
+                        )
+                    };
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size)
+                    };
+                }
             }
         }
         Ok(())

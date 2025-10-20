@@ -9,7 +9,9 @@ use ash::vk::{
 use crate::application::basic::math::vec4::Vec4;
 
 use crate::application::renderer::vulkan::vulkan_backend::VulkanBackendError;
-use crate::application::renderer::vulkan::vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer};
+use crate::application::renderer::vulkan::vulkan_command_buffer::{
+    CommandBufferState, VulkanCommandBuffer,
+};
 use crate::application::renderer::vulkan::vulkan_device::VulkanDevice;
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;

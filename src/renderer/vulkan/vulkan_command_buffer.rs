@@ -3,7 +3,9 @@ use ash::vk::{
     CommandBufferResetFlags, CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
 };
 
-use crate::application::renderer::vulkan::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
+use crate::application::renderer::vulkan::{
+    vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice,
+};
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 

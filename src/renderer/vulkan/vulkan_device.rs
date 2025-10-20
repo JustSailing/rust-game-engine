@@ -54,7 +54,7 @@ pub struct VulkanDevice {
     pub graphics_queue: Queue,
     transfer_queue: Queue,
     pub present_queue: Queue,
-    properties: PhysicalDeviceProperties,
+    pub properties: PhysicalDeviceProperties,
     features: PhysicalDeviceFeatures,
     memory: PhysicalDeviceMemoryProperties,
 }

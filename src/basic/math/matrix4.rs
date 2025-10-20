@@ -3,7 +3,7 @@ use std::ops::Mul;
 use super::vec3::Vec3;
 
 #[derive(Debug, Clone, Copy)]
-#[repr(C)]
+#[repr(C, align(16))]
 pub struct Matrix4 {
     pub data: [f32; 16],
 }
