@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, ffi::c_void, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, ffi::c_void, rc::Rc, u16};
 
 use crate::application::{
     basic::{
@@ -128,6 +128,7 @@ impl MaterialRef {
 pub struct MaterialShaderUniformLocations {
     pub projection: u16,
     pub view: u16,
+    pub ambient_colour: u16,
     pub diffuse_colour: u16,
     pub diffuse_texture: u16,
     pub model: u16,
@@ -138,6 +139,7 @@ impl Default for MaterialShaderUniformLocations {
         Self {
             projection: u16::MAX,
             view: u16::MAX,
+            ambient_colour: u16::MAX,
             diffuse_colour: u16::MAX,
             diffuse_texture: u16::MAX,
             model: u16::MAX,
@@ -273,7 +275,7 @@ impl<'a> MaterialSystem<'a> {
         let mut material_res = self
             .resource_system
             .borrow()
-            .load(&config.name, ResourceType::Material)
+            .load(&config.name, "gmt", ResourceType::Material)
             .map_err(|e| MaterialSysError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -401,6 +403,16 @@ impl<'a> MaterialSystem<'a> {
                         file: file!(),
                         line: line!(),
                     })?;
+                self.material_locations.ambient_colour = self
+                    .shader_system
+                    .borrow()
+                    .uniform_index(&shader.borrow(), "ambient_colour")
+                    .map_err(|e| MaterialSysError::ShaderSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
                 self.material_locations.diffuse_colour = self
                     .shader_system
                     .borrow()
@@ -536,7 +548,13 @@ impl<'a> MaterialSystem<'a> {
         Ok(())
     }
 
-    pub fn apply_global(&self, shader_id: u32, projection: &Matrix4, view: &Matrix4) -> Result<()> {
+    pub fn apply_global(
+        &self,
+        shader_id: u32,
+        projection: &Matrix4,
+        view: &Matrix4,
+        ambient_colour: &Vec4,
+    ) -> Result<()> {
         if shader_id == self.material_shader_id as u32 {
             self.shader_system
                 .borrow()
@@ -554,6 +572,17 @@ impl<'a> MaterialSystem<'a> {
                 .uniform_set_by_index(
                     self.material_locations.view,
                     view as *const _ as *const c_void,
+                )
+                .map_err(|e| MaterialSysError::ShaderSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            self.shader_system
+                .borrow()
+                .uniform_set_by_index(
+                    self.material_locations.ambient_colour,
+                    ambient_colour as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -722,7 +751,11 @@ impl<'a> MaterialSystem<'a> {
             let texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(config.diffuse_map_name.clone(), config.auto_release)
+                .acquire(
+                    config.diffuse_map_name.clone(),
+                    &config.diffuse_map_type,
+                    config.auto_release,
+                )
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),

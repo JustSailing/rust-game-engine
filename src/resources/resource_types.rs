@@ -83,6 +83,7 @@ pub struct MaterialConfig {
     pub auto_release: bool,
     pub diffuse_colour: Vec4,
     pub diffuse_map_name: String,
+    pub diffuse_map_type: String,
 }
 
 impl Default for MaterialConfig {
@@ -92,6 +93,7 @@ impl Default for MaterialConfig {
             auto_release: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             diffuse_map_name: Default::default(),
+            diffuse_map_type: Default::default(),
             shader_name: String::from("Builtin.Material"),
         }
     }

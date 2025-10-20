@@ -15,8 +15,8 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ShaderLoader;
 
 impl ShaderLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
-        let full_path = format!("{}/{}/{}.config", base_path, path, name);
+    pub fn load(name: &str, path: &str, base_path: &str, path_type: &str) -> Result<Resource> {
+        let full_path = format!("{}/{}/{}.{}", base_path, path, name, path_type);
         let mut file_handle =
             FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
                 ResourceSysError::FileError {
@@ -141,7 +141,7 @@ impl ShaderLoader {
             "vec3" => ShaderAttributeConfig {
                 name: attr[1].to_string(),
                 size: 12,
-                attribute_type: ShaderAttributeType::Float32_2,
+                attribute_type: ShaderAttributeType::Float32_3,
             },
             "vec4" => ShaderAttributeConfig {
                 name: attr[1].to_string(),

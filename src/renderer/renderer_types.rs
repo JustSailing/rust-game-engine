@@ -120,6 +120,7 @@ pub struct Renderer {
     resource_system: Rc<RefCell<ResourceSystem>>,
     pub projection: Matrix4,
     pub view: Matrix4,
+    pub ambient_colour: Vec4,
     pub ui_projection: Matrix4,
     pub ui_view: Matrix4,
     far_clip: f32,
@@ -145,7 +146,8 @@ impl Renderer {
         Ok(Self {
             backend: backend,
             projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
-            view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, -30.0))),
+            view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, 30.0))),
+            ambient_colour: Vec4::new(0.25, 0.25, 0.25, 1.0),
             ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
             ui_view: Matrix4::inverse(&Matrix4::identity()),
             far_clip: 1000.0,

@@ -46,9 +46,11 @@ pub struct Game {
 impl Game {
     // temporary
     pub fn initialize(&mut self) -> bool {
-        self.state.camera_position = Vec3::new(0.0, 0.0, -30.0);
+        self.state.camera_position = Vec3::new(0.0, 0.0, 30.0);
         self.state.camera_euler = Vec3::new_zeroes();
         self.state.view = Matrix4::translation(&self.state.camera_position);
+        self.state.view = Matrix4::inverse(&self.state.view);
+        self.state.view_dirty = true;
         return true;
     }
 
@@ -59,7 +61,7 @@ impl Game {
         renderer: &mut Renderer,
         event_system: &mut EventSystem,
     ) -> bool {
-        let movement = 20000.0;
+        let movement = 15000.0;
 
         if input_system.is_key_down(Key::A).unwrap() {
             self.camera_yaw(1.0 * delta * movement);
@@ -68,13 +70,41 @@ impl Game {
         if input_system.is_key_down(Key::D).unwrap() {
             self.camera_yaw(-1.0 * delta * movement);
         }
-        if input_system.is_key_down(Key::W).unwrap() {
+        if input_system.is_key_down(Key::Up).unwrap() {
             self.camera_pitch(1.0 * delta * movement);
         }
 
-        if input_system.is_key_down(Key::S).unwrap() {
+        if input_system.is_key_down(Key::Down).unwrap() {
             self.camera_pitch(-1.0 * delta * movement);
         }
+
+        let temp_move_speed = 1500000.0;
+        let mut velocity = Vec3::new_ones();
+        if input_system.is_key_down(Key::W).unwrap() {
+            let forward = self.state.view.forward();
+            velocity = velocity + forward.mul_scalar(temp_move_speed);
+        }
+
+        if input_system.is_key_down(Key::S).unwrap() {
+            let backward = self.state.view.backward();
+            velocity = velocity + backward.mul_scalar(temp_move_speed);
+        }
+
+        if input_system.is_key_down(Key::Q).unwrap() {
+            let left = self.state.view.left();
+            velocity = velocity + left.mul_scalar(temp_move_speed);
+        }
+
+        if input_system.is_key_down(Key::E).unwrap() {
+            let right = self.state.view.right();
+            velocity = velocity + right.mul_scalar(temp_move_speed);
+        }
+
+        //velocity.normalize();
+        self.state.camera_position.data[0] += velocity.data[0] * delta;
+        self.state.camera_position.data[0] += velocity.data[0] * delta;
+        self.state.camera_position.data[0] += velocity.data[0] * delta;
+        self.state.view_dirty = true;
 
         if input_system.is_key_down(Key::T).unwrap() {
             let ctx: EventCtx = EventCtx::I32([0; 4]);
@@ -107,6 +137,7 @@ impl Game {
 
             let translation = Matrix4::translation(&self.state.camera_position);
             self.state.view = rotation * translation;
+            self.state.view = Matrix4::inverse(&self.state.view);
             self.state.view_dirty = false;
         }
     }
@@ -173,11 +204,11 @@ impl EventCallback for Game {
                     .material
                     .borrow_mut()
                     .diffuse_map
-                    .texture = match self
-                    .texture_system
-                    .borrow_mut()
-                    .acquire(unsafe { names[CHOICE].to_string() }, true)
-                {
+                    .texture = match self.texture_system.borrow_mut().acquire(
+                    unsafe { names[CHOICE].to_string() },
+                    "jpg",
+                    true,
+                ) {
                     Ok(t) => t,
                     Err(_) => return false,
                 };

@@ -206,6 +206,7 @@ impl PartialEq for Vec3 {
 #[repr(C)]
 pub struct Vector3D {
     pub position: Vec3,
+    pub normal: Vec3,
     pub texcoord: Vec2,
 }
 

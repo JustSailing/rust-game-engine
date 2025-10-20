@@ -11,8 +11,8 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct MaterialLoader;
 
 impl MaterialLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
-        let full_path = format!("{}/{}/{}.gmt", base_path, path, name);
+    pub fn load(name: &str, path: &str, base_path: &str, res_type: &str) -> Result<Resource> {
+        let full_path = format!("{}/{}/{}.{}", base_path, path, name, res_type);
         let mut file_handle =
             FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
                 ResourceSysError::FileError {
@@ -48,6 +48,7 @@ impl MaterialLoader {
                     config.diffuse_colour = dif_col;
                 }
                 "diffuse_map_name" => config.diffuse_map_name = split[1].trim().to_string(),
+                "diffuse_map_type" => config.diffuse_map_type = split[1].trim().to_string(),
                 "shader" => config.shader_name = split[1].trim().to_string(),
                 _ => println!(
                     "{}={} not added to material config",

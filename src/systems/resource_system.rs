@@ -79,7 +79,7 @@ pub struct ResourceLoader {
     res_type: ResourceType,
     custom_type: Option<String>,
     path_type: String,
-    load: fn(&str, &str, &str) -> Result<Resource>,
+    load: fn(&str, &str, &str, &str) -> Result<Resource>,
     unload: fn(&mut Resource) -> Result<()>,
 }
 
@@ -209,13 +209,13 @@ impl ResourceSystem {
         Ok(())
     }
 
-    pub fn load(&self, name: &str, res_typ: ResourceType) -> Result<Resource> {
+    pub fn load(&self, name: &str, path_type: &str, res_typ: ResourceType) -> Result<Resource> {
         let res = self.registered_loaders.iter().find_map(|ld| {
             if let Some(l) = ld
                 && l.id != INVALID_ID
                 && l.res_type == res_typ
             {
-                let mut res = match (l.load)(name, &l.path_type, self.base_path().unwrap().as_str())
+                let mut res = match (l.load)(name, &l.path_type, self.base_path().unwrap().as_str(), path_type)
                 {
                     Ok(r) => r,
                     Err(_) => return None,

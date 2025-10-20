@@ -198,6 +198,29 @@ impl Matrix4 {
         return out_matrix;
     }
 
+    pub fn forward(&self) -> Vec3 {
+        let mut forward = Vec3::new(-self.data[2], -self.data[6], -self.data[10]);
+        forward.normalize();
+        forward
+    }
+
+    pub fn backward(&self) -> Vec3 {
+        let mut backward = Vec3::new(self.data[2], self.data[6], self.data[10]);
+        backward.normalize();
+        backward
+    }
+
+    pub fn left(&self) -> Vec3 {
+        let mut left = Vec3::new(-self.data[0], -self.data[4], -self.data[8]);
+        left.normalize();
+        left
+    }
+    pub fn right(&self) -> Vec3 {
+        let mut right = Vec3::new(self.data[0], self.data[4], self.data[8]);
+        right.normalize();
+        right
+    }
+
     pub fn euler_x(angle_radians: f32) -> Matrix4 {
         let mut out_matrix = Matrix4::identity();
         let c = angle_radians.cos();
@@ -249,16 +272,15 @@ impl Mul for Matrix4 {
         let mut result = Self::new_zeros();
 
         for i in 0..4 {
+            // Row of the result matrix
             for j in 0..4 {
+                // Column of the result matrix
                 let mut sum = 0.0;
                 for k in 0..4 {
-                    // C[i, j] = A[i, k] * B[k, j]
-                    let a_index = j * 4 + k; // column-major for `self`
-                    let b_index = k * 4 + i; // column-major for `rhs`
-                    sum += self.data[a_index] * rhs.data[b_index];
+                    // Inner loop for dot product
+                    sum += self.data[i * 4 + k] * rhs.data[k * 4 + j];
                 }
-                let result_index = j * 4 + i;
-                result.data[result_index] = sum;
+                result.data[i * 4 + j] = sum;
             }
         }
         result

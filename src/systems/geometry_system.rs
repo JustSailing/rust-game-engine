@@ -193,6 +193,221 @@ impl<'a> GeometrySystem<'a> {
         return Ok(Rc::clone(geometry));
     }
 
+    pub fn generate_cube_config(
+        &self,
+        width: f32,
+        height: f32,
+        depth: f32,
+        tile_x: f32,
+        tile_y: f32,
+        name: &str,
+        material_name: &str,
+    ) -> Result<GeometryConfig<Vector3D, u32>> {
+        let mut config: GeometryConfig<Vector3D, u32> = GeometryConfig {
+            vertices: Vec::with_capacity(4 * 6),
+            indices: Vec::with_capacity(6 * 6),
+            name: name.to_string(),
+            material_name: material_name.to_string(),
+        };
+
+        let half_width = width * 0.5;
+        let half_height = height * 0.5;
+        let half_depth = depth * 0.5;
+        let min_x = -half_width;
+        let min_y = -half_height;
+        let min_z = -half_depth;
+        let max_x = half_width;
+        let max_y = half_height;
+        let max_z = half_depth;
+        let min_uvx = 0.0;
+        let min_uvy = 0.0;
+        let max_uvx = tile_x;
+        let max_uvy = tile_y;
+
+        let vert0 = Vector3D {
+            position: Vec3::new(min_x, min_y, max_z),
+            normal: Vec3::new(0.0, 0.0, -1.0),
+            texcoord: Vec2::new(min_uvx, min_uvy),
+        };
+        config.vertices.push(vert0);
+
+        let vert1: Vector3D = Vector3D {
+            position: Vec3::new(max_x, max_y, max_z),
+            normal: Vec3::new(0.0, 0.0, -1.0),
+            texcoord: Vec2::new(max_uvx, max_uvy),
+        };
+        config.vertices.push(vert1);
+
+        let vert2: Vector3D = Vector3D {
+            position: Vec3::new(min_x, max_y, max_z),
+            normal: Vec3::new(0.0, 0.0, -1.0),
+            texcoord: Vec2::new(min_uvx, max_uvy),
+        };
+        config.vertices.push(vert2);
+
+        let vert3: Vector3D = Vector3D {
+            position: Vec3::new(max_x, min_y, max_z),
+            normal: Vec3::new(0.0, 0.0, -1.0),
+            texcoord: Vec2::new(max_uvx, min_uvy),
+        };
+        config.vertices.push(vert3);
+
+        let vert4 = Vector3D {
+            position: Vec3::new(max_x, min_y, min_z),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            texcoord: Vec2::new(min_uvx, min_uvy),
+        };
+        config.vertices.push(vert4);
+
+        let vert5: Vector3D = Vector3D {
+            position: Vec3::new(min_x, max_y, min_z),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            texcoord: Vec2::new(max_uvx, max_uvy),
+        };
+        config.vertices.push(vert5);
+
+        let vert6: Vector3D = Vector3D {
+            position: Vec3::new(max_x, max_y, min_z),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            texcoord: Vec2::new(min_uvx, max_uvy),
+        };
+        config.vertices.push(vert6);
+
+        let vert7: Vector3D = Vector3D {
+            position: Vec3::new(min_x, min_y, min_z),
+            normal: Vec3::new(0.0, 0.0, 1.0),
+            texcoord: Vec2::new(max_uvx, min_uvy),
+        };
+        config.vertices.push(vert7);
+
+        let vert8 = Vector3D {
+            position: Vec3::new(min_x, min_y, min_z),
+            normal: Vec3::new(-1.0, 0.0, 0.0),
+            texcoord: Vec2::new(min_uvx, min_uvy),
+        };
+        config.vertices.push(vert8);
+
+        let vert9: Vector3D = Vector3D {
+            position: Vec3::new(min_x, max_y, max_z),
+            normal: Vec3::new(-1.0, 0.0, 0.0),
+            texcoord: Vec2::new(max_uvx, max_uvy),
+        };
+        config.vertices.push(vert9);
+
+        let vert10: Vector3D = Vector3D {
+            position: Vec3::new(min_x, max_y, min_z),
+            normal: Vec3::new(-1.0, 0.0, 0.0),
+            texcoord: Vec2::new(min_uvx, max_uvy),
+        };
+        config.vertices.push(vert10);
+
+        let vert11: Vector3D = Vector3D {
+            position: Vec3::new(min_x, min_y, max_z),
+            normal: Vec3::new(-1.0, 0.0, 0.0),
+            texcoord: Vec2::new(max_uvx, min_uvy),
+        };
+        config.vertices.push(vert11);
+
+        let vert12: Vector3D = Vector3D {
+            position: Vec3::new(max_x, min_y, max_z),
+            normal: Vec3::new(1.0, 0.0, 0.0),
+            texcoord: Vec2::new(min_uvx, min_uvy),
+        };
+        config.vertices.push(vert12);
+
+        let vert13: Vector3D = Vector3D {
+            position: Vec3::new(max_x, max_y, min_z),
+            normal: Vec3::new(1.0, 0.0, 0.0),
+            texcoord: Vec2::new(max_uvx, max_uvy),
+        };
+        config.vertices.push(vert13);
+
+        let vert14: Vector3D = Vector3D {
+            position: Vec3::new(max_x, max_y, max_z),
+            normal: Vec3::new(1.0, 0.0, 0.0),
+            texcoord: Vec2::new(min_uvx, max_uvy),
+        };
+        config.vertices.push(vert14);
+
+        let vert15 = Vector3D {
+            position: Vec3::new(max_x, min_y, min_z),
+            normal: Vec3::new(1.0, 0.0, 0.0),
+            texcoord: Vec2::new(max_uvx, min_uvy),
+        };
+        config.vertices.push(vert15);
+
+        let vert16: Vector3D = Vector3D {
+            position: Vec3::new(max_x, min_y, max_z),
+            normal: Vec3::new(0.0, -1.0, 0.0),
+            texcoord: Vec2::new(min_uvx, min_uvy),
+        };
+        config.vertices.push(vert16);
+
+        let vert17: Vector3D = Vector3D {
+            position: Vec3::new(min_x, min_y, min_z),
+            normal: Vec3::new(0.0, -1.0, 0.0),
+            texcoord: Vec2::new(max_uvx, max_uvy),
+        };
+        config.vertices.push(vert17);
+
+        let vert18: Vector3D = Vector3D {
+            position: Vec3::new(max_x, min_y, min_z),
+            normal: Vec3::new(0.0, -1.0, 0.0),
+            texcoord: Vec2::new(min_uvx, max_uvy),
+        };
+        config.vertices.push(vert18);
+
+        let vert19 = Vector3D {
+            position: Vec3::new(min_x, min_y, max_z),
+            normal: Vec3::new(0.0, -1.0, 0.0),
+            texcoord: Vec2::new(max_uvx, min_uvy),
+        };
+        config.vertices.push(vert19);
+
+        let vert20: Vector3D = Vector3D {
+            position: Vec3::new(min_x, max_y, max_z),
+            normal: Vec3::new(0.0, 1.0, 0.0),
+            texcoord: Vec2::new(min_uvx, min_uvy),
+        };
+        config.vertices.push(vert20);
+
+        let vert21: Vector3D = Vector3D {
+            position: Vec3::new(max_x, max_y, min_z),
+            normal: Vec3::new(0.0, 1.0, 0.0),
+            texcoord: Vec2::new(max_uvx, max_uvy),
+        };
+        config.vertices.push(vert21);
+
+        let vert22: Vector3D = Vector3D {
+            position: Vec3::new(min_x, max_y, min_z),
+            normal: Vec3::new(0.0, 1.0, 0.0),
+            texcoord: Vec2::new(min_uvx, max_uvy),
+        };
+        config.vertices.push(vert22);
+
+        let vert23 = Vector3D {
+            position: Vec3::new(max_x, max_y, max_z),
+            normal: Vec3::new(0.0, 1.0, 0.0),
+            texcoord: Vec2::new(max_uvx, min_uvy),
+        };
+        config.vertices.push(vert23);
+
+        for i in 0..6 {
+            let v_offset = i * 4;
+            config.indices.push(v_offset + 0);
+            config.indices.push(v_offset + 1);
+            config.indices.push(v_offset + 2);
+            config.indices.push(v_offset + 0);
+            config.indices.push(v_offset + 3);
+            config.indices.push(v_offset + 1);
+        }
+
+        config.name = name.to_string();
+        config.material_name = material_name.to_string();
+
+        Ok(config)
+    }
+
     pub fn shutdown(&mut self) -> Result<()> {
         for i in 0..self.registered_geometries.len() {
             self.destroy_geometry(i)?;
@@ -314,18 +529,22 @@ impl<'a> GeometrySystem<'a> {
         let verts: [Vector3D; VERT_COUNT] = [
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
+                normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(0.0, 0.0),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
+                normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(1.0, 1.0),
             },
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
+                normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(0.0, 1.0),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
+                normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(1.0, 0.0),
             },
         ];

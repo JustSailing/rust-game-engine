@@ -16,7 +16,8 @@ use std::{ptr, thread};
 use thiserror::Error;
 
 use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{Vec3, Vector2D, Vector3D};
+use crate::application::basic::math::vec3::{Vec3, Vector2D};
+use crate::application::basic::math::vec4::Vec4;
 use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
 use crate::application::resources::resource_types::{GeometryConfig, ResourceData, ResourceType};
 
@@ -273,7 +274,7 @@ impl<'a> ApplicationState<'a> {
 
         let material_shader = resource_system
             .borrow()
-            .load(BUILTIN_SHADER_NAME_MATERIAL, ResourceType::Shader)
+            .load(BUILTIN_SHADER_NAME_MATERIAL, "config", ResourceType::Shader)
             .map_err(|e| AppError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -301,7 +302,7 @@ impl<'a> ApplicationState<'a> {
 
         let ui_shader = resource_system
             .borrow()
-            .load(BUILTIN_SHADER_NAME_UI, ResourceType::Shader)
+            .load(BUILTIN_SHADER_NAME_UI, "config", ResourceType::Shader)
             .map_err(|e| AppError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -456,23 +457,23 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let f = 512.0;
-
+        let w = 256.0;
+        let h = 128.0;
         let verts_2d: [Vector2D; 4] = [
             Vector2D {
                 position: Vec2::new_zeroes(),
                 texcoord: Vec2::new_zeroes(),
             },
             Vector2D {
-                position: Vec2::new(f, f),
+                position: Vec2::new(w, h),
                 texcoord: Vec2::new_ones(),
             },
             Vector2D {
-                position: Vec2::new(0.0, f),
+                position: Vec2::new(0.0, h),
                 texcoord: Vec2::new(0.0, 1.0),
             },
             Vector2D {
-                position: Vec2::new(f, 0.0),
+                position: Vec2::new(w, 0.0),
                 texcoord: Vec2::new(1.0, 0.0),
             },
         ];
@@ -493,40 +494,18 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        const FACTOR: f32 = 10.0;
-        const VERT_COUNT: usize = 4;
-        let verts: [Vector3D; VERT_COUNT] = [
-            Vector3D {
-                position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(0.0, 0.0),
-            },
-            Vector3D {
-                position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(1.0, 1.0),
-            },
-            Vector3D {
-                position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(0.0, 1.0),
-            },
-            Vector3D {
-                position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
-                texcoord: Vec2::new(1.0, 0.0),
-            },
-        ];
-
-        const INDEX_COUNT: usize = 6;
-        let indices: [u32; INDEX_COUNT] = [0, 1, 2, 0, 3, 1];
-
-        let material_config = GeometryConfig::<Vector3D, u32> {
-            vertices: Vec::from(verts),
-            indices: Vec::from(indices),
-            name: String::from("test_geometry"),
-            material_name: String::from("test_material"),
-        };
+        let test_geometry_config = geometry_system
+            .borrow_mut()
+            .generate_cube_config(10.0, 10.0, 10.0, 1.0, 1.0, "test_cube", "test_material")
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
         let test_geometry = geometry_system
             .borrow_mut()
-            .acquire_from_config(material_config, true)
+            .acquire_from_config(test_geometry_config, true)
             .map_err(|e| AppError::GeometrySysError {
                 source: e,
                 file: file!(),
@@ -654,6 +633,7 @@ impl<'a> ApplicationState<'a> {
                         test_render.geometry.borrow().material.borrow().shader_id as u32,
                         &self.renderer_system.borrow().projection,
                         &self.renderer_system.borrow().view,
+                        &self.renderer_system.borrow().ambient_colour,
                     )
                     .map_err(|e| AppError::MaterialSysError {
                         source: e,
@@ -723,6 +703,7 @@ impl<'a> ApplicationState<'a> {
                         test_ui_render.geometry.borrow().material.borrow().shader_id as u32,
                         &self.renderer_system.borrow().ui_projection,
                         &self.renderer_system.borrow().ui_view,
+                        &Vec4::new(1.0, 1.0, 1.0, 1.0),
                     )
                     .map_err(|e| AppError::MaterialSysError {
                         source: e,

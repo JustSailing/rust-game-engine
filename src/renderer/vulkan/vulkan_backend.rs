@@ -1506,6 +1506,7 @@ impl<'a> VulkanContext {
     ) -> Result<VulkanShaderStage<'a>> {
         let bin_res = self.resource_system.borrow().load(
             &vulkan_shader_config.stages[index].file_name,
+            "",
             ResourceType::Binary,
         )?;
         let data = match bin_res.data {

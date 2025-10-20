@@ -18,8 +18,8 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ImageLoader;
 
 impl ImageLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
-        let mut file_path = format!("{}/{}/{}.{}", base_path, path, name, "jpg");
+    pub fn load(name: &str, path: &str, base_path: &str, img_type: &str) -> Result<Resource> {
+        let mut file_path = format!("{}/{}/{}.{}", base_path, path, name, img_type);
         file_path = file_path
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '\n')

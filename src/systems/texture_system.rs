@@ -171,11 +171,11 @@ impl TextureSystem {
             })
     }
 
-    fn load_texture(&self, name: &str) -> Result<Texture> {
+    fn load_texture(&self, name: &str, path_type: &str) -> Result<Texture> {
         let mut img_res = self
             .resource_system
             .borrow()
-            .load(name, ResourceType::Image)
+            .load(name, path_type, ResourceType::Image)
             .map_err(|e| TextureSysError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -245,7 +245,7 @@ impl TextureSystem {
         Ok(texture)
     }
 
-    pub fn acquire(&mut self, name: String, auto_release: bool) -> Result<Rc<RefCell<Texture>>> {
+    pub fn acquire(&mut self, name: String, path_type: &str, auto_release: bool) -> Result<Rc<RefCell<Texture>>> {
         if name == DEFAULT_TEXTURE_NAME {
             println!(
                 "WARN: texture acquire was called with default texture name. Use get_default_texture for 'default'"
@@ -286,12 +286,12 @@ impl TextureSystem {
             }
             texture_ref = *tex_ref;
         }
-        self.register_texture(&name, &texture_ref)?;
+        self.register_texture(&name, path_type, &texture_ref)?;
         Ok(Rc::clone(&self.registered_textures[texture_ref.handle]))
     }
 
-    pub fn register_texture(&mut self, name: &String, tex_ref: &TextureRef) -> Result<()> {
-        self.registered_textures[tex_ref.handle].replace(self.load_texture(&name)?);
+    pub fn register_texture(&mut self, name: &String, path_type: &str, tex_ref: &TextureRef) -> Result<()> {
+        self.registered_textures[tex_ref.handle].replace(self.load_texture(&name, path_type)?);
         self.registered_textures[tex_ref.handle].borrow_mut().id = tex_ref.handle;
         self.registered_textures_hashmap
             .insert(name.clone(), *tex_ref);
