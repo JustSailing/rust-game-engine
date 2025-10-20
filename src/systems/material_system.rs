@@ -621,7 +621,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.material_locations.diffuse_texture,
-                    &material.diffuse_map.texture as *const _ as *const c_void,
+                    material.diffuse_map.texture.as_ptr() as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -644,7 +644,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.ui_locations.diffuse_texture,
-                    &material.diffuse_map.texture as *const _ as *const c_void,
+                    material.diffuse_map.texture.as_ptr() as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,

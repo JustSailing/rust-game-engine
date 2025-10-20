@@ -1800,16 +1800,29 @@ impl<'a> VulkanContext {
                 [DescriptorImageInfo::default(); VULKAN_SHADER_MAX_GLOBAL_TEXTURES];
             for i in 0..total_sampler_count {
                 // using default texture temporarily
-                image_infos[i as usize].image_view = self
-                    .default_texture
+                // image_infos[i as usize].image_view = self
+                //     .default_texture
+                //     .borrow()
+                //     .internal_data
+                //     .image
+                //     .view
+                //     .unwrap();
+                image_infos[i as usize].image_view = internal_data.instance_states
+                    [shader.bound_instance_id]
+                    .instance_textures[i as usize]
                     .borrow()
                     .internal_data
                     .image
                     .view
                     .unwrap();
                 image_infos[i as usize].image_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-                image_infos[i as usize].sampler =
-                    self.default_texture.borrow().internal_data.sampler;
+                image_infos[i as usize].sampler = internal_data.instance_states
+                    [shader.bound_instance_id]
+                    .instance_textures[i as usize]
+                    .borrow()
+                    .internal_data
+                    .sampler;
+                //self.default_texture.borrow().internal_data.sampler;
                 update_sampler_count += 1;
             }
 
@@ -1992,11 +2005,11 @@ impl<'a> VulkanContext {
         if uniform.uniform_type == ShaderUniformType::Sampler {
             if uniform.shader_scope == ShaderScope::Global {
                 shader.global_textures[uniform.location as usize] =
-                    Rc::new(RefCell::new(unsafe { *(value as *const Texture) }));
+                    Rc::new(RefCell::new(unsafe { *(value as *const _) }));
             } else {
                 internal_data.instance_states[shader.bound_instance_id].instance_textures
                     [uniform.location as usize] =
-                    Rc::new(RefCell::new(unsafe { *(value as *const Texture) }));
+                    Rc::new(RefCell::new(unsafe { *(value as *const _) }));
             }
         } else {
             if uniform.shader_scope == ShaderScope::Local {
