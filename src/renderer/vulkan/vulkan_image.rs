@@ -1,4 +1,4 @@
-use super::{
+use crate::application::renderer::vulkan::{
     vulkan_backend::{VulkanBackendError, VulkanContext},
     vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer,
@@ -18,6 +18,7 @@ use ash::{
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub struct VulkanImage {
     image: Image,
     memory: DeviceMemory,

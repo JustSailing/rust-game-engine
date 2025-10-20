@@ -168,10 +168,11 @@ impl Default for MaterialUiUniformLocations {
 pub struct MaterialSystem<'a> {
     config: MaterialSysConfig,
     default_material: Rc<RefCell<Material>>,
+    default_material_2d: Rc<RefCell<Material>>,
     registered_materials_hashmap: HashMap<String, MaterialRef>,
     registered_materials: Vec<Rc<RefCell<Material>>>,
-    material_locations: MaterialShaderUniformLocations,
     material_shader_id: usize,
+    material_locations: MaterialShaderUniformLocations,
     ui_shader_id: usize,
     ui_locations: MaterialUiUniformLocations,
     texture_system: Rc<RefCell<TextureSystem>>,
@@ -204,6 +205,7 @@ impl<'a> MaterialSystem<'a> {
         Ok(Self {
             config: config,
             default_material: Rc::new(RefCell::new(Material::default())),
+            default_material_2d: Rc::new(RefCell::new(Material::default())),
             registered_materials_hashmap: registered_hash_map,
             registered_materials: registered_array,
             material_locations: MaterialShaderUniformLocations::default(),
@@ -234,65 +236,21 @@ impl<'a> MaterialSystem<'a> {
                     line: line!(),
                 })?;
         material.diffuse_map.use_type = TextureUse::MapDiffuse;
-        let resource = self
-            .resource_system
-            .borrow()
-            .load(BUILTIN_SHADER_NAME_MATERIAL, ResourceType::Shader)
-            .map_err(|e| MaterialSysError::ResourceSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        let shader_config = match resource.data {
-            ResourceData::Unknown => {
-                return Err(MaterialSysError::WrongResourceDataType {
-                    ty: "expected: shader resource given: unknown".to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::ImageResourceData(_) => {
-                return Err(MaterialSysError::WrongResourceDataType {
-                    ty: "expected: shader resource given: image".to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::MaterialResourceData(_) => {
-                return Err(MaterialSysError::WrongResourceDataType {
-                    ty: "expected: shader resource given: material".to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::BinaryResourceData(_) => {
-                return Err(MaterialSysError::WrongResourceDataType {
-                    ty: "expected: shader resource given: binary".to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::ShaderResourceData(shader_config) => shader_config,
-        };
 
-        self.shader_system
-            .borrow_mut()
-            .create(&shader_config)
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+        // I don't think I should create the shader in material system
+        // should be handled somewhere else
         let shader = self
             .shader_system
             .borrow()
-            .get_shader_by_name(&shader_config.name)
+            .get_shader_by_name(BUILTIN_SHADER_NAME_MATERIAL)
             .map_err(|e| MaterialSysError::ShaderSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
+
+        material.shader_id = shader.borrow().id;
+        //self.material_shader_id = material.shader_id;
         material.internal_id = self
             .frontend_renderer
             .borrow()
@@ -311,47 +269,6 @@ impl<'a> MaterialSystem<'a> {
         Ok(Rc::clone(&self.default_material))
     }
 
-    pub fn release(&mut self, name: &str) -> Result<()> {
-        if name == DEFAULT_MATERIAL_NAME {
-            return Ok(());
-        }
-        let mut mat_ref = MaterialRef::default();
-        {
-            let mat_ref_ = match self.registered_materials_hashmap.get_mut(name) {
-                Some(t) => t,
-                None => {
-                    return Err(MaterialSysError::ReleaseTextureDoesNotExist {
-                        name: name.to_string(),
-                        file: file!(),
-                        line: line!(),
-                    });
-                }
-            };
-            mat_ref = *mat_ref_;
-        }
-        if mat_ref.reference_count == 0 {
-            println!("WARN tried to release a non-loaded texture.");
-            return Ok(());
-        }
-        mat_ref.reference_count -= 1;
-        if mat_ref.reference_count == 0 && mat_ref.auto_release {
-            let mat = &self.registered_materials[mat_ref.handle];
-
-            self.destroy_material(&mat.borrow())?;
-            *self.registered_materials[mat_ref.handle].borrow_mut() = Material::default();
-
-            // don't think i need the 2 lines below
-            mat_ref.handle = INVALID_ID;
-            mat_ref.auto_release = false;
-            self.registered_materials_hashmap.remove(name);
-        }
-
-        Ok(())
-    }
-    fn reset_material_at_index(&mut self, index: usize) -> Result<()> {
-        *self.registered_materials[index].borrow_mut() = Material::default();
-        return Ok(());
-    }
     pub fn acquire(&mut self, config: &mut MaterialConfig) -> Result<Rc<RefCell<Material>>> {
         let mut material_res = self
             .resource_system
@@ -395,7 +312,7 @@ impl<'a> MaterialSystem<'a> {
             }
         };
 
-        let mat = self.acquire_from_config(config)?;
+        let material = self.acquire_from_config(config)?;
 
         self.resource_system
             .borrow()
@@ -406,7 +323,7 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
 
-        Ok(mat)
+        Ok(material)
     }
 
     pub fn acquire_from_config(
@@ -439,6 +356,7 @@ impl<'a> MaterialSystem<'a> {
         if mat_ref.handle == INVALID_ID {
             for (i, mat) in self.registered_materials.iter_mut().enumerate() {
                 if mat.borrow().id == INVALID_ID {
+                    mat.borrow_mut().id = i;
                     mat_ref.handle = i;
                     break;
                 }
@@ -449,12 +367,13 @@ impl<'a> MaterialSystem<'a> {
                     line: line!(),
                 });
             }
-            self.registered_materials[mat_ref.handle] = self.load_material(config)?;
+            let material = self.load_material(config)?;
+            self.registered_materials[mat_ref.handle].replace(material);
 
             let shader = self
                 .shader_system
                 .borrow()
-                .get_shader_by_id(self.registered_materials[mat_ref.handle].borrow().shader_id)
+                .get_shader_by_name(&config.shader_name)
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
                     file: file!(),
@@ -509,7 +428,9 @@ impl<'a> MaterialSystem<'a> {
                         file: file!(),
                         line: line!(),
                     })?;
-            } else if self.ui_shader_id == INVALID_ID && config.name == BUILTIN_SHADER_NAME_UI {
+            } else if self.ui_shader_id == INVALID_ID
+                && config.shader_name == BUILTIN_SHADER_NAME_UI
+            {
                 self.ui_shader_id = shader.borrow().id;
                 self.ui_locations.projection = self
                     .shader_system
@@ -564,7 +485,7 @@ impl<'a> MaterialSystem<'a> {
             {
                 self.registered_materials[mat_ref.handle]
                     .borrow_mut()
-                    .generation = INVALID_ID;
+                    .generation = 0;
             } else {
                 self.registered_materials[mat_ref.handle]
                     .borrow_mut()
@@ -575,6 +496,44 @@ impl<'a> MaterialSystem<'a> {
 
         self.insert_hashmap(&config.name, &mat_ref)?;
         Ok(Rc::clone(&self.registered_materials[mat_ref.handle]))
+    }
+
+    pub fn release(&mut self, name: &str) -> Result<()> {
+        if name == DEFAULT_MATERIAL_NAME {
+            return Ok(());
+        }
+        let mut mat_ref = MaterialRef::default();
+        {
+            let mat_ref_ = match self.registered_materials_hashmap.get_mut(name) {
+                Some(t) => t,
+                None => {
+                    return Err(MaterialSysError::ReleaseTextureDoesNotExist {
+                        name: name.to_string(),
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+            };
+            mat_ref = *mat_ref_;
+        }
+        if mat_ref.reference_count == 0 {
+            println!("WARN tried to release a non-loaded texture.");
+            return Ok(());
+        }
+        mat_ref.reference_count -= 1;
+        if mat_ref.reference_count == 0 && mat_ref.auto_release {
+            let mat = &self.registered_materials[mat_ref.handle];
+
+            self.destroy_material(&mat.borrow())?;
+            self.registered_materials[mat_ref.handle].replace(Material::default());
+
+            // don't think i need the 2 lines below
+            mat_ref.handle = INVALID_ID;
+            mat_ref.auto_release = false;
+            self.registered_materials_hashmap.remove(name);
+        }
+
+        Ok(())
     }
 
     pub fn apply_global(&self, shader_id: u32, projection: &Matrix4, view: &Matrix4) -> Result<()> {
@@ -638,13 +597,14 @@ impl<'a> MaterialSystem<'a> {
     }
 
     pub fn apply_instance(&self, material: &Material) -> Result<()> {
-        self.shader_system.borrow().bind_instance().map_err(|e| {
-            MaterialSysError::ShaderSysError {
+        self.shader_system
+            .borrow()
+            .bind_instance(material.internal_id)
+            .map_err(|e| MaterialSysError::ShaderSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })?;
+            })?;
         if material.shader_id == self.material_shader_id {
             self.shader_system
                 .borrow()
@@ -661,7 +621,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.material_locations.diffuse_texture,
-                    material.diffuse_map.texture.as_ref() as *const _ as *const c_void,
+                    &material.diffuse_map.texture as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -684,7 +644,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.ui_locations.diffuse_texture,
-                    material.diffuse_map.texture.as_ref() as *const _ as *const c_void,
+                    &material.diffuse_map.texture as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -744,7 +704,7 @@ impl<'a> MaterialSystem<'a> {
         Ok(())
     }
 
-    fn load_material(&mut self, config: &mut MaterialConfig) -> Result<Rc<RefCell<Material>>> {
+    fn load_material(&mut self, config: &mut MaterialConfig) -> Result<Material> {
         let mut mat = Material::default();
         mat.shader_id = self
             .shader_system
@@ -759,7 +719,7 @@ impl<'a> MaterialSystem<'a> {
         mat.diffuse_colour = config.diffuse_colour.clone();
         if config.diffuse_map_name.len() > 0 {
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
-            let tex = self
+            let texture = self
                 .texture_system
                 .borrow_mut()
                 .acquire(config.diffuse_map_name.clone(), config.auto_release)
@@ -768,7 +728,7 @@ impl<'a> MaterialSystem<'a> {
                     file: file!(),
                     line: line!(),
                 })?;
-            mat.diffuse_map.texture = Rc::clone(&tex);
+            mat.diffuse_map.texture = texture;
         }
         let shader = self
             .shader_system
@@ -789,16 +749,7 @@ impl<'a> MaterialSystem<'a> {
                 file: file!(),
                 line: line!(),
             })? as usize;
-        Ok(Rc::new(RefCell::new(mat)))
-    }
-
-    pub fn shutdown(&mut self) -> Result<()> {
-        for mat in self.registered_materials.iter() {
-            if mat.borrow().id != INVALID_ID {
-                self.destroy_material(&mat.borrow())?;
-            }
-        }
-        Ok(())
+        Ok(mat)
     }
 
     pub fn destroy_material(&self, material: &Material) -> Result<()> {
@@ -839,9 +790,8 @@ impl<'a> MaterialSystem<'a> {
 
 impl<'a> Drop for MaterialSystem<'a> {
     fn drop(&mut self) {
-        if self.default_material.borrow().id != INVALID_ID {
-            let _ = self.destroy_material(&self.default_material.borrow());
-        }
+        let _ = self.destroy_material(&self.default_material.borrow());
+
         for mat in self.registered_materials.iter() {
             if mat.borrow().id != INVALID_ID {
                 let _ = self.destroy_material(&mat.borrow());

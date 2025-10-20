@@ -1,4 +1,4 @@
-use super::{
+use crate::application::renderer::vulkan::{
     vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice, vulkan_image::VulkanImage,
 };
 use ash::{
@@ -14,7 +14,7 @@ use ash::{
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
-
+#[repr(C)]
 pub struct VulkanSwapchain {
     pub image_format: SurfaceFormatKHR,
     pub max_frames_in_flight: u8,
@@ -495,7 +495,7 @@ impl VulkanSwapchain {
         present_queue: &Queue,
         render_complete_semaphore: &Semaphore,
         present_image_index: u32,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let present_info = PresentInfoKHR::default()
             .wait_semaphores(std::slice::from_ref(render_complete_semaphore))
             .swapchains(std::slice::from_ref(&self.swapchain))
@@ -505,12 +505,12 @@ impl VulkanSwapchain {
                 .queue_present(*present_queue, &present_info)
         };
         match res {
-            Ok(_) => return Ok(()),
+            Ok(_) => return Ok(true),
             // recreate swapchain
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
                 //TODO: recreate swapchain
                 //VulkanContext::recreate_swapchain()?;
-                return Ok(());
+                return Ok(false);
             }
             _ => {
                 return Err(VulkanBackendError::OperationFailed {

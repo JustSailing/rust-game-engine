@@ -3,10 +3,11 @@ use ash::vk::{
     CommandBufferResetFlags, CommandBufferUsageFlags, CommandPool, Fence, Queue, SubmitInfo,
 };
 
-use super::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
+use crate::application::renderer::vulkan::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
+#[repr(C)]
 pub enum CommandBufferState {
     Ready,
     Reset,
@@ -17,6 +18,7 @@ pub enum CommandBufferState {
     NotAllocated,
 }
 
+#[repr(C)]
 pub struct VulkanCommandBuffer {
     pub command_buffer: Vec<CommandBuffer>,
     pub state: CommandBufferState,

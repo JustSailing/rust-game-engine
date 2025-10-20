@@ -291,7 +291,7 @@ impl TextureSystem {
     }
 
     pub fn register_texture(&mut self, name: &String, tex_ref: &TextureRef) -> Result<()> {
-        *self.registered_textures[tex_ref.handle].borrow_mut() = self.load_texture(&name)?;
+        self.registered_textures[tex_ref.handle].replace(self.load_texture(&name)?);
         self.registered_textures[tex_ref.handle].borrow_mut().id = tex_ref.handle;
         self.registered_textures_hashmap
             .insert(name.clone(), *tex_ref);
@@ -327,7 +327,7 @@ impl TextureSystem {
                     file: file!(),
                     line: line!(),
                 })?;
-            *self.registered_textures[tex_ref.handle].borrow_mut() = Texture::default();
+            self.registered_textures[tex_ref.handle].replace(Texture::default());
             // don't think i need the 2 lines below
             tex_ref.handle = INVALID_ID;
             tex_ref.auto_release = false;
@@ -342,41 +342,12 @@ impl TextureSystem {
         Ok(Rc::clone(&self.default_texture))
     }
 
-    pub fn shutdown(&self) -> Result<()> {
-        self.destroy_default_texture()?;
-        for texture in self.registered_textures.iter() {
-            if texture.borrow().id != INVALID_ID {
-                self.registered_textures_hashmap
-                    .iter()
-                    .find_map(|(key, value)| {
-                        if value.handle == texture.borrow().id && !value.auto_release {
-                            println!("WARN: did not free texture name: {}", key);
-                            Some(())
-                        } else {
-                            None
-                        }
-                    });
-
-                self.frontend_renderer
-                    .borrow()
-                    .destroy_texture(&texture.borrow())
-                    .map_err(|e| TextureSysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-            }
-        }
-        Ok(())
-    }
+    
 }
 
 impl Drop for TextureSystem {
     fn drop(&mut self) {
-        //if self.default_texture.borrow().id != INVALID_ID {
         let _ = self.destroy_default_texture();
-        //}
-
         for texture in self.registered_textures.iter() {
             if texture.borrow().id != INVALID_ID {
                 self.registered_textures_hashmap

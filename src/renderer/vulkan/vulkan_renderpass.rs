@@ -8,12 +8,13 @@ use ash::vk::{
 
 use crate::application::basic::math::vec4::Vec4;
 
-use super::vulkan_backend::VulkanBackendError;
-use super::vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer};
-use super::vulkan_device::VulkanDevice;
+use crate::application::renderer::vulkan::vulkan_backend::VulkanBackendError;
+use crate::application::renderer::vulkan::vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer};
+use crate::application::renderer::vulkan::vulkan_device::VulkanDevice;
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
+#[repr(C)]
 pub enum RenderPassState {
     Ready,
     Recording,
@@ -24,6 +25,7 @@ pub enum RenderPassState {
 }
 
 #[derive(PartialEq, Eq)]
+#[repr(C)]
 pub enum ClearFlag {
     None,
     ColourBuffer = 1 << 1,
@@ -49,6 +51,7 @@ impl ClearFlag {
     }
 }
 
+#[repr(C)]
 pub struct VulkanRenderPass {
     pub renderpass: RenderPass,
     pub render_area: Vec4,

@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::ptr::copy_nonoverlapping as memcpy;
 
-use super::{
+use crate::application::renderer::vulkan::{
     vulkan_backend::VulkanBackendError, vulkan_backend::VulkanContext,
     vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
 };
@@ -14,6 +14,7 @@ use ash::vk::{
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct VulkanBuffer {
     pub buffer: Buffer,
     size: u64,

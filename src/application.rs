@@ -16,10 +16,13 @@ use std::{ptr, thread};
 use thiserror::Error;
 
 use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{Vec3, Vector2D};
-use crate::application::resources::resource_types::{ResourceData, ResourceType};
-use crate::application::systems::geometry_system::GeometryConfig;
-use crate::application::systems::material_system::BUILTIN_SHADER_NAME_UI;
+use crate::application::basic::math::vec3::{Vec3, Vector2D, Vector3D};
+use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
+use crate::application::resources::resource_types::{GeometryConfig, ResourceData, ResourceType};
+
+use crate::application::systems::material_system::{
+    BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI,
+};
 use crate::application::systems::shader_system::{ShaderSysConfig, ShaderSysError, ShaderSystem};
 use crate::{Game, GameState};
 use basic::event::{EventCallback, EventCodes, EventSysError, EventSystem};
@@ -249,7 +252,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let shader_config = ShaderSysConfig {
+        let shader_sys_config = ShaderSysConfig {
             max_shader_count: 1024,
             max_uniform_count: 128,
             max_global_textures: 31,
@@ -257,7 +260,7 @@ impl<'a> ApplicationState<'a> {
         };
         let shader_system = Rc::new(RefCell::new(
             ShaderSystem::initialize(
-                shader_config,
+                shader_sys_config,
                 renderer_system.clone(),
                 texture_system.clone(),
             )
@@ -268,7 +271,35 @@ impl<'a> ApplicationState<'a> {
             })?,
         ));
 
-        let ui_shader_resource = resource_system
+        let material_shader = resource_system
+            .borrow()
+            .load(BUILTIN_SHADER_NAME_MATERIAL, ResourceType::Shader)
+            .map_err(|e| AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        let material_shader_config = match material_shader.data {
+            ResourceData::ShaderResourceData(ref shader_config) => shader_config,
+            _ => {
+                return Err(AppError::OperationFailed {
+                    issue: "Wrong resource type. Expected: shader config".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+        };
+
+        shader_system
+            .borrow_mut()
+            .create(material_shader_config)
+            .map_err(|e| AppError::ShaderSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        let ui_shader = resource_system
             .borrow()
             .load(BUILTIN_SHADER_NAME_UI, ResourceType::Shader)
             .map_err(|e| AppError::ResourceSysError {
@@ -277,35 +308,11 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let ui_shader_config = match ui_shader_resource.data {
+        let ui_shader_config = match ui_shader.data {
             ResourceData::ShaderResourceData(ref shader_config) => shader_config,
-            ResourceData::Unknown => {
+            _ => {
                 return Err(AppError::OperationFailed {
-                    issue: "resource data issue: expected ShaderConfing given Unknown".to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::ImageResourceData(_) => {
-                return Err(AppError::OperationFailed {
-                    issue: "resource data issue: expected ShaderConfing given ImageResourceData"
-                        .to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::MaterialResourceData(_) => {
-                return Err(AppError::OperationFailed {
-                    issue: "resource data issue: expected ShaderConfing given MaterialResourceData"
-                        .to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::BinaryResourceData(_) => {
-                return Err(AppError::OperationFailed {
-                    issue: "resource data issue: expected ShaderConfing given BinaryResourceData"
-                        .to_string(),
+                    issue: "Wrong resource type. Expected: shader config".to_string(),
                     file: file!(),
                     line: line!(),
                 });
@@ -486,9 +493,40 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
+        const FACTOR: f32 = 10.0;
+        const VERT_COUNT: usize = 4;
+        let verts: [Vector3D; VERT_COUNT] = [
+            Vector3D {
+                position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(0.0, 0.0),
+            },
+            Vector3D {
+                position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(1.0, 1.0),
+            },
+            Vector3D {
+                position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(0.0, 1.0),
+            },
+            Vector3D {
+                position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
+                texcoord: Vec2::new(1.0, 0.0),
+            },
+        ];
+
+        const INDEX_COUNT: usize = 6;
+        let indices: [u32; INDEX_COUNT] = [0, 1, 2, 0, 3, 1];
+
+        let material_config = GeometryConfig::<Vector3D, u32> {
+            vertices: Vec::from(verts),
+            indices: Vec::from(indices),
+            name: String::from("test_geometry"),
+            material_name: String::from("test_material"),
+        };
+
         let test_geometry = geometry_system
-            .borrow()
-            .get_default_geometry()
+            .borrow_mut()
+            .acquire_from_config(material_config, true)
             .map_err(|e| AppError::GeometrySysError {
                 source: e,
                 file: file!(),
@@ -557,35 +595,189 @@ impl<'a> ApplicationState<'a> {
                         line: line!(),
                     });
                 }
-                let geo = Rc::clone(&self.test_geometry);
 
                 let test_render = GeometryRenderData {
                     model: Matrix4::identity(),
-                    geometry: geo,
+                    geometry: Rc::clone(&self.test_geometry),
                 };
-                let mut geometries = Vec::new();
-                geometries.push(test_render);
 
                 let test_ui_render = GeometryRenderData {
                     model: Matrix4::translation(&Vec3::new(0.0, 0.0, 0.0)),
                     geometry: Rc::clone(&self.test_ui_geometry),
                 };
+
+                let mut geometries = Vec::new();
+                geometries.push(test_render.clone());
+
                 let mut ui_geometries = Vec::new();
-                ui_geometries.push(test_ui_render);
+                ui_geometries.push(test_ui_render.clone());
 
                 let mut render_packet = RendererPacket {
                     delta_time: delta,
                     geometries: geometries,
                     ui_geometries: ui_geometries,
                 };
+
+                match self
+                    .renderer_system
+                    .borrow_mut()
+                    .begin_frame(&mut render_packet)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })? {
+                    true => {}
+                    false => continue,
+                }
+
                 self.renderer_system
                     .borrow_mut()
-                    .draw_frame(&mut render_packet)
+                    .begin_renderpass(BuiltInRenderpass::World)
                     .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     })?;
+                self.shader_system
+                    .borrow_mut()
+                    .use_by_id(test_render.geometry.borrow().material.borrow().shader_id)
+                    .map_err(|e| AppError::ShaderSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow_mut()
+                    .apply_global(
+                        test_render.geometry.borrow().material.borrow().shader_id as u32,
+                         &self.renderer_system.borrow().projection,
+                        &self.renderer_system.borrow().view,
+                    )
+                    .map_err(|e| AppError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow()
+                    .apply_instance(&test_render.geometry.borrow_mut().material.borrow())
+                    .map_err(|e| AppError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow()
+                    .apply_local(
+                        &test_render.geometry.borrow_mut().material.borrow(),
+                        &test_render.model,
+                    )
+                    .map_err(|e| AppError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.renderer_system
+                    .borrow_mut()
+                    .draw_geometry(&mut render_packet.geometries, render_packet.delta_time)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.renderer_system
+                    .borrow_mut()
+                    .end_renderpass(BuiltInRenderpass::World)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.renderer_system
+                    .borrow_mut()
+                    .begin_renderpass(BuiltInRenderpass::UI)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+                self.shader_system
+                    .borrow_mut()
+                    .use_by_id(test_ui_render.geometry.borrow().material.borrow().shader_id)
+                    .map_err(|e| AppError::ShaderSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow_mut()
+                    .apply_global(
+                        test_ui_render.geometry.borrow().material.borrow().shader_id as u32,
+                        &self.renderer_system.borrow().ui_projection,
+                        &self.renderer_system.borrow().ui_view,
+                    )
+                    .map_err(|e| AppError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow()
+                    .apply_instance(&test_ui_render.geometry.borrow_mut().material.borrow())
+                    .map_err(|e| AppError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_system
+                    .borrow()
+                    .apply_local(
+                        &test_ui_render.geometry.borrow_mut().material.borrow(),
+                        &test_ui_render.model,
+                    )
+                    .map_err(|e| AppError::MaterialSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.renderer_system
+                    .borrow_mut()
+                    .draw_geometry(&mut render_packet.ui_geometries, render_packet.delta_time)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.renderer_system
+                    .borrow_mut()
+                    .end_renderpass(BuiltInRenderpass::UI)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.renderer_system
+                    .borrow_mut()
+                    .end_frame(render_packet.delta_time)
+                    .map_err(|e| AppError::RendererSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
                 let elapsed_since_last_frame = last_frame_time.elapsed();
                 if elapsed_since_last_frame < frame_duration {
                     thread::sleep(frame_duration - elapsed_since_last_frame);

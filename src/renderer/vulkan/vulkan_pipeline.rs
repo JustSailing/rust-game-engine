@@ -13,7 +13,7 @@ use ash::vk::{
 
 use crate::application::systems::shader_system::Range;
 
-use super::{
+use crate::application::renderer::vulkan::{
     vulkan_backend::VulkanBackendError, vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice, vulkan_renderpass::VulkanRenderPass,
 };
@@ -21,6 +21,7 @@ use super::{
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct VulkanPipeline {
     pipeline: Pipeline,
     pub layout: PipelineLayout,

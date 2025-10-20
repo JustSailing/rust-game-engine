@@ -7,6 +7,7 @@ use crate::application::{
 use ash::vk::Sampler;
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub struct Texture {
     pub id: usize,
     pub width: u32,
@@ -54,24 +55,28 @@ impl Default for Texture {
     }
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub struct TextureData {
     pub image: VulkanImage,
     pub sampler: Sampler,
 }
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub enum TextureUse {
     Unknown = 0x00,
     MapDiffuse = 0x01,
 }
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct TextureMap {
     pub texture: Rc<RefCell<Texture>>,
     pub use_type: TextureUse,
 }
 
 #[derive(Clone, Debug)]
+#[repr(C)]
 pub struct MaterialConfig {
     pub name: String,
     pub shader_name: String,
@@ -98,7 +103,7 @@ impl MaterialConfig {
         self
     }
 }
-
+#[repr(C)]
 #[derive(Debug)]
 pub struct Material {
     pub id: usize,
@@ -127,7 +132,17 @@ impl Default for Material {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Default)]
+pub struct GeometryConfig<T: Clone, U: Clone> {
+    pub vertices: Vec<T>,
+    pub indices: Vec<U>,
+    pub name: String,
+    pub material_name: String,
+}
+
 #[derive(Debug)]
+#[repr(C)]
 pub struct Geometry {
     pub id: usize,
     pub internal_id: usize,
@@ -149,6 +164,7 @@ impl Default for Geometry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
 pub enum ResourceType {
     Text,
     Binary,
@@ -160,6 +176,7 @@ pub enum ResourceType {
     Unknown,
 }
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub enum ResourceData {
     Unknown,
     ImageResourceData(ImageData),
@@ -174,6 +191,7 @@ impl Default for ResourceData {
     }
 }
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub struct Resource {
     pub loader_id: usize,
     pub name: String,
@@ -193,6 +211,7 @@ impl Default for Resource {
 }
 
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub struct ImageData {
     pub channel_count: u8,
     pub width: u32,
@@ -201,6 +220,7 @@ pub struct ImageData {
 }
 
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub enum ShaderStage {
     Vertex = 0x1,
     Geometry = 0x2,
@@ -209,6 +229,7 @@ pub enum ShaderStage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
 pub enum ShaderAttributeType {
     Float32 = 0,
     Float32_2 = 1,
@@ -225,6 +246,7 @@ pub enum ShaderAttributeType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
 pub enum ShaderUniformType {
     Float32 = 0,
     Float32_2 = 1,
@@ -243,6 +265,7 @@ pub enum ShaderUniformType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(C)]
 pub enum ShaderScope {
     Global = 0,
     Instance = 1,
@@ -251,12 +274,14 @@ pub enum ShaderScope {
 }
 
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub struct ShaderAttributeConfig {
     pub name: String,
     pub size: usize,
     pub attribute_type: ShaderAttributeType,
 }
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub struct ShaderUniformConfig {
     pub name: String,
     pub size: usize,
@@ -266,6 +291,7 @@ pub struct ShaderUniformConfig {
 }
 
 #[derive(Debug, Clone)]
+#[repr(C)]
 pub struct ShaderConfig {
     pub name: String,
     pub use_instances: bool,

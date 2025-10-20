@@ -131,11 +131,12 @@ pub struct VulkanShaderConfig<'a> {
     pool_sizes: [DescriptorPoolSize; 2],
     max_descriptor_set_count: u16,
     descriptor_set_count: u8,
-    descriptor_sets: [VulkanDescriptorSetConfig<'a>; 2],
+    vulkan_shader_config_descriptor_sets: [VulkanDescriptorSetConfig<'a>; 2],
     attributes: [VertexInputAttributeDescription; VULKAN_SHADER_MAX_ATTRIBUTES],
 }
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct VulkanDescriptorState {
     generations: [u8; 3],
     ids: [u32; 3],
@@ -153,11 +154,12 @@ impl Default for VulkanDescriptorState {
 #[derive(Default, Clone)]
 #[repr(C)]
 pub struct VulkanShaderDescriptorSetState {
-    descriptor_sets: [DescriptorSet; 3],
+    vulkan_shader_config_descriptor_sets: [DescriptorSet; 3],
     descriptor_states: [VulkanDescriptorState; VULKAN_SHADER_MAX_BINDINGS],
 }
 
 #[derive(Clone)]
+#[repr(C)]
 pub struct VulkanShaderInstanceState {
     id: u32,
     offset: u64,
@@ -180,7 +182,7 @@ impl Default for VulkanShaderInstanceState {
 #[repr(C)]
 pub struct VulkanShader<'a> {
     pub mapped_uniform_block: *mut c_void,
-    config: VulkanShaderConfig<'a>,
+    vulkan_shader_config: VulkanShaderConfig<'a>,
     renderpass: BuiltInRenderpass,
     stages: [VulkanShaderStage<'a>; VULKAN_SHADER_MAX_STAGES],
     descriptor_pool: DescriptorPool,
@@ -191,7 +193,7 @@ pub struct VulkanShader<'a> {
     instance_count: u32,
     instance_states: [VulkanShaderInstanceState; VULKAN_MAX_MATERIAL_COUNT],
 }
-
+#[repr(C)]
 #[derive(Clone, Copy)]
 struct VulkanGeometryData {
     id: usize,
@@ -220,16 +222,19 @@ impl Default for VulkanGeometryData {
 }
 
 #[derive(Clone)]
+#[repr(C)]
 pub enum BuiltInRenderpass {
     World,
     UI,
 }
 
+#[repr(C)]
 pub struct VulkanContext {
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
     dbg_util_loader: debug_utils::Instance,
+    image_index: u32,
     default_texture: Rc<RefCell<Texture>>,
     resource_system: Rc<RefCell<ResourceSystem>>,
     frame_delta_time: f32,
@@ -245,7 +250,6 @@ pub struct VulkanContext {
     world_framebuffers: Vec<Framebuffer>,
     main_renderpass: VulkanRenderPass,
     ui_renderpass: VulkanRenderPass,
-    image_index: u32,
     recreating_swapchain: bool,
     swapchain: VulkanSwapchain,
     frame_buffer_size_generation: u32,
@@ -464,9 +468,8 @@ impl<'a> VulkanContext {
                 geometries: geometries,
                 object_index_buffer: index_buffer,
                 object_vertex_buffer: vertex_buffer,
-
-                images_in_flight: images_in_flight,
                 image_index: 0,
+                images_in_flight: images_in_flight,
                 recreating_swapchain: false,
                 in_flight_frames: in_flight_frames,
                 graphics_cmd_bufs: graph_cmd_buf,
@@ -501,9 +504,8 @@ impl<'a> VulkanContext {
                 geometries: geometries,
                 object_index_buffer: index_buffer,
                 object_vertex_buffer: vertex_buffer,
-
-                images_in_flight: images_in_flight,
                 image_index: 0,
+                images_in_flight: images_in_flight,
                 recreating_swapchain: false,
                 in_flight_frames,
                 graphics_cmd_bufs: graph_cmd_buf,
@@ -608,10 +610,6 @@ impl<'a> VulkanContext {
             }
         }
 
-        // this should be in end frame
-        // self.images_in_flight[self.image_index as usize] =
-        //     Some(&self.in_flight_frames.sync_objs[current_frame as usize]);
-
         let command_buffer = &mut self.graphics_cmd_bufs;
         command_buffer.reset(&self.device, current_frame)?;
         command_buffer.begin(&self.device, false, false, false, current_frame as usize)?;
@@ -663,10 +661,10 @@ impl<'a> VulkanContext {
     }
 
     pub fn end_frame(&mut self, _delta: f32) -> Result<()> {
-        let image_index = self.image_index;
+        let current_frame = self.in_flight_frames.current_frame;
         let command_buff = &mut self.graphics_cmd_bufs;
 
-        command_buff.end(&self.device, self.in_flight_frames.current_frame as usize)?;
+        command_buff.end(&self.device, current_frame as usize)?;
 
         if let Some(sync_obj) = *self.images_in_flight[self.image_index as usize].borrow_mut() {
             match sync_obj.fence_wait(&self.device, u64::MAX) {
@@ -674,7 +672,7 @@ impl<'a> VulkanContext {
                 Err(e) => return Err(e),
             }
         }
-        self.images_in_flight[image_index as usize].replace(Some(
+        self.images_in_flight[self.image_index as usize].replace(Some(
             self.in_flight_frames.sync_objs[self.in_flight_frames.current_frame],
         ));
 
@@ -710,13 +708,15 @@ impl<'a> VulkanContext {
             )?;
         }
 
-        self.swapchain.present(
+        if !self.swapchain.present(
             &self.device.graphics_queue,
             &self.device.present_queue,
             &self.in_flight_frames.sync_objs[self.in_flight_frames.current_frame]
                 .render_finished_semaphore,
             self.image_index,
-        )?;
+        )? {
+            self.recreate_swapchain()?;
+        }
 
         self.in_flight_frames.current_frame = (self.in_flight_frames.current_frame + 1)
             % self.swapchain.max_frames_in_flight as usize;
@@ -1207,13 +1207,13 @@ impl<'a> VulkanContext {
     ) -> Result<()> {
         let max_descriptor_allocate_count: u32 = 1024;
 
-        let mut config_stage_count: usize = 0;
+        let mut vulkan_shader_config_stage_count: usize = 0;
 
-        let mut config_stages: [VulkanShaderStageConfig; VULKAN_SHADER_MAX_STAGES] =
+        let mut vulkan_shader_config_stages: [VulkanShaderStageConfig; VULKAN_SHADER_MAX_STAGES] =
             [(); VULKAN_SHADER_MAX_STAGES].map(|_| VulkanShaderStageConfig::default());
 
         for i in 0..stage_count {
-            if config_stage_count + 1 > VULKAN_SHADER_MAX_STAGES {
+            if vulkan_shader_config_stage_count + 1 > VULKAN_SHADER_MAX_STAGES {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "shader reached maximum shader stages",
                     file: file!(),
@@ -1227,9 +1227,10 @@ impl<'a> VulkanContext {
                 _ => println!("stage flag unsupported"),
             }
 
-            config_stages[config_stage_count].stage = stage_flag;
-            config_stages[config_stage_count].file_name = stage_filenames[i as usize].clone();
-            config_stage_count += 1;
+            vulkan_shader_config_stages[vulkan_shader_config_stage_count].stage = stage_flag;
+            vulkan_shader_config_stages[vulkan_shader_config_stage_count].file_name =
+                stage_filenames[i as usize].clone();
+            vulkan_shader_config_stage_count += 1;
         }
 
         let pool_sizes: [DescriptorPoolSize; 2] = [
@@ -1255,9 +1256,10 @@ impl<'a> VulkanContext {
         global_descriptor_set_config.binding_count += 1;
 
         let mut descriptor_count = 0;
-        let mut descriptor_sets: [VulkanDescriptorSetConfig; 2] =
+        let mut vulkan_shader_config_descriptor_sets: [VulkanDescriptorSetConfig; 2] =
             [(); 2].map(|_| VulkanDescriptorSetConfig::default());
-        descriptor_sets[DESC_SET_INDEX_GLOBAL] = global_descriptor_set_config;
+
+        vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_GLOBAL] = global_descriptor_set_config;
         descriptor_count += 1;
 
         if shader.use_instances {
@@ -1275,17 +1277,18 @@ impl<'a> VulkanContext {
                 ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
             instance_descriptor_set_config.binding_count += 1;
 
-            descriptor_sets[DESC_SET_INDEX_INSTANCE] = instance_descriptor_set_config;
+            vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_INSTANCE] =
+                instance_descriptor_set_config;
             descriptor_count += 1;
         }
 
         let vulkan_shader_config: VulkanShaderConfig = VulkanShaderConfig {
-            stage_count: config_stage_count as u8,
-            stages: config_stages,
+            stage_count: vulkan_shader_config_stage_count as u8,
+            stages: vulkan_shader_config_stages,
             pool_sizes: pool_sizes,
             max_descriptor_set_count: max_descriptor_allocate_count as u16,
             descriptor_set_count: descriptor_count,
-            descriptor_sets: descriptor_sets,
+            vulkan_shader_config_descriptor_sets: vulkan_shader_config_descriptor_sets,
             attributes: [(); VULKAN_SHADER_MAX_ATTRIBUTES]
                 .map(|_| VertexInputAttributeDescription::default()),
         };
@@ -1297,7 +1300,7 @@ impl<'a> VulkanContext {
     pub fn shader_initialize(
         &self,
         shader: &mut Shader,
-        mut config: VulkanShaderConfig<'a>,
+        mut vulkan_shader_config: VulkanShaderConfig<'a>,
         renderpass_id: BuiltInRenderpass,
     ) -> Result<VulkanShader<'a>> {
         let renderpass = match renderpass_id {
@@ -1310,8 +1313,8 @@ impl<'a> VulkanContext {
             shader_stage_create_info: PipelineShaderStageCreateInfo::default(),
         }; VULKAN_SHADER_MAX_STAGES];
 
-        for i in 0..config.stage_count as usize {
-            vulkan_shader_stages[i] = self.create_shader_module(&config, i)?;
+        for i in 0..vulkan_shader_config.stage_count as usize {
+            vulkan_shader_stages[i] = self.create_shader_module(&vulkan_shader_config, i)?;
         }
 
         let attr_formats = HashMap::from([
@@ -1345,7 +1348,7 @@ impl<'a> VulkanContext {
                         .get(&(shader.attributes[i].attribute_type as u32))
                         .unwrap(),
                 );
-            config.attributes[i] = attribute;
+            vulkan_shader_config.attributes[i] = attribute;
             offset += shader.attributes[i].size;
         }
 
@@ -1357,7 +1360,8 @@ impl<'a> VulkanContext {
                 } else {
                     DESC_SET_INDEX_INSTANCE
                 };
-                let set_config = &mut config.descriptor_sets[set_index];
+                let set_config =
+                    &mut vulkan_shader_config.vulkan_shader_config_descriptor_sets[set_index];
                 if set_config.binding_count < 2 {
                     set_config.bindings[BINDING_INDEX_SAMPLER].binding =
                         BINDING_INDEX_SAMPLER as u32;
@@ -1374,8 +1378,8 @@ impl<'a> VulkanContext {
         }
 
         let pool_info = DescriptorPoolCreateInfo::default()
-            .max_sets(config.max_descriptor_set_count as u32)
-            .pool_sizes(&config.pool_sizes)
+            .max_sets(vulkan_shader_config.max_descriptor_set_count as u32)
+            .pool_sizes(&vulkan_shader_config.pool_sizes)
             .flags(DescriptorPoolCreateFlags::FREE_DESCRIPTOR_SET);
 
         let descriptor_pool = unsafe {
@@ -1389,8 +1393,10 @@ impl<'a> VulkanContext {
 
         for (i, set_layout) in descriptor_set_layout.iter_mut().enumerate() {
             let mut layout_info = DescriptorSetLayoutCreateInfo::default();
-            layout_info.p_bindings = &config.descriptor_sets[i].bindings as *const _;
-            layout_info.binding_count = config.descriptor_sets[i].binding_count as u32;
+            layout_info.p_bindings =
+                &vulkan_shader_config.vulkan_shader_config_descriptor_sets[i].bindings as *const _;
+            layout_info.binding_count =
+                vulkan_shader_config.vulkan_shader_config_descriptor_sets[i].binding_count as u32;
             *set_layout = unsafe {
                 self.device
                     .device
@@ -1416,7 +1422,7 @@ impl<'a> VulkanContext {
         let mut pipeline_create_infos =
             [PipelineShaderStageCreateInfo::default(); VULKAN_SHADER_MAX_STAGES];
 
-        for i in 0..config.stage_count as usize {
+        for i in 0..vulkan_shader_config.stage_count as usize {
             pipeline_create_infos[i] = vulkan_shader_stages[i].shader_stage_create_info;
         }
 
@@ -1425,10 +1431,10 @@ impl<'a> VulkanContext {
             renderpass,
             shader.attribute_stride as u32,
             attribute_count as u32,
-            &config.attributes,
+            &vulkan_shader_config.attributes,
             2,
             &descriptor_set_layout,
-            config.stage_count as u32,
+            vulkan_shader_config.stage_count as u32,
             &pipeline_create_infos,
             view_port,
             scissor,
@@ -1472,7 +1478,7 @@ impl<'a> VulkanContext {
             unsafe { self.device.device.allocate_descriptor_sets(&alloc_info)? };
         let vulkan_shader = VulkanShader {
             mapped_uniform_block: mapped_memory,
-            config: config,
+            vulkan_shader_config: vulkan_shader_config,
             renderpass: renderpass_id,
             stages: vulkan_shader_stages,
             descriptor_pool,
@@ -1489,13 +1495,13 @@ impl<'a> VulkanContext {
 
     fn create_shader_module(
         &self,
-        config: &VulkanShaderConfig,
+        vulkan_shader_config: &VulkanShaderConfig,
         index: usize,
     ) -> Result<VulkanShaderStage<'a>> {
-        let bin_res = self
-            .resource_system
-            .borrow()
-            .load(&config.stages[index].file_name, ResourceType::Binary)?;
+        let bin_res = self.resource_system.borrow().load(
+            &vulkan_shader_config.stages[index].file_name,
+            ResourceType::Binary,
+        )?;
         let data = match bin_res.data {
             ResourceData::Unknown => {
                 return Err(VulkanBackendError::OperationFailed {
@@ -1549,7 +1555,7 @@ impl<'a> VulkanContext {
         };
 
         let pipeline_shader_stage_create_info = PipelineShaderStageCreateInfo::default()
-            .stage(config.stages[index].stage)
+            .stage(vulkan_shader_config.stages[index].stage)
             .module(shader_module)
             .name(c"main");
 
@@ -1570,7 +1576,10 @@ impl<'a> VulkanContext {
                 });
             }
         };
-        for i in 0..s.config.descriptor_set_count as usize {
+        unsafe {
+            let _ = self.device.device.device_wait_idle();
+        }
+        for i in 0..s.vulkan_shader_config.descriptor_set_count as usize {
             unsafe {
                 self.device
                     .device
@@ -1594,7 +1603,7 @@ impl<'a> VulkanContext {
 
         s.pipeline.destroy(&self.device);
 
-        for i in 0..s.config.stage_count as usize {
+        for i in 0..s.vulkan_shader_config.stage_count as usize {
             unsafe {
                 self.device
                     .device
@@ -1607,7 +1616,7 @@ impl<'a> VulkanContext {
             stage.shader_stage_create_info = PipelineShaderStageCreateInfo::default();
         }
 
-        s.config = VulkanShaderConfig::default();
+        s.vulkan_shader_config = VulkanShaderConfig::default();
         shader.internal_data = ShaderInternalData::Unknown;
 
         Ok(())
@@ -1668,8 +1677,19 @@ impl<'a> VulkanContext {
             }
         };
 
-        let image_index = self.image_index;
-        let global_descriptor = internal_data.global_descriptor_sets[image_index as usize];
+        let current_frame = self.in_flight_frames.current_frame;
+        let global_descriptor = internal_data.global_descriptor_sets[current_frame as usize];
+
+        unsafe {
+            self.device.device.cmd_bind_descriptor_sets(
+                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
+                PipelineBindPoint::GRAPHICS,
+                internal_data.pipeline.layout,
+                0,
+                std::slice::from_ref(&global_descriptor),
+                &[],
+            );
+        }
 
         let buffer_info = DescriptorBufferInfo::default()
             .buffer(internal_data.uniform_buffer.buffer)
@@ -1680,12 +1700,14 @@ impl<'a> VulkanContext {
             .buffer_info(std::slice::from_ref(&buffer_info))
             .descriptor_count(1)
             .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-            .dst_set(internal_data.global_descriptor_sets[image_index as usize]);
+            .dst_set(global_descriptor);
 
         let mut descriptor_writes = [WriteDescriptorSet::default(); 2];
         descriptor_writes[0] = ubo_write;
-        let mut global_set_binding_count =
-            internal_data.config.descriptor_sets[DESC_SET_INDEX_GLOBAL].binding_count;
+        let mut global_set_binding_count = internal_data
+            .vulkan_shader_config
+            .vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_GLOBAL]
+            .binding_count;
 
         if global_set_binding_count > 1 {
             global_set_binding_count = 0;
@@ -1696,14 +1718,6 @@ impl<'a> VulkanContext {
             self.device
                 .device
                 .update_descriptor_sets(&descriptor_writes[0..1], &[]);
-            self.device.device.cmd_bind_descriptor_sets(
-                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
-                PipelineBindPoint::GRAPHICS,
-                internal_data.pipeline.layout,
-                0,
-                std::slice::from_ref(&global_descriptor),
-                &[],
-            );
         }
         Ok(())
     }
@@ -1720,8 +1734,20 @@ impl<'a> VulkanContext {
         };
 
         let object_state = &mut internal_data.instance_states[shader.bound_instance_id];
-        let object_descriptor_set =
-            object_state.descriptor_set_state.descriptor_sets[self.image_index as usize];
+        let object_descriptor_set = object_state
+            .descriptor_set_state
+            .vulkan_shader_config_descriptor_sets[self.in_flight_frames.current_frame as usize];
+
+        unsafe {
+            self.device.device.cmd_bind_descriptor_sets(
+                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
+                PipelineBindPoint::GRAPHICS,
+                internal_data.pipeline.layout,
+                1,
+                std::slice::from_ref(&object_descriptor_set),
+                &[],
+            );
+        }
 
         let mut descriptor_writes = [WriteDescriptorSet::default(); 2];
 
@@ -1730,7 +1756,7 @@ impl<'a> VulkanContext {
 
         let instance_ubo_generation = &mut object_state.descriptor_set_state.descriptor_states
             [descriptor_index as usize]
-            .generations[self.image_index as usize];
+            .generations[self.in_flight_frames.current_frame as usize];
 
         let buffer_info = DescriptorBufferInfo::default()
             .buffer(internal_data.uniform_buffer.buffer)
@@ -1746,24 +1772,36 @@ impl<'a> VulkanContext {
                 .dst_binding(descriptor_index);
             descriptor_writes[descriptor_count] = ubo_descriptor;
             descriptor_count += 1;
-            *instance_ubo_generation += 1;
+            *instance_ubo_generation = 1;
         }
         descriptor_index += 1;
 
-        if internal_data.config.descriptor_sets[DESC_SET_INDEX_INSTANCE].binding_count > 1 {
-            let total_sampler_count = internal_data.config.descriptor_sets[DESC_SET_INDEX_INSTANCE]
+        if internal_data
+            .vulkan_shader_config
+            .vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_INSTANCE]
+            .binding_count
+            > 1
+        {
+            let total_sampler_count = internal_data
+                .vulkan_shader_config
+                .vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_INSTANCE]
                 .bindings[BINDING_INDEX_SAMPLER]
                 .descriptor_count;
             let mut update_sampler_count = 0;
             let mut image_infos =
                 [DescriptorImageInfo::default(); VULKAN_SHADER_MAX_GLOBAL_TEXTURES];
             for i in 0..total_sampler_count {
-                let t = internal_data.instance_states[shader.bound_instance_id].instance_textures
-                    [i as usize]
-                    .borrow();
-                image_infos[i as usize].image_view = t.internal_data.image.view.unwrap();
+                // using default texture temporarily
+                image_infos[i as usize].image_view = self
+                    .default_texture
+                    .borrow()
+                    .internal_data
+                    .image
+                    .view
+                    .unwrap();
                 image_infos[i as usize].image_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
-                image_infos[i as usize].sampler = t.internal_data.sampler;
+                image_infos[i as usize].sampler =
+                    self.default_texture.borrow().internal_data.sampler;
                 update_sampler_count += 1;
             }
 
@@ -1790,17 +1828,6 @@ impl<'a> VulkanContext {
                     .device
                     .update_descriptor_sets(&descriptor_writes, &[]);
             }
-        }
-
-        unsafe {
-            self.device.device.cmd_bind_descriptor_sets(
-                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
-                PipelineBindPoint::GRAPHICS,
-                internal_data.pipeline.layout,
-                1,
-                std::slice::from_ref(&object_descriptor_set),
-                &[],
-            );
         }
 
         Ok(())
@@ -1835,7 +1862,9 @@ impl<'a> VulkanContext {
 
         let instance_state = &mut internal_data.instance_states[instance_id as usize];
 
-        let instance_texture_count = internal_data.config.descriptor_sets[DESC_SET_INDEX_INSTANCE]
+        let instance_texture_count = internal_data
+            .vulkan_shader_config
+            .vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_INSTANCE]
             .bindings[BINDING_INDEX_SAMPLER]
             .descriptor_count;
 
@@ -1846,13 +1875,15 @@ impl<'a> VulkanContext {
         for _ in 0..instance_texture_count {
             instance_state
                 .instance_textures
-                .push(self.default_texture.clone());
+                .push(Rc::clone(&self.default_texture));
         }
 
         let set_state = &mut instance_state.descriptor_set_state;
 
-        let binding_count =
-            internal_data.config.descriptor_sets[DESC_SET_INDEX_INSTANCE].binding_count;
+        let binding_count = internal_data
+            .vulkan_shader_config
+            .vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_INSTANCE]
+            .binding_count;
 
         for i in 0..binding_count as usize {
             set_state.descriptor_states[i]
@@ -1877,7 +1908,9 @@ impl<'a> VulkanContext {
             .set_layouts(&layouts)
             .descriptor_pool(internal_data.descriptor_pool);
 
-        instance_state.descriptor_set_state.descriptor_sets = unsafe {
+        instance_state
+            .descriptor_set_state
+            .vulkan_shader_config_descriptor_sets = unsafe {
             match self.device.device.allocate_descriptor_sets(&alloc_info) {
                 Ok(ds) => ds.as_slice().try_into().unwrap(),
                 Err(_) => {
@@ -1915,7 +1948,9 @@ impl<'a> VulkanContext {
                 .device
                 .free_descriptor_sets(
                     internal_data.descriptor_pool,
-                    &instance_state.descriptor_set_state.descriptor_sets,
+                    &instance_state
+                        .descriptor_set_state
+                        .vulkan_shader_config_descriptor_sets,
                 )
                 .map_err(|_| VulkanBackendError::OperationFailed {
                     issue: "could not free descriptor sets",
@@ -1948,12 +1983,12 @@ impl<'a> VulkanContext {
         let uniform = shader.uniforms[uniform_index];
         if uniform.uniform_type == ShaderUniformType::Sampler {
             if uniform.shader_scope == ShaderScope::Global {
-                *shader.global_textures[uniform.location as usize].borrow_mut() =
-                    unsafe { *(value as *const Texture) };
+                shader.global_textures[uniform.location as usize] =
+                    Rc::new(RefCell::new(unsafe { *(value as *const Texture) }));
             } else {
-                *internal_data.instance_states[shader.bound_instance_id].instance_textures
-                    [uniform.location as usize]
-                    .borrow_mut() = unsafe { *(value as *const Texture) };
+                internal_data.instance_states[shader.bound_instance_id].instance_textures
+                    [uniform.location as usize] =
+                    Rc::new(RefCell::new(unsafe { *(value as *const Texture) }));
             }
         } else {
             if uniform.shader_scope == ShaderScope::Local {
@@ -1963,13 +1998,15 @@ impl<'a> VulkanContext {
                         internal_data.pipeline.layout,
                         ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
                         uniform.offset as u32,
-                        std::slice::from_raw_parts(value as *const u8, uniform.size),
+                        std::slice::from_raw_parts(value as *const _ as *const u8, uniform.size),
                     );
                 }
             } else {
                 let mut addr = internal_data.mapped_uniform_block;
                 addr = unsafe { addr.add(shader.bound_ubo_offset + uniform.offset) };
-                unsafe { std::ptr::copy_nonoverlapping(value, addr.cast(), uniform.size) };
+                unsafe {
+                    std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size)
+                };
             }
         }
         Ok(())

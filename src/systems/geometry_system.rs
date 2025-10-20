@@ -5,22 +5,13 @@ use crate::application::{
         vec3::{Vec3, Vector2D, Vector3D},
     },
     renderer::renderer_types::{Renderer, RendererError},
-    resources::resource_types::{Geometry, MaterialConfig},
+    resources::resource_types::{Geometry, GeometryConfig, MaterialConfig},
     systems::material_system::{MaterialSysError, MaterialSystem},
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use thiserror::Error;
 pub struct GeometrySysConfig {
     pub max_count: usize,
-}
-
-#[repr(C)]
-#[derive(Clone, Default)]
-pub struct GeometryConfig<T: Clone, U: Clone> {
-    pub vertices: Vec<T>,
-    pub indices: Vec<U>,
-    pub name: String,
-    pub material_name: String,
 }
 
 const DEFAULT_GEOMETRY_NAME: &'static str = "default";
@@ -187,6 +178,7 @@ impl<'a> GeometrySystem<'a> {
                     .handle(i)
                     .reference_count(1);
                 self.registered_geometries_hashmap.insert(i, geo_ref);
+                geo.borrow_mut().id = i;
                 break;
             }
         }
@@ -277,8 +269,7 @@ impl<'a> GeometrySystem<'a> {
     }
 
     pub fn destroy_geometry(&mut self, index: usize) -> Result<()> {
-        let geometry = &self.registered_geometries[index].borrow();
-        if geometry.id == INVALID_ID {
+        if self.registered_geometries[index].borrow().id == INVALID_ID {
             //WARN
             return Ok(());
         }
@@ -293,12 +284,12 @@ impl<'a> GeometrySystem<'a> {
 
         let geo_ref = self
             .registered_geometries_hashmap
-            .get_mut(&geometry.id)
+            .get_mut(&self.registered_geometries[index].borrow().id)
             .unwrap();
 
         self.material_system
             .borrow_mut()
-            .release(&geometry.material.borrow().name)
+            .release(&self.registered_geometries[index].borrow().material.borrow().name)
             .map_err(|e| GeometrySysError::MaterialSysError {
                 source: e,
                 file: file!(),
@@ -306,7 +297,7 @@ impl<'a> GeometrySystem<'a> {
             })?;
 
         *self.registered_geometries[geo_ref.handle].borrow_mut() = Geometry::default();
-        self.registered_geometries_hashmap.remove(&geometry.id);
+        self.registered_geometries_hashmap.remove(&self.registered_geometries[index].borrow().id);
         Ok(())
     }
 

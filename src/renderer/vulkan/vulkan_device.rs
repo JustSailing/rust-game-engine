@@ -1,4 +1,4 @@
-use super::vulkan_backend::VulkanBackendError;
+use crate::application::renderer::vulkan::vulkan_backend::VulkanBackendError;
 use ash::{
     Device, Instance,
     khr::surface,
@@ -13,6 +13,8 @@ use ash::{
 use std::ffi::CStr;
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
+
+#[repr(C)]
 struct PhysicalDeviceRequirements {
     graphics: bool,
     present: bool,
@@ -23,18 +25,22 @@ struct PhysicalDeviceRequirements {
     discrete_gpu: bool,
 }
 
+#[repr(C)]
 pub struct SwapchainSupportInfo {
     pub capabilities: Option<SurfaceCapabilitiesKHR>,
     pub formats: Vec<SurfaceFormatKHR>,
     pub present_modes: Vec<PresentModeKHR>,
 }
 
+#[repr(C)]
 struct PhysicalDeviceQueueFamilyInfo {
     graphics_family_index: i32,
     present_family_index: i32,
     compute_family_index: i32,
     transfer_family_index: i32,
 }
+
+#[repr(C)]
 pub struct VulkanDevice {
     pub device: Device,
     pub physical_device: PhysicalDevice,

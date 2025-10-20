@@ -1,9 +1,10 @@
 use ash::vk::{self, Fence, FenceCreateFlags, FenceCreateInfo, Semaphore, SemaphoreCreateInfo};
 
-use super::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
+use crate::application::renderer::vulkan::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct SyncObjects {
     pub image_avail_semaphore: Semaphore,
     pub render_finished_semaphore: Semaphore,

@@ -25,6 +25,12 @@ impl Matrix4 {
         ])
     }
 
+    pub fn new_ones() -> Self {
+        Self::new([
+            1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ])
+    }
+
     pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) -> Self {
         // 'f' is a scaling factor based on the vertical field of view (fovy).
         // A smaller fovy results in a larger scaling factor (more zoomed in).

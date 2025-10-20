@@ -92,7 +92,7 @@ impl Default for ShaderAttribute {
         }
     }
 }
-
+#[repr(C)]
 pub enum ShaderInternalData<'a> {
     Vulkan(VulkanShader<'a>),
     Unknown,
@@ -105,11 +105,13 @@ impl<'a> Default for ShaderInternalData<'a> {
 }
 
 #[derive(Default, Clone, Copy)]
-#[repr(C, align(4))]
+#[repr(C)]
 pub struct Range {
     pub offset: usize,
     pub size: usize,
 }
+
+#[repr(C)]
 pub struct Shader<'a> {
     pub id: usize,
     name: String,
@@ -320,13 +322,13 @@ impl<'a> ShaderSystem<'a> {
         out_shader.borrow_mut().attributes = shader_config
             .attributes
             .iter()
-            .map(|config| {
+            .map(|attr_config| {
                 let attrib = ShaderAttribute {
-                    name: config.name.clone(),
-                    attribute_type: config.attribute_type.clone(),
-                    size: config.size,
+                    name: attr_config.name.clone(),
+                    attribute_type: attr_config.attribute_type.clone(),
+                    size: attr_config.size,
                 };
-                out_shader.borrow_mut().attribute_stride += config.size;
+                out_shader.borrow_mut().attribute_stride += attr_config.size;
                 attrib
             })
             .collect::<Vec<ShaderAttribute>>();
@@ -555,7 +557,11 @@ impl<'a> ShaderSystem<'a> {
             });
     }
 
-    pub fn bind_instance(&self) -> Result<()> {
+    pub fn bind_instance(&self, instance_id: usize) -> Result<()> {
+        self.registered_shaders[self.current_shader_id]
+            .borrow_mut()
+            .bound_instance_id = instance_id;
+
         return self
             .frontend_renderer
             .borrow()

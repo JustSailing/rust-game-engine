@@ -60,6 +60,7 @@ pub struct UIinstanceUBO {
     pub padding: [Vec4; 3],
 }
 
+#[derive(Clone)]
 pub struct GeometryRenderData {
     pub model: Matrix4,
     pub geometry: Rc<RefCell<Geometry>>,
@@ -112,13 +113,15 @@ pub enum RendererError {
     #[error("frontend renderer error: material system error {file} {line}")]
     MaterialSysError { file: &'static str, line: u32 },
 }
+
+#[repr(C)]
 pub struct Renderer {
     backend: VulkanContext,
     resource_system: Rc<RefCell<ResourceSystem>>,
-    projection: Matrix4,
-    view: Matrix4,
-    ui_projection: Matrix4,
-    ui_view: Matrix4,
+    pub projection: Matrix4,
+    pub view: Matrix4,
+    pub ui_projection: Matrix4,
+    pub ui_view: Matrix4,
     far_clip: f32,
     near_clip: f32,
     material_shader_id: u32,
@@ -141,10 +144,10 @@ impl Renderer {
 
         Ok(Self {
             backend: backend,
-            projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 1000.0),
-            view: Matrix4::translation(&Vec3::new(0.0, 0.0, -30.0)),
+            projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
+            view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, -30.0))),
             ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
-            ui_view: Matrix4::identity(),
+            ui_view: Matrix4::inverse(&Matrix4::identity()),
             far_clip: 1000.0,
             near_clip: 0.1,
             material_shader_id: INVALID_ID as u32,
@@ -221,67 +224,60 @@ impl Renderer {
         }
     }
 
-    pub fn draw_frame(&mut self, packet: &mut RendererPacket) -> Result<()> {
-        if !self.backend.begin_frame(packet.delta_time).map_err(|e| {
+    pub fn begin_frame(&mut self, packet: &mut RendererPacket) -> Result<bool> {
+        self.backend.begin_frame(packet.delta_time).map_err(|e| {
             RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
             }
-        })? {
-            return Ok(());
-        }
+        })
+    }
 
-        self.backend
-            .begin_renderpass(BuiltInRenderpass::World)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        self.backend
-            .end_renderpass(BuiltInRenderpass::World)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        self.backend
-            .begin_renderpass(BuiltInRenderpass::UI)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        // for geo in packet.ui_geometries.iter_mut() {
-        //     self.backend
-        //         .draw_geometry(geo)
-        //         .map_err(|e| RendererError::BackendRendererError {
-        //             source: e,
-        //             file: file!(),
-        //             line: line!(),
-        //         })?;
-        // }
-
-        self.backend
-            .end_renderpass(BuiltInRenderpass::UI)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        self.backend.end_frame(packet.delta_time).map_err(|e| {
+    pub fn begin_renderpass(&mut self, renderpass_id: BuiltInRenderpass) -> Result<()> {
+        self.backend.begin_renderpass(renderpass_id).map_err(|e| {
             RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
             }
         })?;
+        Ok(())
+    }
+
+    pub fn end_renderpass(&mut self, renderpass_id: BuiltInRenderpass) -> Result<()> {
+        self.backend.end_renderpass(renderpass_id).map_err(|e| {
+            RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })?;
+        Ok(())
+    }
+
+    pub fn end_frame(&mut self, delta: f32) -> Result<()> {
+        self.backend
+            .end_frame(delta)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
         self.frame_number += 1;
+        Ok(())
+    }
+
+    pub fn draw_geometry(&mut self, data: &mut Vec<GeometryRenderData>, _delta: f32) -> Result<()> {
+        for geo in data.iter_mut() {
+            self.backend
+                .draw_geometry(geo)
+                .map_err(|e| RendererError::BackendRendererError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+        }
         Ok(())
     }
 
