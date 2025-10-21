@@ -120,6 +120,7 @@ pub struct Renderer {
     resource_system: Rc<RefCell<ResourceSystem>>,
     pub projection: Matrix4,
     pub view: Matrix4,
+    pub view_position: Vec3,
     pub ambient_colour: Vec4,
     pub ui_projection: Matrix4,
     pub ui_view: Matrix4,
@@ -147,6 +148,7 @@ impl Renderer {
             backend: backend,
             projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
             view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, 30.0))),
+            view_position: Vec3::new_zeroes(),
             ambient_colour: Vec4::new(0.25, 0.25, 0.25, 1.0),
             ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
             ui_view: Matrix4::inverse(&Matrix4::identity()),
@@ -301,8 +303,9 @@ impl Renderer {
             })
     }
 
-    pub fn set_view(&mut self, view: Matrix4) -> Result<()> {
+    pub fn set_view(&mut self, view: Matrix4, view_position: Vec3) -> Result<()> {
         self.view = view;
+        self.view_position = view_position;
         Ok(())
     }
 

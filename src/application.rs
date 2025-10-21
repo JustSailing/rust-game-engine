@@ -231,7 +231,7 @@ impl<'a> ApplicationState<'a> {
 
         texture_system
             .borrow_mut()
-            .create_default_texture()
+            .create_default_textures()
             .map_err(|e| AppError::TextureSysError {
                 source: e,
                 file: file!(),
@@ -398,13 +398,6 @@ impl<'a> ApplicationState<'a> {
                 })?,
         }));
 
-        if !game.borrow_mut().initialize() {
-            return Err(AppError::CouldNotInitializeGame {
-                file: file!(),
-                line: line!(),
-            });
-        }
-
         event_system
             .borrow_mut()
             .register_event(
@@ -511,6 +504,13 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
+
+        if !game.borrow_mut().initialize(Rc::clone(&test_geometry)) {
+            return Err(AppError::CouldNotInitializeGame {
+                file: file!(),
+                line: line!(),
+            });
+        }
         let app_state = Self {
             game: game,
             is_running: false,
@@ -633,6 +633,7 @@ impl<'a> ApplicationState<'a> {
                         test_render.geometry.borrow().material.borrow().shader_id as u32,
                         &self.renderer_system.borrow().projection,
                         &self.renderer_system.borrow().view,
+                        &self.renderer_system.borrow().view_position,
                         &self.renderer_system.borrow().ambient_colour,
                     )
                     .map_err(|e| AppError::MaterialSysError {
@@ -703,6 +704,7 @@ impl<'a> ApplicationState<'a> {
                         test_ui_render.geometry.borrow().material.borrow().shader_id as u32,
                         &self.renderer_system.borrow().ui_projection,
                         &self.renderer_system.borrow().ui_view,
+                        &Vec3::new(1.0, 1.0, 1.0),
                         &Vec4::new(1.0, 1.0, 1.0, 1.0),
                     )
                     .map_err(|e| AppError::MaterialSysError {

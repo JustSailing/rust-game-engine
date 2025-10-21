@@ -49,6 +49,11 @@ impl MaterialLoader {
                 }
                 "diffuse_map_name" => config.diffuse_map_name = split[1].trim().to_string(),
                 "diffuse_map_type" => config.diffuse_map_type = split[1].trim().to_string(),
+                "specular_map_name" => config.specular_map_name = split[1].trim().to_string(),
+                "specular_map_type" => config.specular_map_type = split[1].trim().to_string(),
+                "shininess" => {
+                    config.shininess = split[1].trim().to_string().parse::<f32>().unwrap()
+                }
                 "shader" => config.shader_name = split[1].trim().to_string(),
                 _ => println!(
                     "{}={} not added to material config",

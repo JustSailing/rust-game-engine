@@ -15,8 +15,6 @@ pub struct TextureSysConfig {
     pub max_count: usize,
 }
 
-const DEFAULT_TEXTURE_NAME: &'static str = "default";
-
 #[derive(Clone, Copy)]
 pub struct TextureRef {
     reference_count: usize,
@@ -87,9 +85,13 @@ pub enum TextureSysError {
 
 type Result<T> = std::result::Result<T, TextureSysError>;
 
+pub const DEFAULT_TEXTURE_NAME: &'static str = "default";
+pub const DEFAULT_TEXTURE_SPECULAR_NAME: &'static str = "default_specular";
+
 pub struct TextureSystem {
     config: TextureSysConfig,
     default_texture: Rc<RefCell<Texture>>,
+    default_specular_texture: Rc<RefCell<Texture>>,
     registered_textures: Vec<Rc<RefCell<Texture>>>,
     registered_textures_hashmap: HashMap<String, TextureRef>,
     frontend_renderer: Rc<RefCell<Renderer>>,
@@ -119,6 +121,7 @@ impl TextureSystem {
         Ok(Self {
             config: config,
             default_texture: Rc::new(RefCell::new(Texture::default())),
+            default_specular_texture: Rc::new(RefCell::new(Texture::default())),
             registered_textures: registered_array,
             registered_textures_hashmap: registered_hash_map,
             frontend_renderer: frontend_renderer,
@@ -126,7 +129,7 @@ impl TextureSystem {
         })
     }
 
-    pub fn create_default_texture(&mut self) -> Result<()> {
+    pub fn create_default_textures(&mut self) -> Result<()> {
         const TEX_DIMENSION: u8 = 255;
         const CHANNELS: u8 = 4;
         const PIXEL_COUNT: usize = TEX_DIMENSION as usize * TEX_DIMENSION as usize;
@@ -157,13 +160,38 @@ impl TextureSystem {
             })?;
 
         self.default_texture.replace(texture);
+
+        let spec_pixels = [0u8; 16 * 16 * 4];
+        let mut specular_texture = Texture::default()
+            .has_transparency(false)
+            .width(16)
+            .height(16)
+            .channel_count(4)
+            .generation(INVALID_ID);
+        self.frontend_renderer
+            .borrow()
+            .create_texture(&spec_pixels, &mut specular_texture)
+            .map_err(|e| TextureSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.default_specular_texture.replace(specular_texture);
         Ok(())
     }
 
-    fn destroy_default_texture(&self) -> Result<()> {
+    fn destroy_default_textures(&self) -> Result<()> {
         self.frontend_renderer
             .borrow()
             .destroy_texture(&self.default_texture.borrow())
+            .map_err(|e| TextureSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.frontend_renderer
+            .borrow()
+            .destroy_texture(&self.default_specular_texture.borrow())
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -226,6 +254,7 @@ impl TextureSystem {
             .height(data.height)
             .channel_count(data.channel_count)
             .generation(INVALID_ID);
+
         self.frontend_renderer
             .borrow()
             .create_texture(data.pixels.as_slice(), &mut texture)
@@ -245,7 +274,12 @@ impl TextureSystem {
         Ok(texture)
     }
 
-    pub fn acquire(&mut self, name: String, path_type: &str, auto_release: bool) -> Result<Rc<RefCell<Texture>>> {
+    pub fn acquire(
+        &mut self,
+        name: String,
+        path_type: &str,
+        auto_release: bool,
+    ) -> Result<Rc<RefCell<Texture>>> {
         if name == DEFAULT_TEXTURE_NAME {
             println!(
                 "WARN: texture acquire was called with default texture name. Use get_default_texture for 'default'"
@@ -290,7 +324,12 @@ impl TextureSystem {
         Ok(Rc::clone(&self.registered_textures[texture_ref.handle]))
     }
 
-    pub fn register_texture(&mut self, name: &String, path_type: &str, tex_ref: &TextureRef) -> Result<()> {
+    pub fn register_texture(
+        &mut self,
+        name: &String,
+        path_type: &str,
+        tex_ref: &TextureRef,
+    ) -> Result<()> {
         self.registered_textures[tex_ref.handle].replace(self.load_texture(&name, path_type)?);
         self.registered_textures[tex_ref.handle].borrow_mut().id = tex_ref.handle;
         self.registered_textures_hashmap
@@ -299,7 +338,7 @@ impl TextureSystem {
     }
 
     pub fn release(&mut self, name: &str) -> Result<()> {
-        if name == DEFAULT_TEXTURE_NAME {
+        if name == DEFAULT_TEXTURE_NAME || name == DEFAULT_TEXTURE_SPECULAR_NAME {
             return Ok(());
         }
 
@@ -338,14 +377,75 @@ impl TextureSystem {
         Ok(())
     }
 
+    pub fn release_by_id(&mut self, id: usize) -> Result<()> {
+        if id == INVALID_ID {
+            // warn here only texture with invalid id would be the default texture
+            return Ok(());
+        }
+
+        let mut name = String::default();
+        let mut tex_ref = TextureRef::default();
+        {
+            let mut option = self
+                .registered_textures_hashmap
+                .iter()
+                .find_map(|(name, tf)| {
+                    if tf.handle == id {
+                        return Some((name, tf));
+                    } else {
+                        None
+                    }
+                });
+            if option.is_none() {
+                // not sure if i should error out
+                return Ok(());
+            }
+            if let Some(ref mut opt) = option {
+                name = opt.0.clone();
+                tex_ref = *opt.1;
+            } else {
+                return Ok(());
+            };
+        }
+
+        if tex_ref.reference_count == 0 {
+            println!("WARN tried to release a non-loaded texture.");
+            return Ok(());
+        }
+        tex_ref.reference_count -= 1;
+        if tex_ref.reference_count == 0 && tex_ref.auto_release {
+            let t = &self.registered_textures[tex_ref.handle];
+            self.frontend_renderer
+                .borrow()
+                .destroy_texture(&t.borrow())
+                .map_err(|e| TextureSysError::RendererSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            self.registered_textures[tex_ref.handle].replace(Texture::default());
+            // don't think i need the 2 lines below
+            tex_ref.handle = INVALID_ID;
+            tex_ref.auto_release = false;
+
+            self.registered_textures_hashmap.remove(&name);
+        }
+
+        Ok(())
+    }
+
     pub fn get_default_texture(&self) -> Result<Rc<RefCell<Texture>>> {
         Ok(Rc::clone(&self.default_texture))
+    }
+
+    pub fn get_default_specular_texture(&self) -> Result<Rc<RefCell<Texture>>> {
+        Ok(Rc::clone(&self.default_specular_texture))
     }
 }
 
 impl Drop for TextureSystem {
     fn drop(&mut self) {
-        let _ = self.destroy_default_texture();
+        let _ = self.destroy_default_textures();
         for texture in self.registered_textures.iter() {
             if texture.borrow().id != INVALID_ID {
                 self.registered_textures_hashmap

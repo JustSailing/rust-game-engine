@@ -96,7 +96,7 @@ const VULKAN_SHADER_MAX_GLOBAL_TEXTURES: usize = 31;
 const VULKAN_SHADER_MAX_INSTANCE_TEXTURES: usize = 31;
 const VULKAN_SHADER_MAX_ATTRIBUTES: usize = 16;
 const VULKAN_SHADER_MAX_UNIFORMS: usize = 128;
-const VULKAN_SHADER_MAX_BINDINGS: usize = 32;
+const VULKAN_SHADER_MAX_BINDINGS: usize = 2;
 const VULKAN_SHADER_MAX_PUSH_CONST_RANGE: usize = 32;
 const DESC_SET_INDEX_GLOBAL: usize = 0;
 const DESC_SET_INDEX_INSTANCE: usize = 1;
@@ -1800,14 +1800,6 @@ impl<'a> VulkanContext {
             let mut image_infos =
                 [DescriptorImageInfo::default(); VULKAN_SHADER_MAX_GLOBAL_TEXTURES];
             for i in 0..total_sampler_count {
-                // using default texture temporarily
-                // image_infos[i as usize].image_view = self
-                //     .default_texture
-                //     .borrow()
-                //     .internal_data
-                //     .image
-                //     .view
-                //     .unwrap();
                 image_infos[i as usize].image_view = internal_data.instance_states
                     [shader.bound_instance_id]
                     .instance_textures[i as usize]
@@ -2026,20 +2018,18 @@ impl<'a> VulkanContext {
             } else {
                 if uniform.shader_scope == ShaderScope::Global {
                     let mut addr = internal_data.mapped_uniform_block;
-                    addr = unsafe { addr.add(shader.global_ubo_offset + uniform.offset) };
                     unsafe {
-                        std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size)
-                    };
+                        addr = addr.add(shader.global_ubo_offset + uniform.offset);
+                        std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size);
+                    }
                 } else if uniform.shader_scope == ShaderScope::Instance {
                     let mut addr = internal_data.mapped_uniform_block;
-                    addr = unsafe {
-                        addr.add(
-                            shader.global_ubo_offset + shader.bound_ubo_offset + uniform.offset,
-                        )
-                    };
                     unsafe {
-                        std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size)
-                    };
+                        addr = addr.add(
+                            shader.global_ubo_offset + shader.bound_ubo_offset + uniform.offset,
+                        );
+                        std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size);
+                    }
                 }
             }
         }

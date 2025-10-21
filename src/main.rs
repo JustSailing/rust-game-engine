@@ -45,12 +45,13 @@ pub struct Game {
 
 impl Game {
     // temporary
-    pub fn initialize(&mut self) -> bool {
+    pub fn initialize(&mut self, geometry: Rc<RefCell<Geometry>>) -> bool {
         self.state.camera_position = Vec3::new(0.0, 0.0, 30.0);
         self.state.camera_euler = Vec3::new_zeroes();
         self.state.view = Matrix4::translation(&self.state.camera_position);
         self.state.view = Matrix4::inverse(&self.state.view);
         self.state.view_dirty = true;
+        self.test_geometry = geometry;
         return true;
     }
 
@@ -81,18 +82,41 @@ impl Game {
         let temp_move_speed = 150000.0;
         let mut velocity = Vec3::new_ones();
         if input_system.is_key_down(Key::W).unwrap() {
-            let forward = self.state.view.forward();
-            velocity = velocity + forward.mul_scalar(temp_move_speed);
+            let forward: Vec3 = self.state.view.forward();
+            velocity = velocity + forward.mul_scalar(temp_move_speed * 10.0);
         }
 
         if input_system.is_key_down(Key::S).unwrap() {
             let backward = self.state.view.backward();
-            velocity = velocity + backward.mul_scalar(temp_move_speed);
+            velocity = velocity + backward.mul_scalar(temp_move_speed * 10.0);
         }
 
         if input_system.is_key_down(Key::Q).unwrap() {
             let left = self.state.view.left();
             velocity = velocity + left.mul_scalar(temp_move_speed);
+        }
+
+        if input_system.is_key_down(Key::E).unwrap() {
+            let right = self.state.view.right();
+            velocity = velocity + right.mul_scalar(temp_move_speed);
+        }
+
+        if input_system.is_key_down(Key::Z).unwrap() {
+            let up: Vec3 = self.state.view.up();
+            velocity = velocity + up.mul_scalar(temp_move_speed * 10.0);
+        }
+
+        if input_system.is_key_down(Key::C).unwrap() {
+            let down = self.state.view.down();
+            velocity = velocity + down.mul_scalar(temp_move_speed * 10.0);
+        }
+
+        if input_system.is_key_down(Key::Space).unwrap() {
+            velocity.data[1] += 1.0;
+        }
+
+        if input_system.is_key_down(Key::Space).unwrap() {
+            velocity.data[1] -= 1.0;
         }
 
         if input_system.is_key_down(Key::E).unwrap() {
@@ -110,10 +134,10 @@ impl Game {
             let ctx: EventCtx = EventCtx::I32([0; 4]);
             let _ = event_system.fire_event(EventCodes::Debug0 as usize, ptr::null(), &ctx);
         }
-
+        self.state.view_dirty = true;
         self.recalculate_view();
 
-        match renderer.set_view(self.state.view) {
+        match renderer.set_view(self.state.view, self.state.camera_position) {
             Ok(_) => return true,
             Err(_) => return false,
         }

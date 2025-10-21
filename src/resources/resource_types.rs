@@ -66,6 +66,7 @@ pub struct TextureData {
 pub enum TextureUse {
     Unknown = 0x00,
     MapDiffuse = 0x01,
+    MapSpecular = 0x02,
 }
 
 #[derive(Debug)]
@@ -82,8 +83,11 @@ pub struct MaterialConfig {
     pub shader_name: String,
     pub auto_release: bool,
     pub diffuse_colour: Vec4,
+    pub shininess: f32,
     pub diffuse_map_name: String,
     pub diffuse_map_type: String,
+    pub specular_map_name: String,
+    pub specular_map_type: String,
 }
 
 impl Default for MaterialConfig {
@@ -92,9 +96,12 @@ impl Default for MaterialConfig {
             name: Default::default(),
             auto_release: Default::default(),
             diffuse_colour: Vec4::new_ones(),
+            shininess: Default::default(), // might change this to 32.0
             diffuse_map_name: Default::default(),
             diffuse_map_type: Default::default(),
             shader_name: String::from("Builtin.Material"),
+            specular_map_name: Default::default(),
+            specular_map_type: Default::default(),
         }
     }
 }
@@ -115,6 +122,10 @@ pub struct Material {
     pub name: String,
     pub diffuse_colour: Vec4,
     pub diffuse_map: TextureMap,
+    pub diffuse_map_name: String,
+    pub specular_map_name: String,
+    pub specular_map: TextureMap,
+    pub shininess: f32,
 }
 
 impl Default for Material {
@@ -126,10 +137,17 @@ impl Default for Material {
             shader_id: INVALID_ID,
             name: Default::default(),
             diffuse_colour: Vec4::new_ones(),
+            diffuse_map_name: Default::default(),
             diffuse_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,
             },
+            specular_map_name: Default::default(),
+            specular_map: TextureMap {
+                texture: Rc::new(RefCell::new(Texture::default())),
+                use_type: TextureUse::Unknown,
+            },
+            shininess: Default::default(),
         }
     }
 }

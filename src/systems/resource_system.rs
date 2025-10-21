@@ -215,8 +215,12 @@ impl ResourceSystem {
                 && l.id != INVALID_ID
                 && l.res_type == res_typ
             {
-                let mut res = match (l.load)(name, &l.path_type, self.base_path().unwrap().as_str(), path_type)
-                {
+                let mut res = match (l.load)(
+                    name,
+                    &l.path_type,
+                    self.base_path().unwrap().as_str(),
+                    path_type,
+                ) {
                     Ok(r) => r,
                     Err(_) => return None,
                 };

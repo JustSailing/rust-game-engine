@@ -221,6 +221,17 @@ impl Matrix4 {
         right
     }
 
+    pub fn up(&self) -> Vec3 {
+        let mut up = Vec3::new(-self.data[1], -self.data[5], -self.data[9]);
+        up.normalize();
+        up
+    }
+    pub fn down(&self) -> Vec3 {
+        let mut down = Vec3::new(self.data[1], self.data[5], self.data[9]);
+        down.normalize();
+        down
+    }
+
     pub fn euler_x(angle_radians: f32) -> Matrix4 {
         let mut out_matrix = Matrix4::identity();
         let c = angle_radians.cos();
