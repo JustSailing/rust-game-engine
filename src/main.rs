@@ -78,7 +78,7 @@ impl Game {
             self.camera_pitch(-1.0 * delta * movement);
         }
 
-        let temp_move_speed = 1500000.0;
+        let temp_move_speed = 150000.0;
         let mut velocity = Vec3::new_ones();
         if input_system.is_key_down(Key::W).unwrap() {
             let forward = self.state.view.forward();
@@ -136,7 +136,7 @@ impl Game {
             );
 
             let translation = Matrix4::translation(&self.state.camera_position);
-            self.state.view = rotation * translation;
+            self.state.view = translation * rotation;
             self.state.view = Matrix4::inverse(&self.state.view);
             self.state.view_dirty = false;
         }
