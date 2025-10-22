@@ -832,6 +832,7 @@ impl<'a> MaterialSystem<'a> {
         mat.diffuse_colour = config.diffuse_colour.clone();
         mat.shininess = config.shininess;
         if config.diffuse_map_name.len() > 0 {
+            mat.diffuse_map_name = config.diffuse_map_name.clone();
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
             let texture = self
                 .texture_system
@@ -850,7 +851,8 @@ impl<'a> MaterialSystem<'a> {
         }
 
         if config.specular_map_name.len() > 0 {
-            mat.diffuse_map.use_type = TextureUse::MapSpecular;
+            mat.specular_map_name = config.specular_map_name.clone();
+            mat.specular_map.use_type = TextureUse::MapSpecular;
             let texture = self
                 .texture_system
                 .borrow_mut()
@@ -890,18 +892,19 @@ impl<'a> MaterialSystem<'a> {
     }
 
     pub fn destroy_material(&self, material: &Material) -> Result<()> {
+        let id = material.diffuse_map.texture.borrow().id;
         self.texture_system
             .borrow_mut()
-            .release_by_id(material.diffuse_map.texture.borrow().id)
+            .release_by_id(id)
             .map_err(|e| MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
-
+        let id = material.specular_map.texture.borrow().id;
         self.texture_system
             .borrow_mut()
-            .release_by_id(material.specular_map.texture.borrow().id)
+            .release_by_id(id)
             .map_err(|e| MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),

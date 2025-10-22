@@ -127,7 +127,7 @@ pub enum AppError {
 type Result<T> = std::result::Result<T, AppError>;
 
 pub struct ApplicationState<'a> {
-    game: Rc<RefCell<Game>>,
+    game: Rc<RefCell<Game<'a>>>,
     is_running: bool,
     is_suspended: bool,
     window: Window<'a>,
@@ -388,6 +388,7 @@ impl<'a> ApplicationState<'a> {
             },
             texture_system: texture_system.clone(),
             renderer_system: renderer_system.clone(),
+            material_system: material_system.clone(),
             test_geometry: geometry_system
                 .borrow()
                 .get_default_geometry()
@@ -556,12 +557,11 @@ impl<'a> ApplicationState<'a> {
                         line: line!(),
                     }
                 })?;
-                if !self.game.borrow_mut().update(
-                    delta,
-                    &self.input_system.borrow(),
-                    &mut self.renderer_system.borrow_mut(),
-                    &mut self.event_system.borrow_mut(),
-                ) {
+                if !self
+                    .game
+                    .borrow_mut()
+                    .update(delta, &self.input_system, &self.renderer_system)
+                {
                     return Err(AppError::CouldNotUpdateGame {
                         file: file!(),
                         line: line!(),

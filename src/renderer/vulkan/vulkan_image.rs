@@ -20,8 +20,8 @@ type Result<T> = std::result::Result<T, VulkanBackendError>;
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct VulkanImage {
-    image: Image,
-    memory: DeviceMemory,
+    pub image: Image,
+    pub memory: DeviceMemory,
     pub view: Option<ImageView>,
     width: u32,
     height: u32,

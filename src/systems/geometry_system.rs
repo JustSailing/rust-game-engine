@@ -14,7 +14,7 @@ pub struct GeometrySysConfig {
     pub max_count: usize,
 }
 
-const DEFAULT_GEOMETRY_NAME: &'static str = "default";
+pub const DEFAULT_GEOMETRY_NAME: &'static str = "default";
 type Result<T> = std::result::Result<T, GeometrySysError>;
 
 #[derive(Error, Debug)]
@@ -121,9 +121,6 @@ impl<'a> GeometrySystem<'a> {
     }
 
     pub fn destroy_default_geometry(&self) -> Result<()> {
-        if self.default_geometry.borrow().id == INVALID_ID {
-            return Ok(());
-        }
         return Ok(self
             .frontend_renderer
             .borrow_mut()
@@ -136,9 +133,6 @@ impl<'a> GeometrySystem<'a> {
     }
 
     pub fn destroy_default_geometry2d(&self) -> Result<()> {
-        if self.default_geometry_2d.borrow().id == INVALID_ID {
-            return Ok(());
-        }
         return Ok(self
             .frontend_renderer
             .borrow_mut()
@@ -622,12 +616,28 @@ impl<'a> GeometrySystem<'a> {
 impl<'a> Drop for GeometrySystem<'a> {
     fn drop(&mut self) {
         let _ = self.destroy_default_geometry();
+        let _ = self
+            .material_system
+            .borrow_mut()
+            .destroy_material(&mut self.default_geometry.borrow_mut().material.borrow_mut());
         let _ = self.destroy_default_geometry2d();
-        for i in 0..self.registered_geometries.len() {
-            if self.registered_geometries[i].borrow().id == INVALID_ID {
+        let _ = self
+            .material_system
+            .borrow_mut()
+            .destroy_material(&mut self.default_geometry_2d.borrow_mut().material.borrow_mut());
+        self.default_geometry.replace(Geometry::default());
+        self.default_geometry_2d.replace(Geometry::default());
+        for (_, geo) in self.registered_geometries.iter_mut().enumerate() {
+            if geo.borrow().id == INVALID_ID {
                 continue;
             }
-            let _ = self.destroy_geometry(i);
+            {
+                let _ = self
+                    .material_system
+                    .borrow_mut()
+                    .destroy_material(&mut geo.borrow_mut().material.borrow_mut());
+            }
+         //let _ = self.destroy_geometry(i);
         }
     }
 }

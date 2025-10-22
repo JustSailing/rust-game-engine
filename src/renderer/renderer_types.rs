@@ -161,8 +161,8 @@ impl Renderer {
         })
     }
 
-    pub fn create_texture(&self, pixels: &[u8], texture: &mut Texture) -> Result<()> {
-        self.backend.create_texture(pixels, texture).map_err(|e| {
+    pub fn create_texture(&self,name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
+        self.backend.create_texture(name, pixels, texture).map_err(|e| {
             RendererError::BackendRendererError {
                 source: e,
                 file: file!(),

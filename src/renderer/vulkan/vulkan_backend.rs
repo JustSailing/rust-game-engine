@@ -20,6 +20,7 @@ use crate::application::{
         ShaderUniformType, Texture,
     },
     systems::{
+        geometry_system::DEFAULT_GEOMETRY_NAME,
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{Shader, ShaderInternalData},
     },
@@ -233,7 +234,9 @@ pub struct VulkanContext {
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
-    dbg_util_loader: debug_utils::Instance,
+    dbg_instance_loader: debug_utils::Instance,
+    #[cfg(feature = "debug")]
+    debug_utils_loader: debug_utils::Device,
     image_index: u32,
     default_texture: Rc<RefCell<Texture>>,
     resource_system: Rc<RefCell<ResourceSystem>>,
@@ -457,10 +460,11 @@ impl<'a> VulkanContext {
                 )
                 .pfn_user_callback(Some(vulkan_debug_callback));
 
-            let debug_utils_loader = debug_utils::Instance::new(&entry, &instance);
+            let debug_instance_loader = debug_utils::Instance::new(&entry, &instance);
             let debug_messenger =
-                unsafe { debug_utils_loader.create_debug_utils_messenger(&debug_info, None)? };
+                unsafe { debug_instance_loader.create_debug_utils_messenger(&debug_info, None)? };
             println!("Vulkan Instance created");
+            let debug_utils_loader = debug_utils::Device::new(&instance, &dev.device);
             return Ok(VulkanContext {
                 frame_delta_time: 0.0,
                 geometry_vertex_offset: 0,
@@ -490,7 +494,8 @@ impl<'a> VulkanContext {
                 default_texture: Rc::new(RefCell::new(Texture::default())),
 
                 dbg_messenger: debug_messenger,
-                dbg_util_loader: debug_utils_loader,
+                dbg_instance_loader: debug_instance_loader,
+                debug_utils_loader: debug_utils_loader,
             });
         }
 
@@ -947,7 +952,7 @@ impl<'a> VulkanContext {
         Ok((vertex_buffer, index_buffer))
     }
 
-    pub fn create_texture(&self, pixels: &[u8], texture: &mut Texture) -> Result<()> {
+    pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
         let image_size: DeviceSize = (texture.width as u64
             * texture.height as u64
             * texture.channel_count as u64) as DeviceSize;
@@ -1050,6 +1055,50 @@ impl<'a> VulkanContext {
                 }
             }
         };
+        let _ = name;
+        #[cfg(feature = "debug")]
+        {
+            let image_name: CString = CString::new(name).unwrap();
+            let image_view_name_info: vk::DebugUtilsObjectNameInfoEXT<'_> =
+                vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_name(&image_name)
+                    .object_handle(texture.internal_data.image.view.unwrap());
+
+            //let image_name: CString = CString::new(name).unwrap();
+            let image_name_info: vk::DebugUtilsObjectNameInfoEXT<'_> =
+                vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_name(&image_name)
+                    .object_handle(texture.internal_data.image.image);
+
+            //let image_name = CString::new(name).unwrap();
+            let sampler_name_info: vk::DebugUtilsObjectNameInfoEXT<'_> =
+                vk::DebugUtilsObjectNameInfoEXT::default()
+                    .object_name(&image_name)
+                    .object_handle(texture.internal_data.sampler);
+            unsafe {
+                self.debug_utils_loader
+                    .set_debug_utils_object_name(&image_name_info)
+                    .map_err(|_| VulkanBackendError::OperationFailed {
+                        issue: "failed to name image object for debugging",
+                        file: file!(),
+                        line: line!(),
+                    })?;
+                self.debug_utils_loader
+                    .set_debug_utils_object_name(&sampler_name_info)
+                    .map_err(|_| VulkanBackendError::OperationFailed {
+                        issue: "failed to name sampler object for debugging",
+                        file: file!(),
+                        line: line!(),
+                    })?;
+                self.debug_utils_loader
+                    .set_debug_utils_object_name(&image_view_name_info)
+                    .map_err(|_| VulkanBackendError::OperationFailed {
+                        issue: "failed to name image view object for debugging",
+                        file: file!(),
+                        line: line!(),
+                    })?;
+            }
+        }
         Ok(())
     }
 
@@ -1152,7 +1201,7 @@ impl<'a> VulkanContext {
     }
 
     pub fn destroy_geometry(&mut self, geometry: &Geometry) -> Result<()> {
-        if geometry.internal_id != INVALID_ID {
+        if geometry.internal_id != INVALID_ID || geometry.name == DEFAULT_GEOMETRY_NAME {
             self.geometries[geometry.internal_id] = VulkanGeometryData::default();
         }
         Ok(())
@@ -1655,17 +1704,6 @@ impl<'a> VulkanContext {
         Ok(())
     }
     pub fn shader_bind_instance(&self, shader: &mut Shader, instance_id: u32) -> Result<()> {
-        // let internal_data = match shader.internal_data {
-        //     ShaderInternalData::Vulkan(ref vulkan_shader) => vulkan_shader,
-        //     ShaderInternalData::Unknown => {
-        //         return Err(VulkanBackendError::OperationFailed {
-        //             issue: "unknown shader internal data",
-        //             file: file!(),
-        //             line: line!(),
-        //         });
-        //     }
-        // };
-
         shader.bound_instance_id = instance_id as usize;
         //let object_state = &internal_data.instance_states[instance_id as usize];
         shader.bound_ubo_offset = (shader.global_ubo_stride as u64
@@ -2105,7 +2143,7 @@ impl Drop for VulkanContext {
                 self.swapchain.destroy(&self.device);
                 self.device.device.destroy_device(None);
                 self.surface_loader.destroy_surface(self.surface, None);
-                self.dbg_util_loader
+                self.dbg_instance_loader
                     .destroy_debug_utils_messenger(self.dbg_messenger, None);
                 self.instance.destroy_instance(None);
             }

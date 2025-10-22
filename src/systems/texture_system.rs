@@ -152,7 +152,7 @@ impl TextureSystem {
             .generation(INVALID_ID);
         self.frontend_renderer
             .borrow()
-            .create_texture(&pixels, &mut texture)
+            .create_texture("default", &pixels, &mut texture)
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -170,7 +170,7 @@ impl TextureSystem {
             .generation(INVALID_ID);
         self.frontend_renderer
             .borrow()
-            .create_texture(&spec_pixels, &mut specular_texture)
+            .create_texture("default_specular", &spec_pixels, &mut specular_texture)
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -257,7 +257,7 @@ impl TextureSystem {
 
         self.frontend_renderer
             .borrow()
-            .create_texture(data.pixels.as_slice(), &mut texture)
+            .create_texture(name, data.pixels.as_slice(), &mut texture)
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -342,8 +342,8 @@ impl TextureSystem {
             return Ok(());
         }
 
-        let tex_ref = match self.registered_textures_hashmap.get_mut(name) {
-            Some(t) => t,
+        let mut tex_ref = match self.registered_textures_hashmap.get_mut(name) {
+            Some(t) => *t,
             None => {
                 return Err(TextureSysError::ReleaseTextureDoesNotExist {
                     file: file!(),
@@ -366,12 +366,17 @@ impl TextureSystem {
                     file: file!(),
                     line: line!(),
                 })?;
-            self.registered_textures[tex_ref.handle].replace(Texture::default());
+            self.registered_textures[tex_ref.handle].borrow_mut().id = INVALID_ID;
             // don't think i need the 2 lines below
             tex_ref.handle = INVALID_ID;
             tex_ref.auto_release = false;
+        }
 
+        if tex_ref.reference_count == 0 {
             self.registered_textures_hashmap.remove(name);
+        } else {
+            self.registered_textures_hashmap
+                .insert(name.to_string(), tex_ref);
         }
 
         Ok(())
@@ -414,21 +419,23 @@ impl TextureSystem {
         }
         tex_ref.reference_count -= 1;
         if tex_ref.reference_count == 0 && tex_ref.auto_release {
-            let t = &self.registered_textures[tex_ref.handle];
             self.frontend_renderer
                 .borrow()
-                .destroy_texture(&t.borrow())
+                .destroy_texture(&self.registered_textures[tex_ref.handle].borrow())
                 .map_err(|e| TextureSysError::RendererSysError {
                     source: e,
                     file: file!(),
                     line: line!(),
                 })?;
-            self.registered_textures[tex_ref.handle].replace(Texture::default());
+            self.registered_textures[tex_ref.handle].borrow_mut().id = INVALID_ID;
             // don't think i need the 2 lines below
             tex_ref.handle = INVALID_ID;
             tex_ref.auto_release = false;
-
+        }
+        if tex_ref.reference_count == 0 {
             self.registered_textures_hashmap.remove(&name);
+        } else {
+            self.registered_textures_hashmap.insert(name, tex_ref);
         }
 
         Ok(())
@@ -446,13 +453,13 @@ impl TextureSystem {
 impl Drop for TextureSystem {
     fn drop(&mut self) {
         let _ = self.destroy_default_textures();
-        for texture in self.registered_textures.iter() {
+        for texture in self.registered_textures.iter_mut() {
             if texture.borrow().id != INVALID_ID {
                 self.registered_textures_hashmap
                     .iter()
-                    .find_map(|(_, value)| {
+                    .find_map(|(key, value)| {
                         if value.handle == texture.borrow().id && !value.auto_release {
-                            //println!("WARN: did not free texture name: {}", key);
+                            println!("WARN: did not free texture name: {}", key);
                             Some(())
                         } else {
                             None
@@ -462,12 +469,7 @@ impl Drop for TextureSystem {
                 let _ = self
                     .frontend_renderer
                     .borrow()
-                    .destroy_texture(&texture.borrow())
-                    .map_err(|e| TextureSysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    });
+                    .destroy_texture(&texture.borrow());
             }
         }
     }
