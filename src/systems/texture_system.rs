@@ -87,11 +87,13 @@ type Result<T> = std::result::Result<T, TextureSysError>;
 
 pub const DEFAULT_TEXTURE_NAME: &'static str = "default";
 pub const DEFAULT_TEXTURE_SPECULAR_NAME: &'static str = "default_specular";
+pub const DEFAULT_TEXTURE_NORMAL_NAME: &'static str = "default_normal";
 
 pub struct TextureSystem {
     config: TextureSysConfig,
     default_texture: Rc<RefCell<Texture>>,
     default_specular_texture: Rc<RefCell<Texture>>,
+    default_normal_texture: Rc<RefCell<Texture>>,
     registered_textures: Vec<Rc<RefCell<Texture>>>,
     registered_textures_hashmap: HashMap<String, TextureRef>,
     frontend_renderer: Rc<RefCell<Renderer>>,
@@ -122,6 +124,7 @@ impl TextureSystem {
             config: config,
             default_texture: Rc::new(RefCell::new(Texture::default())),
             default_specular_texture: Rc::new(RefCell::new(Texture::default())),
+            default_normal_texture: (Rc::new(RefCell::new(Texture::default()))),
             registered_textures: registered_array,
             registered_textures_hashmap: registered_hash_map,
             frontend_renderer: frontend_renderer,
@@ -177,6 +180,31 @@ impl TextureSystem {
                 line: line!(),
             })?;
         self.default_specular_texture.replace(specular_texture);
+
+        let mut normal_pixels = [0u8; 16 * 16 * 4];
+        for i in (0..16 * 16).step_by(4) {
+            normal_pixels[i + 0] = 128;
+            normal_pixels[i + 1] = 128;
+            normal_pixels[i + 2] = 255;
+            normal_pixels[i + 3] = 255;
+        }
+
+        let mut normal_texture = Texture::default()
+            .has_transparency(false)
+            .width(16)
+            .height(16)
+            .channel_count(4)
+            .generation(INVALID_ID);
+        self.frontend_renderer
+            .borrow()
+            .create_texture("default_normal", &normal_pixels, &mut normal_texture)
+            .map_err(|e| TextureSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.default_normal_texture.replace(normal_texture);
+
         Ok(())
     }
 
@@ -192,6 +220,14 @@ impl TextureSystem {
         self.frontend_renderer
             .borrow()
             .destroy_texture(&self.default_specular_texture.borrow())
+            .map_err(|e| TextureSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.frontend_renderer
+            .borrow()
+            .destroy_texture(&self.default_normal_texture.borrow())
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -447,6 +483,10 @@ impl TextureSystem {
 
     pub fn get_default_specular_texture(&self) -> Result<Rc<RefCell<Texture>>> {
         Ok(Rc::clone(&self.default_specular_texture))
+    }
+
+    pub fn get_default_normal_texture(&self) -> Result<Rc<RefCell<Texture>>> {
+        Ok(Rc::clone(&self.default_normal_texture))
     }
 }
 

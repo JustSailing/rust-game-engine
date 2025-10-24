@@ -139,9 +139,17 @@ impl<'a> Game<'a> {
                 "tile_spec",
                 "cube_spec",
             ];
+            let norm_names = [
+                "brick-wall_norm",
+                "door_norm",
+                "stone-wall_norm",
+                "tile_norm",
+                "cube_norm",
+            ];
             static mut CHOICE: usize = 4;
             let old_name = unsafe { names[CHOICE] };
             let old_spec_name = unsafe { spec_names[CHOICE] };
+            let old_norm_name = unsafe { norm_names[CHOICE] };
             unsafe {
                 CHOICE += 1;
                 CHOICE %= 5;
@@ -196,6 +204,31 @@ impl<'a> Game<'a> {
                 .borrow_mut()
                 .specular_map
                 .texture = spec;
+
+            let norm = match self.texture_system.borrow_mut().acquire(
+                unsafe { norm_names[CHOICE].to_string() },
+                if unsafe { norm_names[CHOICE] == "cube_norm" } {
+                    "png"
+                } else {
+                    "jpg"
+                },
+                true,
+            ) {
+                Ok(t) => t,
+                Err(_) => return false,
+            };
+
+            match self.texture_system.borrow_mut().release(old_norm_name) {
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+
+            self.test_geometry
+                .borrow_mut()
+                .material
+                .borrow_mut()
+                .normal_map
+                .texture = norm;
         }
         self.state.view_dirty = true;
         self.recalculate_view();

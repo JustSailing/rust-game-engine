@@ -4,7 +4,7 @@ use std::ops::{Add, Div, Mul, Sub};
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct Vec2 {
-    data: [f32; 2],
+    pub data: [f32; 2],
 }
 
 impl Vec2 {

@@ -3,6 +3,7 @@ use crate::application::{
         consts::INVALID_ID,
         vec2::Vec2,
         vec3::{Vec3, Vector2D, Vector3D},
+        vec4::Vec4,
     },
     renderer::renderer_types::{Renderer, RendererError},
     resources::resource_types::{Geometry, GeometryConfig, MaterialConfig},
@@ -222,6 +223,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, min_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
             texcoord: Vec2::new(min_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert0);
 
@@ -229,6 +232,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, max_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
             texcoord: Vec2::new(max_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert1);
 
@@ -236,6 +241,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, max_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
             texcoord: Vec2::new(min_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert2);
 
@@ -243,6 +250,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, min_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
             texcoord: Vec2::new(max_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert3);
 
@@ -250,6 +259,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, min_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
             texcoord: Vec2::new(min_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert4);
 
@@ -257,6 +268,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, max_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
             texcoord: Vec2::new(max_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert5);
 
@@ -264,6 +277,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, max_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
             texcoord: Vec2::new(min_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert6);
 
@@ -271,6 +286,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, min_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
             texcoord: Vec2::new(max_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert7);
 
@@ -278,6 +295,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, min_y, min_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
             texcoord: Vec2::new(min_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert8);
 
@@ -285,6 +304,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, max_y, max_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
             texcoord: Vec2::new(max_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert9);
 
@@ -292,6 +313,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, max_y, min_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
             texcoord: Vec2::new(min_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert10);
 
@@ -299,6 +322,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, min_y, max_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
             texcoord: Vec2::new(max_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert11);
 
@@ -306,6 +331,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, min_y, max_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
             texcoord: Vec2::new(min_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert12);
 
@@ -313,6 +340,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, max_y, min_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
             texcoord: Vec2::new(max_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert13);
 
@@ -320,6 +349,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, max_y, max_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
             texcoord: Vec2::new(min_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert14);
 
@@ -327,6 +358,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, min_y, min_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
             texcoord: Vec2::new(max_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert15);
 
@@ -334,6 +367,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, min_y, max_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
             texcoord: Vec2::new(min_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert16);
 
@@ -341,6 +376,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, min_y, min_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
             texcoord: Vec2::new(max_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert17);
 
@@ -348,6 +385,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, min_y, min_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
             texcoord: Vec2::new(min_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert18);
 
@@ -355,6 +394,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, min_y, max_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
             texcoord: Vec2::new(max_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert19);
 
@@ -362,6 +403,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, max_y, max_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
             texcoord: Vec2::new(min_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert20);
 
@@ -369,6 +412,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, max_y, min_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
             texcoord: Vec2::new(max_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert21);
 
@@ -376,6 +421,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(min_x, max_y, min_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
             texcoord: Vec2::new(min_uvx, max_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert22);
 
@@ -383,6 +430,8 @@ impl<'a> GeometrySystem<'a> {
             position: Vec3::new(max_x, max_y, max_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
             texcoord: Vec2::new(max_uvx, min_uvy),
+            colour: Vec4::new_zeroes(),
+            tangent: Vec4::new_zeroes(),
         };
         config.vertices.push(vert23);
 
@@ -525,21 +574,29 @@ impl<'a> GeometrySystem<'a> {
                 position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(0.0, 0.0),
+                colour: Vec4::new_zeroes(),
+                tangent: Vec4::new_zeroes(),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(1.0, 1.0),
+                colour: Vec4::new_zeroes(),
+                tangent: Vec4::new_zeroes(),
             },
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(0.0, 1.0),
+                colour: Vec4::new_zeroes(),
+                tangent: Vec4::new_zeroes(),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
                 texcoord: Vec2::new(1.0, 0.0),
+                colour: Vec4::new_zeroes(),
+                tangent: Vec4::new_zeroes(),
             },
         ];
 
@@ -637,7 +694,7 @@ impl<'a> Drop for GeometrySystem<'a> {
                     .borrow_mut()
                     .destroy_material(&mut geo.borrow_mut().material.borrow_mut());
             }
-         //let _ = self.destroy_geometry(i);
+            //let _ = self.destroy_geometry(i);
         }
     }
 }

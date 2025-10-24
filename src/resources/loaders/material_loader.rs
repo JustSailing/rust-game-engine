@@ -51,6 +51,8 @@ impl MaterialLoader {
                 "diffuse_map_type" => config.diffuse_map_type = split[1].trim().to_string(),
                 "specular_map_name" => config.specular_map_name = split[1].trim().to_string(),
                 "specular_map_type" => config.specular_map_type = split[1].trim().to_string(),
+                "normal_map_name" => config.normal_map_name = split[1].trim().to_string(),
+                "normal_map_type" => config.normal_map_type = split[1].trim().to_string(),
                 "shininess" => {
                     config.shininess = split[1].trim().to_string().parse::<f32>().unwrap()
                 }

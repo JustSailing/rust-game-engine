@@ -11,7 +11,8 @@ use crate::application::{
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{ShaderSysError, ShaderSystem},
         texture_system::{
-            DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_SPECULAR_NAME, TextureSysError, TextureSystem,
+            DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_NORMAL_NAME, DEFAULT_TEXTURE_SPECULAR_NAME,
+            TextureSysError, TextureSystem,
         },
     },
 };
@@ -132,6 +133,7 @@ pub struct MaterialShaderUniformLocations {
     pub diffuse_colour: u16,
     pub diffuse_texture: u16,
     pub specular_texture: u16,
+    pub normal_texture: u16,
     pub shininess: u16,
     pub model: u16,
 }
@@ -147,6 +149,7 @@ impl Default for MaterialShaderUniformLocations {
             diffuse_texture: u16::MAX,
             model: u16::MAX,
             specular_texture: u16::MAX,
+            normal_texture: u16::MAX,
             shininess: u16::MAX,
         }
     }
@@ -230,7 +233,7 @@ impl<'a> MaterialSystem<'a> {
         })
     }
 
-    pub fn create_default_material(&mut self) -> Result<()> {
+    pub fn create_default_materials(&mut self) -> Result<()> {
         let mut material = Material::default();
         material.name = String::from(DEFAULT_MATERIAL_NAME);
         material.diffuse_colour = Vec4 {
@@ -248,6 +251,7 @@ impl<'a> MaterialSystem<'a> {
                 })?;
         material.diffuse_map.use_type = TextureUse::MapDiffuse;
         material.diffuse_map_name = DEFAULT_TEXTURE_NAME.to_string();
+
         material.specular_map.texture = self
             .texture_system
             .borrow()
@@ -259,6 +263,18 @@ impl<'a> MaterialSystem<'a> {
             })?;
         material.specular_map.use_type = TextureUse::MapSpecular;
         material.specular_map_name = DEFAULT_TEXTURE_SPECULAR_NAME.to_string();
+
+        material.normal_map.texture = self
+            .texture_system
+            .borrow()
+            .get_default_normal_texture()
+            .map_err(|e| MaterialSysError::TextureSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        material.normal_map.use_type = TextureUse::MapNormal;
+        material.normal_map_name = DEFAULT_TEXTURE_NORMAL_NAME.to_string();
 
         material.shininess = 32.0;
 
@@ -467,6 +483,16 @@ impl<'a> MaterialSystem<'a> {
                     .shader_system
                     .borrow()
                     .uniform_index(&shader.borrow(), "specular_texture")
+                    .map_err(|e| MaterialSysError::ShaderSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+
+                self.material_locations.normal_texture = self
+                    .shader_system
+                    .borrow()
+                    .uniform_index(&shader.borrow(), "normal_texture")
                     .map_err(|e| MaterialSysError::ShaderSysError {
                         source: e,
                         file: file!(),
@@ -733,6 +759,17 @@ impl<'a> MaterialSystem<'a> {
             self.shader_system
                 .borrow()
                 .uniform_set_by_index(
+                    self.material_locations.normal_texture,
+                    material.normal_map.texture.as_ptr() as *const _ as *const c_void,
+                )
+                .map_err(|e| MaterialSysError::ShaderSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            self.shader_system
+                .borrow()
+                .uniform_set_by_index(
                     self.material_locations.shininess,
                     &material.shininess as *const _ as *const c_void,
                 )
@@ -869,6 +906,25 @@ impl<'a> MaterialSystem<'a> {
             mat.specular_map.texture = texture;
         }
 
+        if config.normal_map_name.len() > 0 {
+            mat.normal_map_name = config.normal_map_name.clone();
+            mat.normal_map.use_type = TextureUse::MapNormal;
+            let texture = self
+                .texture_system
+                .borrow_mut()
+                .acquire(
+                    config.normal_map_name.clone(),
+                    &config.normal_map_type,
+                    config.auto_release,
+                )
+                .map_err(|e| MaterialSysError::TextureSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            mat.normal_map.texture = texture;
+        }
+
         let shader = self
             .shader_system
             .borrow()
@@ -902,6 +958,15 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
         let id = material.specular_map.texture.borrow().id;
+        self.texture_system
+            .borrow_mut()
+            .release_by_id(id)
+            .map_err(|e| MaterialSysError::TextureSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        let id = material.normal_map.texture.borrow().id;
         self.texture_system
             .borrow_mut()
             .release_by_id(id)

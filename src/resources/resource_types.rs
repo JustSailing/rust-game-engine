@@ -67,6 +67,7 @@ pub enum TextureUse {
     Unknown = 0x00,
     MapDiffuse = 0x01,
     MapSpecular = 0x02,
+    MapNormal = 0x03,
 }
 
 #[derive(Debug)]
@@ -88,6 +89,8 @@ pub struct MaterialConfig {
     pub diffuse_map_type: String,
     pub specular_map_name: String,
     pub specular_map_type: String,
+    pub normal_map_name: String,
+    pub normal_map_type: String, // could change this to an enum to avoid allocations
 }
 
 impl Default for MaterialConfig {
@@ -102,6 +105,8 @@ impl Default for MaterialConfig {
             shader_name: String::from("Builtin.Material"),
             specular_map_name: Default::default(),
             specular_map_type: Default::default(),
+            normal_map_name: Default::default(),
+            normal_map_type: Default::default(),
         }
     }
 }
@@ -121,10 +126,12 @@ pub struct Material {
     pub shader_id: usize,
     pub name: String,
     pub diffuse_colour: Vec4,
-    pub diffuse_map: TextureMap,
     pub diffuse_map_name: String,
+    pub diffuse_map: TextureMap,
     pub specular_map_name: String,
     pub specular_map: TextureMap,
+    pub normal_map_name: String,
+    pub normal_map: TextureMap,
     pub shininess: f32,
 }
 
@@ -144,6 +151,11 @@ impl Default for Material {
             },
             specular_map_name: Default::default(),
             specular_map: TextureMap {
+                texture: Rc::new(RefCell::new(Texture::default())),
+                use_type: TextureUse::Unknown,
+            },
+            normal_map_name: Default::default(),
+            normal_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,
             },

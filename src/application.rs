@@ -16,7 +16,7 @@ use std::{ptr, thread};
 use thiserror::Error;
 
 use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{Vec3, Vector2D};
+use crate::application::basic::math::vec3::{geometry_generate_normals, geometry_generate_tangents, Vec3, Vector2D};
 use crate::application::basic::math::vec4::Vec4;
 use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
 use crate::application::resources::resource_types::{GeometryConfig, ResourceData, ResourceType};
@@ -347,7 +347,7 @@ impl<'a> ApplicationState<'a> {
 
         material_system
             .borrow_mut()
-            .create_default_material()
+            .create_default_materials()
             .map_err(|e| AppError::MaterialSysError {
                 source: e,
                 file: file!(),
@@ -488,7 +488,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let test_geometry_config = geometry_system
+        let mut test_geometry_config = geometry_system
             .borrow_mut()
             .generate_cube_config(10.0, 10.0, 10.0, 1.0, 1.0, "test_cube", "test_material")
             .map_err(|e| AppError::GeometrySysError {
@@ -496,6 +496,9 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
+
+        geometry_generate_tangents(&mut test_geometry_config.vertices, &mut test_geometry_config.indices);
+        geometry_generate_normals(&mut test_geometry_config.vertices, &mut test_geometry_config.indices);
 
         let test_geometry = geometry_system
             .borrow_mut()
@@ -505,6 +508,8 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
+
+        
 
         if !game.borrow_mut().initialize(Rc::clone(&test_geometry)) {
             return Err(AppError::CouldNotInitializeGame {
