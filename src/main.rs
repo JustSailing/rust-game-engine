@@ -93,12 +93,12 @@ impl<'a> Game<'a> {
 
         if input_system.borrow().is_key_down(Key::Q).unwrap() {
             let left = self.state.view.left();
-            velocity = velocity + left.mul_scalar(temp_move_speed);
+            velocity = velocity + left.mul_scalar(temp_move_speed* 10.0);
         }
 
         if input_system.borrow().is_key_down(Key::E).unwrap() {
             let right = self.state.view.right();
-            velocity = velocity + right.mul_scalar(temp_move_speed);
+            velocity = velocity + right.mul_scalar(temp_move_speed* 10.0);
         }
 
         if input_system.borrow().is_key_down(Key::Z).unwrap() {
@@ -110,24 +110,10 @@ impl<'a> Game<'a> {
             let down = self.state.view.down();
             velocity = velocity + down.mul_scalar(temp_move_speed * 10.0);
         }
-
-        if input_system.borrow().is_key_down(Key::Space).unwrap() {
-            velocity.data[1] += 1.0;
-        }
-
-        if input_system.borrow().is_key_down(Key::Space).unwrap() {
-            velocity.data[1] -= 1.0;
-        }
-
-        if input_system.borrow().is_key_down(Key::E).unwrap() {
-            let right = self.state.view.right();
-            velocity = velocity + right.mul_scalar(temp_move_speed);
-        }
-
-        //velocity.normalize();
+      
         self.state.camera_position.data[0] += velocity.data[0] * delta;
-        self.state.camera_position.data[0] += velocity.data[0] * delta;
-        self.state.camera_position.data[0] += velocity.data[0] * delta;
+        self.state.camera_position.data[1] += velocity.data[1] * delta;
+        self.state.camera_position.data[2] += velocity.data[2] * delta;
         self.state.view_dirty = true;
 
         if input_system.borrow().is_key_down(Key::T).unwrap() {

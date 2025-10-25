@@ -33,7 +33,7 @@ pub enum EventCodes {
     MouseMoved = 0x06,
     MouseWheel = 0x07,
     WindowResized = 0x08,
-    SetRenderMode= 0x09,
+    SetRenderMode = 0x09,
     Debug0 = 0x15,
     //Dont touch
     MaxCodes,

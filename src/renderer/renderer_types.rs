@@ -43,7 +43,7 @@ pub struct RendererPacket {
     pub ui_geometries: Vec<GeometryRenderData>,
 }
 
-#[derive(Debug,Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum RendererDebugViewMode {
     Default = 0,
     Lighting = 1,
@@ -140,14 +140,14 @@ impl Renderer {
         })
     }
 
-    pub fn create_texture(&self,name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
-        self.backend.create_texture(name, pixels, texture).map_err(|e| {
-            RendererError::BackendRendererError {
+    pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
+        self.backend
+            .create_texture(name, pixels, texture)
+            .map_err(|e| RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
                 line: line!(),
-            }
-        })
+            })
     }
 
     pub fn set_default_texture(&mut self, texture: Rc<RefCell<Texture>>) -> Result<()> {
@@ -288,17 +288,15 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()>
-    {
-
+    pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()> {
         match render_mode {
-         0 => self.render_mode = RendererDebugViewMode::Default,
-         1 => self.render_mode = RendererDebugViewMode::Lighting,
-         2 => self.render_mode = RendererDebugViewMode::Normals,
-         // should warn here
-         _ => self.render_mode = RendererDebugViewMode::Default,
+            0 => self.render_mode = RendererDebugViewMode::Default,
+            1 => self.render_mode = RendererDebugViewMode::Lighting,
+            2 => self.render_mode = RendererDebugViewMode::Normals,
+            // should warn here
+            _ => self.render_mode = RendererDebugViewMode::Default,
         }
-        
+
         Ok(())
     }
 

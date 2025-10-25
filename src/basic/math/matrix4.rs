@@ -32,8 +32,6 @@ impl Matrix4 {
     }
 
     pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) -> Self {
-        // 'f' is a scaling factor based on the vertical field of view (fovy).
-        // A smaller fovy results in a larger scaling factor (more zoomed in).
         let half_tan_fov = (fovy_rad * 0.5).tan();
 
         let mut mat = Self::new_zeros();
@@ -222,12 +220,12 @@ impl Matrix4 {
     }
 
     pub fn up(&self) -> Vec3 {
-        let mut up = Vec3::new(-self.data[1], -self.data[5], -self.data[9]);
+        let mut up = Vec3::new(self.data[1], self.data[5], self.data[9]);
         up.normalize();
         up
     }
     pub fn down(&self) -> Vec3 {
-        let mut down = Vec3::new(self.data[1], self.data[5], self.data[9]);
+        let mut down = Vec3::new(-self.data[1], -self.data[5], -self.data[9]);
         down.normalize();
         down
     }
