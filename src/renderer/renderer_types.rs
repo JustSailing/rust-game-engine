@@ -30,36 +30,6 @@ pub enum RendererBackendType {
     DirectX,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C, align(16))] // both C and align are needed or some funky stuff happens
-pub struct MaterialGlobalUBO {
-    pub projection: Matrix4,
-    pub view: Matrix4,
-    pub padding: [Matrix4; 2], // for NVidia cards
-}
-
-#[derive(Clone, Copy)]
-#[repr(C, align(16))]
-pub struct MaterialInstanceUBO {
-    pub diffuse_color: Vec4,
-    pub padding: [Vec4; 3],
-}
-
-#[derive(Copy, Clone)]
-#[repr(C, align(16))] // both C and align are needed or some funky stuff happens
-pub struct UIglobalUBO {
-    pub projection: Matrix4,
-    pub view: Matrix4,
-    pub padding: [Matrix4; 2], // for NVidia cards
-}
-
-#[derive(Clone, Copy)]
-#[repr(C, align(16))]
-pub struct UIinstanceUBO {
-    pub diffuse_color: Vec4,
-    pub padding: [Vec4; 3],
-}
-
 #[derive(Clone)]
 pub struct GeometryRenderData {
     pub model: Matrix4,
@@ -71,6 +41,13 @@ pub struct RendererPacket {
     pub delta_time: f32,
     pub geometries: Vec<GeometryRenderData>,
     pub ui_geometries: Vec<GeometryRenderData>,
+}
+
+#[derive(Debug,Copy, Clone)]
+pub enum RendererDebugViewMode {
+    Default = 0,
+    Lighting = 1,
+    Normals = 2,
 }
 
 #[derive(Error, Debug)]
@@ -128,6 +105,7 @@ pub struct Renderer {
     near_clip: f32,
     material_shader_id: u32,
     ui_shader_id: u32,
+    pub render_mode: RendererDebugViewMode,
     frame_number: u64,
 }
 
@@ -156,6 +134,7 @@ impl Renderer {
             near_clip: 0.1,
             material_shader_id: INVALID_ID as u32,
             ui_shader_id: INVALID_ID as u32,
+            render_mode: RendererDebugViewMode::Default,
             frame_number: 0,
             resource_system: resource_system,
         })
@@ -306,6 +285,20 @@ impl Renderer {
     pub fn set_view(&mut self, view: Matrix4, view_position: Vec3) -> Result<()> {
         self.view = view;
         self.view_position = view_position;
+        Ok(())
+    }
+
+    pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()>
+    {
+
+        match render_mode {
+         0 => self.render_mode = RendererDebugViewMode::Default,
+         1 => self.render_mode = RendererDebugViewMode::Lighting,
+         2 => self.render_mode = RendererDebugViewMode::Normals,
+         // should warn here
+         _ => self.render_mode = RendererDebugViewMode::Default,
+        }
+        
         Ok(())
     }
 

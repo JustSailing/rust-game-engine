@@ -136,6 +136,7 @@ pub struct MaterialShaderUniformLocations {
     pub normal_texture: u16,
     pub shininess: u16,
     pub model: u16,
+    pub render_mode: u16,
 }
 
 impl Default for MaterialShaderUniformLocations {
@@ -151,6 +152,7 @@ impl Default for MaterialShaderUniformLocations {
             specular_texture: u16::MAX,
             normal_texture: u16::MAX,
             shininess: u16::MAX,
+            render_mode: u16::MAX,
         }
     }
 }
@@ -516,6 +518,15 @@ impl<'a> MaterialSystem<'a> {
                         file: file!(),
                         line: line!(),
                     })?;
+                self.material_locations.render_mode = self
+                    .shader_system
+                    .borrow()
+                    .uniform_index(&shader.borrow(), "mode")
+                    .map_err(|e| MaterialSysError::ShaderSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
             } else if self.ui_shader_id == INVALID_ID
                 && config.shader_name == BUILTIN_SHADER_NAME_UI
             {
@@ -631,6 +642,7 @@ impl<'a> MaterialSystem<'a> {
         view: &Matrix4,
         view_positon: &Vec3,
         ambient_colour: &Vec4,
+        mode: u32,
     ) -> Result<()> {
         if shader_id == self.material_shader_id as u32 {
             self.shader_system
@@ -671,6 +683,17 @@ impl<'a> MaterialSystem<'a> {
                 .uniform_set_by_index(
                     self.material_locations.ambient_colour,
                     ambient_colour as *const _ as *const c_void,
+                )
+                .map_err(|e| MaterialSysError::ShaderSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            self.shader_system
+                .borrow()
+                .uniform_set_by_index(
+                    self.material_locations.render_mode,
+                    &mode as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,

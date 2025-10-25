@@ -9,7 +9,7 @@ use application::{AppConfig, ApplicationState};
 use crate::application::basic::event::{EventCallback, EventCodes, EventCtx};
 use crate::application::basic::input::InputState;
 use crate::application::basic::window::Key;
-use crate::application::renderer::renderer_types::Renderer;
+use crate::application::renderer::renderer_types::{Renderer, RendererDebugViewMode};
 use crate::application::resources::resource_types::Geometry;
 use crate::application::systems::material_system::MaterialSystem;
 use crate::application::systems::texture_system::TextureSystem;
@@ -230,6 +230,25 @@ impl<'a> Game<'a> {
                 .normal_map
                 .texture = norm;
         }
+
+        if input_system.borrow().is_key_down(Key::_1).unwrap() {
+            let _ = renderer
+                .borrow_mut()
+                .set_render_mode(RendererDebugViewMode::Lighting as u32);
+        }
+
+        if input_system.borrow().is_key_down(Key::_2).unwrap() {
+            let _ = renderer
+                .borrow_mut()
+                .set_render_mode(RendererDebugViewMode::Normals as u32);
+        }
+
+        if input_system.borrow().is_key_down(Key::_0).unwrap() {
+            let _ = renderer
+                .borrow_mut()
+                .set_render_mode(RendererDebugViewMode::Default as u32);
+        }
+
         self.state.view_dirty = true;
         self.recalculate_view();
 
@@ -289,7 +308,6 @@ impl<'a> EventCallback for Game<'a> {
         match EventCodes::from(code) {
             EventCodes::ApplicationQuit => {
                 println!("in event call back handle event");
-                //self.is_running = false;
                 return true;
             }
             EventCodes::KeyPressed => todo!(),
@@ -313,35 +331,8 @@ impl<'a> EventCallback for Game<'a> {
                     Err(_) => false,
                 }
             }
-            EventCodes::Debug0 => {
-                println!("switching textures in Debug0");
-                let names = ["brick-wall", "door", "stone-wall", "tile"];
-                static mut CHOICE: usize = 3;
-                let old_name = unsafe { names[CHOICE] };
-                unsafe {
-                    CHOICE += 1;
-                    CHOICE %= 4;
-                }
-
-                self.test_geometry
-                    .borrow_mut()
-                    .material
-                    .borrow_mut()
-                    .diffuse_map
-                    .texture = match self.texture_system.borrow_mut().acquire(
-                    unsafe { names[CHOICE].to_string() },
-                    "jpg",
-                    true,
-                ) {
-                    Ok(t) => t,
-                    Err(_) => return false,
-                };
-
-                match self.texture_system.borrow_mut().release(old_name) {
-                    Ok(_) => true,
-                    Err(_) => false,
-                }
-            }
+            EventCodes::SetRenderMode => todo!(),
+            EventCodes::Debug0 => todo!(),
             EventCodes::MaxCodes => todo!(),
         }
     }

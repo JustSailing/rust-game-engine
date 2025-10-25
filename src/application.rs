@@ -16,7 +16,9 @@ use std::{ptr, thread};
 use thiserror::Error;
 
 use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{geometry_generate_normals, geometry_generate_tangents, Vec3, Vector2D};
+use crate::application::basic::math::vec3::{
+    Vec3, Vector2D, geometry_generate_normals, geometry_generate_tangents,
+};
 use crate::application::basic::math::vec4::Vec4;
 use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
 use crate::application::resources::resource_types::{GeometryConfig, ResourceData, ResourceType};
@@ -497,8 +499,14 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        geometry_generate_tangents(&mut test_geometry_config.vertices, &mut test_geometry_config.indices);
-        geometry_generate_normals(&mut test_geometry_config.vertices, &mut test_geometry_config.indices);
+        geometry_generate_tangents(
+            &mut test_geometry_config.vertices,
+            &mut test_geometry_config.indices,
+        );
+        geometry_generate_normals(
+            &mut test_geometry_config.vertices,
+            &mut test_geometry_config.indices,
+        );
 
         let test_geometry = geometry_system
             .borrow_mut()
@@ -508,8 +516,6 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-
-        
 
         if !game.borrow_mut().initialize(Rc::clone(&test_geometry)) {
             return Err(AppError::CouldNotInitializeGame {
@@ -640,6 +646,7 @@ impl<'a> ApplicationState<'a> {
                         &self.renderer_system.borrow().view,
                         &self.renderer_system.borrow().view_position,
                         &self.renderer_system.borrow().ambient_colour,
+                        self.renderer_system.borrow().render_mode as u32,
                     )
                     .map_err(|e| AppError::MaterialSysError {
                         source: e,
@@ -711,6 +718,7 @@ impl<'a> ApplicationState<'a> {
                         &self.renderer_system.borrow().ui_view,
                         &Vec3::new(1.0, 1.0, 1.0),
                         &Vec4::new(1.0, 1.0, 1.0, 1.0),
+                        0,
                     )
                     .map_err(|e| AppError::MaterialSysError {
                         source: e,
