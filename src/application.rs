@@ -16,12 +16,12 @@ use std::{ptr, thread};
 use thiserror::Error;
 
 use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{
-    Vec3, Vector2D, geometry_generate_normals, geometry_generate_tangents,
-};
-use crate::application::basic::math::vec4::Vec4;
+use crate::application::basic::math::vec3::{Vec3, Vector2D, geometry_generate_tangents};
+use crate::application::basic::math::vec4::{Quat, Vec4};
 use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
-use crate::application::resources::resource_types::{GeometryConfig, ResourceData, ResourceType};
+use crate::application::resources::resource_types::{
+    GeometryConfig, Mesh, ResourceData, ResourceType,
+};
 
 use crate::application::systems::material_system::{
     BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI,
@@ -137,8 +137,8 @@ pub struct ApplicationState<'a> {
     pos_y: i32,
     width: i32,
     height: i32,
-    test_geometry: Rc<RefCell<Geometry>>,
     test_ui_geometry: Rc<RefCell<Geometry>>,
+    meshes: Vec<Mesh>,
     resource_system: Rc<RefCell<ResourceSystem>>,
     renderer_system: Rc<RefCell<Renderer>>,
     texture_system: Rc<RefCell<TextureSystem>>,
@@ -146,7 +146,6 @@ pub struct ApplicationState<'a> {
     geometry_system: Rc<RefCell<GeometrySystem<'a>>>,
     input_system: Rc<RefCell<InputState<'a>>>,
     shader_system: Rc<RefCell<ShaderSystem<'a>>>,
-    //temporary
     event_system: Rc<RefCell<EventSystem<'a>>>,
 }
 
@@ -391,14 +390,6 @@ impl<'a> ApplicationState<'a> {
             texture_system: texture_system.clone(),
             renderer_system: renderer_system.clone(),
             material_system: material_system.clone(),
-            test_geometry: geometry_system
-                .borrow()
-                .get_default_geometry()
-                .map_err(|e| AppError::GeometrySysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?,
         }));
 
         event_system
@@ -490,34 +481,63 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let mut test_geometry_config = geometry_system
-            .borrow_mut()
+        let mut cube_mesh = Mesh {
+            geometries: Vec::new(),
+            model: Matrix4::identity(),
+        };
+
+        let mut geo_config = geometry_system
+            .borrow()
             .generate_cube_config(10.0, 10.0, 10.0, 1.0, 1.0, "test_cube", "test_material")
             .map_err(|e| AppError::GeometrySysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
+        geometry_generate_tangents(&mut geo_config.vertices, &mut geo_config.indices);
 
-        geometry_generate_tangents(
-            &mut test_geometry_config.vertices,
-            &mut test_geometry_config.indices,
-        );
-        geometry_generate_normals(
-            &mut test_geometry_config.vertices,
-            &mut test_geometry_config.indices,
+        cube_mesh.geometries.push(
+            geometry_system
+                .borrow_mut()
+                .acquire_from_config(geo_config, true)
+                .map_err(|e| AppError::GeometrySysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?,
         );
 
-        let test_geometry = geometry_system
+        let mut cube_mesh2 = Mesh {
+            geometries: Vec::new(),
+            model: Matrix4::translation(&Vec3 {
+                data: [10.0, 0.0, 1.0],
+            }),
+        };
+
+        let mut geo_config2 = geometry_system
+            .borrow()
+            .generate_cube_config(5.0, 5.0, 5.0, 1.0, 1.0, "test_cube2", "test_material")
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        geometry_generate_tangents(&mut geo_config2.vertices, &mut geo_config2.indices);
+
+        let little_cube = geometry_system
             .borrow_mut()
-            .acquire_from_config(test_geometry_config, true)
+            .acquire_from_config(geo_config2, true)
             .map_err(|e| AppError::GeometrySysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
 
-        if !game.borrow_mut().initialize(Rc::clone(&test_geometry)) {
+        cube_mesh2.geometries.push(little_cube);
+
+        let meshes = vec![cube_mesh, cube_mesh2];
+
+        if !game.borrow_mut().initialize() {
             return Err(AppError::CouldNotInitializeGame {
                 file: file!(),
                 line: line!(),
@@ -532,7 +552,7 @@ impl<'a> ApplicationState<'a> {
             pos_y: app_config.start_pos_y,
             width: app_config.start_width,
             height: app_config.start_height,
-            test_geometry,
+            meshes: meshes,
             test_ui_geometry,
             resource_system,
             renderer_system,
@@ -568,11 +588,12 @@ impl<'a> ApplicationState<'a> {
                         line: line!(),
                     }
                 })?;
-                if !self
-                    .game
-                    .borrow_mut()
-                    .update(delta, &self.input_system, &self.renderer_system)
-                {
+                if !self.game.borrow_mut().update(
+                    delta,
+                    &self.input_system,
+                    &self.renderer_system,
+                    &self.meshes,
+                ) {
                     return Err(AppError::CouldNotUpdateGame {
                         file: file!(),
                         line: line!(),
@@ -586,18 +607,13 @@ impl<'a> ApplicationState<'a> {
                     });
                 }
 
-                let test_render = GeometryRenderData {
-                    model: Matrix4::identity(),
-                    geometry: Rc::clone(&self.test_geometry),
-                };
-
-                let test_ui_render = GeometryRenderData {
+                let mut test_ui_render = GeometryRenderData {
                     model: Matrix4::translation(&Vec3::new(0.0, 0.0, 0.0)),
                     geometry: Rc::clone(&self.test_ui_geometry),
                 };
 
-                let mut geometries = Vec::new();
-                geometries.push(test_render.clone());
+                // shouldn't be creating a new vec each iteration
+                let geometries = Vec::new();
 
                 let mut ui_geometries = Vec::new();
                 ui_geometries.push(test_ui_render.clone());
@@ -629,60 +645,78 @@ impl<'a> ApplicationState<'a> {
                         file: file!(),
                         line: line!(),
                     })?;
-                self.shader_system
-                    .borrow_mut()
-                    .use_by_id(test_render.geometry.borrow().material.borrow().shader_id)
-                    .map_err(|e| AppError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
 
-                self.material_system
-                    .borrow_mut()
-                    .apply_global(
-                        test_render.geometry.borrow().material.borrow().shader_id as u32,
-                        &self.renderer_system.borrow().projection,
-                        &self.renderer_system.borrow().view,
-                        &self.renderer_system.borrow().view_position,
-                        &self.renderer_system.borrow().ambient_colour,
-                        self.renderer_system.borrow().render_mode as u32,
-                    )
-                    .map_err(|e| AppError::MaterialSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.5 * 0.01, false);
+                let rotation_matrix = Quat::to_matrix4(rotation);
+                self.meshes[0].model = self.meshes[0].model * rotation_matrix;
+                self.meshes[1].model =
+                    Matrix4::translation(&Vec3::new(10.0, 0.0, 0.0)) * self.meshes[0].model;
+                let mut global_updated = false;
+                for geo in self.meshes.iter() {
+                    for g in geo.geometries.iter() {
+                        //let g_ref = g.borrow_mut();
+                        self.shader_system
+                            .borrow_mut()
+                            .use_by_id(g.borrow().material.borrow().shader_id)
+                            .map_err(|e| AppError::ShaderSysError {
+                                source: e,
+                                file: file!(),
+                                line: line!(),
+                            })?;
+                        if !global_updated {
+                            self.material_system
+                                .borrow_mut()
+                                .apply_global(
+                                    g.borrow().material.borrow().shader_id as u32,
+                                    &self.renderer_system.borrow().projection,
+                                    &self.renderer_system.borrow().view,
+                                    &self.renderer_system.borrow().view_position,
+                                    &self.renderer_system.borrow().ambient_colour,
+                                    self.renderer_system.borrow().render_mode as u32,
+                                )
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                            global_updated = true;
+                        }
+                        if g.borrow().material.borrow().render_frame_number
+                            != self.renderer_system.borrow().frame_number
+                        {
+                            self.material_system
+                                .borrow()
+                                .apply_instance(
+                                    &g.borrow().material.borrow(),
+                                    g.borrow().material_instance_id,
+                                    &geo.model,
+                                )
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                        } else {
+                            g.borrow_mut().material.borrow_mut().render_frame_number =
+                                self.renderer_system.borrow().frame_number;
+                        }
 
-                self.material_system
-                    .borrow()
-                    .apply_instance(&test_render.geometry.borrow_mut().material.borrow())
-                    .map_err(|e| AppError::MaterialSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                        let mut geo_render_data = GeometryRenderData {
+                            model: geo.model,
+                            geometry: Rc::clone(&g),
+                        };
 
-                self.material_system
-                    .borrow()
-                    .apply_local(
-                        &test_render.geometry.borrow_mut().material.borrow(),
-                        &test_render.model,
-                    )
-                    .map_err(|e| AppError::MaterialSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-
-                self.renderer_system
-                    .borrow_mut()
-                    .draw_geometry(&mut render_packet.geometries, render_packet.delta_time)
-                    .map_err(|e| AppError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                        self.renderer_system
+                            .borrow_mut()
+                            .draw_geometry(&mut geo_render_data, render_packet.delta_time)
+                            .map_err(|e| AppError::RendererSysError {
+                                source: e,
+                                file: file!(),
+                                line: line!(),
+                            })?;
+                        render_packet.geometries.push(geo_render_data);
+                    }
+                }
 
                 self.renderer_system
                     .borrow_mut()
@@ -725,31 +759,24 @@ impl<'a> ApplicationState<'a> {
                         file: file!(),
                         line: line!(),
                     })?;
-
-                self.material_system
-                    .borrow()
-                    .apply_instance(&test_ui_render.geometry.borrow_mut().material.borrow())
-                    .map_err(|e| AppError::MaterialSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-
-                self.material_system
-                    .borrow()
-                    .apply_local(
-                        &test_ui_render.geometry.borrow_mut().material.borrow(),
-                        &test_ui_render.model,
-                    )
-                    .map_err(|e| AppError::MaterialSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-
+                {
+                    let t_ui_geo = test_ui_render.geometry.borrow_mut();
+                    self.material_system
+                        .borrow()
+                        .apply_instance(
+                            &t_ui_geo.material.borrow(),
+                            t_ui_geo.material_instance_id,
+                            &test_ui_render.model,
+                        )
+                        .map_err(|e| AppError::MaterialSysError {
+                            source: e,
+                            file: file!(),
+                            line: line!(),
+                        })?;
+                }
                 self.renderer_system
                     .borrow_mut()
-                    .draw_geometry(&mut render_packet.ui_geometries, render_packet.delta_time)
+                    .draw_geometry(&mut test_ui_render, render_packet.delta_time)
                     .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),

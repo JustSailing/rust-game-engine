@@ -335,4 +335,23 @@ impl Quat {
         o[15] = 1.0;
         out_matrix
     }
+
+    pub fn to_matrix4(mut q: Quat) -> Matrix4 {
+        let mut out_matrix = Matrix4::identity();
+        q.normalize();
+        let n = q;
+
+        out_matrix.data[0] = 1.0 - 2.0 * n.data[1] * n.data[1] - 2.0 * n.data[2] * n.data[2];
+        out_matrix.data[1] = 2.0 * n.data[0] * n.data[1] - 2.0 * n.data[2] * n.data[3];
+        out_matrix.data[2] = 2.0 * n.data[0] * n.data[2] + 2.0 * n.data[1] * n.data[3];
+
+        out_matrix.data[4] = 2.0 * n.data[0] * n.data[1] + 2.0 * n.data[2] * n.data[3];
+        out_matrix.data[5] = 1.0 - 2.0 * n.data[0] * n.data[0] - 2.0 * n.data[2] * n.data[2];
+        out_matrix.data[6] = 2.0 * n.data[1] * n.data[2] - 2.0 * n.data[0] * n.data[3];
+
+        out_matrix.data[8] = 2.0 * n.data[0] * n.data[2] - 2.0 * n.data[1] * n.data[3];
+        out_matrix.data[9] = 2.0 * n.data[1] * n.data[2] + 2.0 * n.data[0] * n.data[3];
+        out_matrix.data[10] = 1.0 - 2.0 * n.data[0] * n.data[0] - 2.0 * n.data[1] * n.data[1];
+        out_matrix
+    }
 }

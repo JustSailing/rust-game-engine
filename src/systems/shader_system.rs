@@ -123,8 +123,6 @@ pub struct Shader<'a> {
     pub global_ubo_offset: usize,
     pub ubo_size: usize,
     pub ubo_stride: usize,
-    push_constant_size: usize,
-    push_constant_stride: usize,
     pub global_textures: Vec<Rc<RefCell<Texture>>>,
     instance_texture_count: usize,
     pub bound_instance_id: usize,
@@ -134,6 +132,9 @@ pub struct Shader<'a> {
     pub uniforms: Vec<ShaderUniform>,
     pub attributes: Vec<ShaderAttribute>,
     state: ShaderState,
+    push_constant_size: usize,
+    push_constant_stride: usize,
+    push_constant_offset: usize,
     pub push_constant_range_count: usize,
     pub push_constant_ranges: [Range; 32],
     pub attribute_stride: usize,
@@ -168,6 +169,7 @@ impl<'a> Default for Shader<'a> {
             internal_data: Default::default(),
             push_constant_range_count: Default::default(),
             bound_scope: ShaderScope::Unknown,
+            push_constant_offset: Default::default(),
         }
     }
 }

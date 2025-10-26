@@ -513,8 +513,9 @@ impl<'a> GeometrySystem<'a> {
             })?;
 
         let mut material_config = MaterialConfig::default().name(&config.material_name);
+        let mut g = geo.borrow_mut();
 
-        geo.borrow_mut().material = self
+        (g.material, g.material_instance_id) = self
             .material_system
             .borrow_mut()
             .acquire(&mut material_config)

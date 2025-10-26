@@ -106,7 +106,7 @@ pub struct Renderer {
     material_shader_id: u32,
     ui_shader_id: u32,
     pub render_mode: RendererDebugViewMode,
-    frame_number: u64,
+    pub frame_number: u64,
 }
 
 impl Renderer {
@@ -251,16 +251,16 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn draw_geometry(&mut self, data: &mut Vec<GeometryRenderData>, _delta: f32) -> Result<()> {
-        for geo in data.iter_mut() {
-            self.backend
-                .draw_geometry(geo)
-                .map_err(|e| RendererError::BackendRendererError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-        }
+    pub fn draw_geometry(&mut self, data: &mut GeometryRenderData, _delta: f32) -> Result<()> {
+        self.frame_number += 1;
+        self.backend
+            .draw_geometry(data)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
         Ok(())
     }
 

@@ -10,7 +10,7 @@ use crate::application::basic::event::{EventCallback, EventCodes, EventCtx};
 use crate::application::basic::input::InputState;
 use crate::application::basic::window::Key;
 use crate::application::renderer::renderer_types::{Renderer, RendererDebugViewMode};
-use crate::application::resources::resource_types::Geometry;
+use crate::application::resources::resource_types::Mesh;
 use crate::application::systems::material_system::MaterialSystem;
 use crate::application::systems::texture_system::TextureSystem;
 
@@ -41,18 +41,16 @@ pub struct Game<'a> {
     texture_system: Rc<RefCell<TextureSystem>>,
     renderer_system: Rc<RefCell<Renderer>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
-    test_geometry: Rc<RefCell<Geometry>>,
 }
 
 impl<'a> Game<'a> {
     // temporary
-    pub fn initialize(&mut self, geometry: Rc<RefCell<Geometry>>) -> bool {
+    pub fn initialize(&mut self) -> bool {
         self.state.camera_position = Vec3::new(0.0, 0.0, 30.0);
         self.state.camera_euler = Vec3::new_zeroes();
         self.state.view = Matrix4::translation(&self.state.camera_position);
         self.state.view = Matrix4::inverse(&self.state.view);
         self.state.view_dirty = true;
-        self.test_geometry = geometry;
         return true;
     }
 
@@ -61,6 +59,7 @@ impl<'a> Game<'a> {
         delta: f32,
         input_system: &Rc<RefCell<InputState>>,
         renderer: &Rc<RefCell<Renderer>>,
+        meshes: &Vec<Mesh>,
     ) -> bool {
         let movement = 15000.0;
 
@@ -93,12 +92,12 @@ impl<'a> Game<'a> {
 
         if input_system.borrow().is_key_down(Key::Q).unwrap() {
             let left = self.state.view.left();
-            velocity = velocity + left.mul_scalar(temp_move_speed* 10.0);
+            velocity = velocity + left.mul_scalar(temp_move_speed * 10.0);
         }
 
         if input_system.borrow().is_key_down(Key::E).unwrap() {
             let right = self.state.view.right();
-            velocity = velocity + right.mul_scalar(temp_move_speed* 10.0);
+            velocity = velocity + right.mul_scalar(temp_move_speed * 10.0);
         }
 
         if input_system.borrow().is_key_down(Key::Z).unwrap() {
@@ -110,111 +109,20 @@ impl<'a> Game<'a> {
             let down = self.state.view.down();
             velocity = velocity + down.mul_scalar(temp_move_speed * 10.0);
         }
-      
+
         self.state.camera_position.data[0] += velocity.data[0] * delta;
         self.state.camera_position.data[1] += velocity.data[1] * delta;
         self.state.camera_position.data[2] += velocity.data[2] * delta;
         self.state.view_dirty = true;
 
         if input_system.borrow().is_key_down(Key::T).unwrap() {
-            let names = ["brick-wall", "door", "stone-wall", "tile", "cube"];
-            let spec_names = [
-                "brick-wall_spec",
-                "door_spec",
-                "stone-wall_spec",
-                "tile_spec",
-                "cube_spec",
-            ];
-            let norm_names = [
-                "brick-wall_norm",
-                "door_norm",
-                "stone-wall_norm",
-                "tile_norm",
-                "cube_norm",
-            ];
+            let names = ["brick-wall", "door", "stone-wall", "tile", "test_material"];
             static mut CHOICE: usize = 4;
             let old_name = unsafe { names[CHOICE] };
-            let old_spec_name = unsafe { spec_names[CHOICE] };
-            let old_norm_name = unsafe { norm_names[CHOICE] };
             unsafe {
                 CHOICE += 1;
                 CHOICE %= 5;
             }
-
-            let tex = match self.texture_system.borrow_mut().acquire(
-                unsafe { names[CHOICE].to_string() },
-                if unsafe { names[CHOICE] == "cube" } {
-                    "png"
-                } else {
-                    "jpg"
-                },
-                true,
-            ) {
-                Ok(t) => t,
-                Err(_) => return false,
-            };
-
-            match self.texture_system.borrow_mut().release(old_name) {
-                Ok(_) => {}
-                Err(_) => return false,
-            }
-
-            self.test_geometry
-                .borrow_mut()
-                .material
-                .borrow_mut()
-                .diffuse_map
-                .texture = tex;
-
-            let spec = match self.texture_system.borrow_mut().acquire(
-                unsafe { spec_names[CHOICE].to_string() },
-                if unsafe { spec_names[CHOICE] == "cube_spec" } {
-                    "png"
-                } else {
-                    "jpg"
-                },
-                true,
-            ) {
-                Ok(t) => t,
-                Err(_) => return false,
-            };
-
-            match self.texture_system.borrow_mut().release(old_spec_name) {
-                Ok(_) => {}
-                Err(_) => return false,
-            }
-
-            self.test_geometry
-                .borrow_mut()
-                .material
-                .borrow_mut()
-                .specular_map
-                .texture = spec;
-
-            let norm = match self.texture_system.borrow_mut().acquire(
-                unsafe { norm_names[CHOICE].to_string() },
-                if unsafe { norm_names[CHOICE] == "cube_norm" } {
-                    "png"
-                } else {
-                    "jpg"
-                },
-                true,
-            ) {
-                Ok(t) => t,
-                Err(_) => return false,
-            };
-
-            match self.texture_system.borrow_mut().release(old_norm_name) {
-                Ok(_) => {}
-                Err(_) => return false,
-            }
-
-            self.test_geometry
-                .borrow_mut()
-                .material
-                .borrow_mut()
-                .normal_map
-                .texture = norm;
         }
 
         if input_system.borrow().is_key_down(Key::_1).unwrap() {

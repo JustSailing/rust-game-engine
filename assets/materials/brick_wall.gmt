@@ -1,0 +1,12 @@
+#material config
+version=0.1
+name=brick_wall
+diffuse_colour=1.0 1.0 1.0 1.0
+shininess=64.0
+diffuse_map_name=brick-wall
+diffuse_map_type=jpg
+specular_map_name=brick-wall_spec
+specular_map_type=jpg
+normal_map_name=brick-wall_norm
+normal_map_type=jpg
+shader=Shader.Builtin.Material

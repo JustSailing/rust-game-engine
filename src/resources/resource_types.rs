@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::application::{
-    basic::math::{consts::INVALID_ID, vec4::Vec4},
+    basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec4::Vec4},
     renderer::vulkan::vulkan_image::VulkanImage,
 };
 use ash::vk::Sampler;
@@ -124,6 +124,7 @@ pub struct Material {
     pub generation: usize,
     pub internal_id: usize,
     pub shader_id: usize,
+    pub render_frame_number: u64,
     pub name: String,
     pub diffuse_colour: Vec4,
     pub diffuse_map_name: String,
@@ -160,6 +161,7 @@ impl Default for Material {
                 use_type: TextureUse::Unknown,
             },
             shininess: Default::default(),
+            render_frame_number: INVALID_ID as u64,
         }
     }
 }
@@ -178,6 +180,7 @@ pub struct GeometryConfig<T: Clone, U: Clone> {
 pub struct Geometry {
     pub id: usize,
     pub internal_id: usize,
+    pub material_instance_id: usize,
     pub generation: usize,
     pub name: String,
     pub material: Rc<RefCell<Material>>,
@@ -191,8 +194,16 @@ impl Default for Geometry {
             generation: INVALID_ID,
             name: Default::default(),
             material: Default::default(),
+            material_instance_id: INVALID_ID,
         }
     }
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct Mesh {
+    pub geometries: Vec<Rc<RefCell<Geometry>>>,
+    pub model: Matrix4,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

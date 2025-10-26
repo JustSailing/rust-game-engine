@@ -6,12 +6,9 @@ use ash::vk::{
     PipelineInputAssemblyStateCreateInfo, PipelineLayout, PipelineLayoutCreateInfo,
     PipelineMultisampleStateCreateInfo, PipelineRasterizationStateCreateInfo,
     PipelineShaderStageCreateInfo, PipelineVertexInputStateCreateInfo,
-    PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, PushConstantRange, Rect2D,
-    SampleCountFlags, ShaderStageFlags, VertexInputAttributeDescription,
-    VertexInputBindingDescription, VertexInputRate, Viewport,
+    PipelineViewportStateCreateInfo, PolygonMode, PrimitiveTopology, Rect2D, SampleCountFlags,
+    VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate, Viewport,
 };
-
-use crate::application::systems::shader_system::Range;
 
 use crate::application::renderer::vulkan::{
     vulkan_backend::VulkanBackendError, vulkan_command_buffer::VulkanCommandBuffer,
@@ -42,8 +39,8 @@ impl VulkanPipeline {
         scissor: Rect2D,
         is_wireframe: bool,
         depth_test_enabled: bool,
-        push_constant_ranges: &[Range],
-        push_constant_count: usize,
+        // push_constant_ranges: &[Range],
+        // push_constant_count: usize,
     ) -> Result<VulkanPipeline> {
         //view state
         let viewport_state_create_info = PipelineViewportStateCreateInfo::default()
@@ -126,19 +123,19 @@ impl VulkanPipeline {
         let mut pipeline_layout_create_info = PipelineLayoutCreateInfo::default();
         pipeline_layout_create_info.p_set_layouts = descriptor_set_layout.as_ptr();
         pipeline_layout_create_info.set_layout_count = descriptor_set_count;
-        let mut push_consts = Vec::<PushConstantRange>::with_capacity(push_constant_count);
-        if push_constant_count > 0 {
-            for i in 0..push_constant_count {
-                push_consts.push(
-                    PushConstantRange::default()
-                        .offset(push_constant_ranges[i].offset as u32)
-                        .size(push_constant_ranges[i].size as u32)
-                        .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT),
-                );
-            }
-            pipeline_layout_create_info.p_push_constant_ranges = push_consts.as_ptr();
-            pipeline_layout_create_info.push_constant_range_count = push_constant_count as u32;
-        }
+        // let mut push_consts = Vec::<PushConstantRange>::with_capacity(push_constant_count);
+        // if push_constant_count > 0 {
+        //     for i in 0..push_constant_count {
+        //         push_consts.push(
+        //             PushConstantRange::default()
+        //                 .offset(push_constant_ranges[i].offset as u32)
+        //                 .size(push_constant_ranges[i].size as u32)
+        //                 .stage_flags(ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT),
+        //         );
+        //     }
+        //     pipeline_layout_create_info.p_push_constant_ranges = push_consts.as_ptr();
+        //     pipeline_layout_create_info.push_constant_range_count = push_constant_count as u32;
+        // }
 
         let pipeline_layout = unsafe {
             match device

@@ -14,9 +14,12 @@ layout(set = 0, binding = 0) uniform global_uniform_object {
   int mode;
 } global_ubo;
 
-layout(push_constant) uniform push_constants { 
-  mat4 model; 
-} u_push_constants;
+layout(set = 1, binding = 0) uniform instance_uniform_object {
+  vec4 diffuse_colour;
+  vec4 shininess;
+  mat4 model;
+}instance_ubo;
+
 
 layout(location = 0) out int out_mode;
 
@@ -28,6 +31,8 @@ layout(location = 1) out struct dto {
   vec3 frag_position;
   vec4 colour;
   vec4 tangent;
+  vec4 diffuse_colour;
+  vec4 shininess;
 } out_dto;
 
 
@@ -36,13 +41,15 @@ void main() {
   out_dto.tex_coord =  in_texcoord;
   out_dto.colour = in_colour;
   out_dto.ambient = global_ubo.ambient_colour;
-  out_dto.frag_position = vec3(u_push_constants.model * vec4(in_position, 1.0));
-  mat3 m3_model = mat3(u_push_constants.model);
+  out_dto.diffuse_colour = instance_ubo.diffuse_colour;
+  out_dto.shininess = instance_ubo.shininess;
+  out_dto.frag_position = vec3(instance_ubo.model * vec4(in_position, 1.0));
+  mat3 m3_model = mat3(instance_ubo.model);
   out_dto.normal = m3_model * in_normal;
   out_dto.tangent = vec4(normalize(m3_model * in_tangent.xyz), in_tangent.w);
   out_dto.view_position = global_ubo.view_position;
   out_mode = global_ubo.mode;
   gl_Position = global_ubo.projection * global_ubo.view *
-                u_push_constants.model * vec4(in_position, 1.0);
+              instance_ubo.model * vec4(in_position, 1.0);
 }
 

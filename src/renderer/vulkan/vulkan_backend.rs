@@ -1208,8 +1208,8 @@ impl<'a> VulkanContext {
     }
 
     pub fn draw_geometry(&mut self, data: &mut GeometryRenderData) -> Result<()> {
-        let geo = data.geometry.borrow_mut();
-        let buffer_data = &self.geometries[geo.internal_id];
+        //let geo = data.geometry.borrow_mut();
+        let buffer_data = &self.geometries[data.geometry.borrow().internal_id];
         let command_buffer =
             self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame as usize];
 
@@ -1489,8 +1489,8 @@ impl<'a> VulkanContext {
             scissor,
             false,
             true,
-            &shader.push_constant_ranges,
-            shader.push_constant_range_count,
+            // &shader.push_constant_ranges,
+            // shader.push_constant_range_count,
         )?;
         let required_ubo_alignment = self
             .device
@@ -1727,17 +1727,6 @@ impl<'a> VulkanContext {
         let current_frame = self.in_flight_frames.current_frame;
         let global_descriptor = internal_data.global_descriptor_sets[current_frame as usize];
 
-        unsafe {
-            self.device.device.cmd_bind_descriptor_sets(
-                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
-                PipelineBindPoint::GRAPHICS,
-                internal_data.pipeline.layout,
-                0,
-                std::slice::from_ref(&global_descriptor),
-                &[],
-            );
-        }
-
         let buffer_info = DescriptorBufferInfo::default()
             .buffer(internal_data.uniform_buffer.buffer)
             .offset(shader.global_ubo_offset as u64)
@@ -1759,6 +1748,17 @@ impl<'a> VulkanContext {
         if global_set_binding_count > 1 {
             global_set_binding_count = 0;
             println!("warning: global image samplers are not yet supported")
+        }
+
+        unsafe {
+            self.device.device.cmd_bind_descriptor_sets(
+                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
+                PipelineBindPoint::GRAPHICS,
+                internal_data.pipeline.layout,
+                0,
+                std::slice::from_ref(&global_descriptor),
+                &[],
+            );
         }
 
         unsafe {
@@ -1784,17 +1784,6 @@ impl<'a> VulkanContext {
         let object_descriptor_set = object_state
             .descriptor_set_state
             .vulkan_shader_config_descriptor_sets[self.in_flight_frames.current_frame as usize];
-
-        unsafe {
-            self.device.device.cmd_bind_descriptor_sets(
-                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
-                PipelineBindPoint::GRAPHICS,
-                internal_data.pipeline.layout,
-                1,
-                std::slice::from_ref(&object_descriptor_set),
-                &[],
-            );
-        }
 
         let mut descriptor_writes = [WriteDescriptorSet::default(); 2];
 
@@ -1865,6 +1854,17 @@ impl<'a> VulkanContext {
             sampler_descriptor.dst_set = object_descriptor_set;
             descriptor_writes[descriptor_count] = sampler_descriptor;
             descriptor_count += 1;
+        }
+
+        unsafe {
+            self.device.device.cmd_bind_descriptor_sets(
+                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
+                PipelineBindPoint::GRAPHICS,
+                internal_data.pipeline.layout,
+                1,
+                std::slice::from_ref(&object_descriptor_set),
+                &[],
+            );
         }
 
         if descriptor_count == 1 {
@@ -2063,9 +2063,7 @@ impl<'a> VulkanContext {
                 } else if uniform.shader_scope == ShaderScope::Instance {
                     let mut addr = internal_data.mapped_uniform_block;
                     unsafe {
-                        addr = addr.add(
-                            shader.global_ubo_offset + shader.bound_ubo_offset + uniform.offset,
-                        );
+                        addr = addr.add(shader.bound_ubo_offset + uniform.offset);
                         std::ptr::copy_nonoverlapping(value as *const _, addr.cast(), uniform.size);
                     }
                 }

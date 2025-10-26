@@ -1,0 +1,12 @@
+#material config
+version=0.1
+name=tile
+diffuse_colour=1.0 1.0 1.0 1.0
+shininess=64.0
+diffuse_map_name=tile
+diffuse_map_type=jpg
+specular_map_name=tile_spec
+specular_map_type=jpg
+normal_map_name=tile_norm
+normal_map_type=jpg
+shader=Shader.Builtin.Material

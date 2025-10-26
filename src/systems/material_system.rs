@@ -312,7 +312,10 @@ impl<'a> MaterialSystem<'a> {
         Ok(Rc::clone(&self.default_material))
     }
 
-    pub fn acquire(&mut self, config: &mut MaterialConfig) -> Result<Rc<RefCell<Material>>> {
+    pub fn acquire(
+        &mut self,
+        config: &mut MaterialConfig,
+    ) -> Result<(Rc<RefCell<Material>>, usize)> {
         let mut material_res = self
             .resource_system
             .borrow()
@@ -355,7 +358,7 @@ impl<'a> MaterialSystem<'a> {
             }
         };
 
-        let material = self.acquire_from_config(config)?;
+        let (material, shader_instance_id) = self.acquire_from_config(config)?;
 
         self.resource_system
             .borrow()
@@ -366,15 +369,18 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
 
-        Ok(material)
+        Ok((material, shader_instance_id))
     }
 
     pub fn acquire_from_config(
         &mut self,
         config: &mut MaterialConfig,
-    ) -> Result<Rc<RefCell<Material>>> {
+    ) -> Result<(Rc<RefCell<Material>>, usize)> {
         if config.name == DEFAULT_MATERIAL_NAME {
-            return Ok(Rc::clone(&self.default_material));
+            return Ok((
+                Rc::clone(&self.default_material),
+                self.default_material.borrow().internal_id,
+            ));
         }
         let mut mat_ref = MaterialRef::default();
         {
@@ -593,8 +599,31 @@ impl<'a> MaterialSystem<'a> {
             self.registered_materials[mat_ref.handle].borrow_mut().id = mat_ref.handle;
         }
 
+        let shader = self
+            .shader_system
+            .borrow()
+            .get_shader_by_name(&config.shader_name)
+            .map_err(|e| MaterialSysError::ShaderSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        // FIXME: changing internal id means nothing
+        let material_instance_id = self
+            .frontend_renderer
+            .borrow()
+            .shader_acquire_instance_resources(&mut shader.borrow_mut())
+            .map_err(|e| MaterialSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })? as usize;
+
         self.insert_hashmap(&config.name, &mat_ref)?;
-        Ok(Rc::clone(&self.registered_materials[mat_ref.handle]))
+        Ok((
+            Rc::clone(&self.registered_materials[mat_ref.handle]),
+            material_instance_id,
+        ))
     }
 
     pub fn release(&mut self, name: &str) -> Result<()> {
@@ -736,10 +765,15 @@ impl<'a> MaterialSystem<'a> {
             })
     }
 
-    pub fn apply_instance(&self, material: &Material) -> Result<()> {
+    pub fn apply_instance(
+        &self,
+        material: &Material,
+        material_instance_id: usize,
+        model: &Matrix4,
+    ) -> Result<()> {
         self.shader_system
             .borrow()
-            .bind_instance(material.internal_id)
+            .bind_instance(material_instance_id)
             .map_err(|e| MaterialSysError::ShaderSysError {
                 source: e,
                 file: file!(),
@@ -801,6 +835,17 @@ impl<'a> MaterialSystem<'a> {
                     file: file!(),
                     line: line!(),
                 })?;
+            self.shader_system
+                .borrow()
+                .uniform_set_by_index(
+                    self.material_locations.model,
+                    model as *const _ as *const c_void,
+                )
+                .map_err(|e| MaterialSysError::ShaderSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
         } else if material.shader_id == self.ui_shader_id {
             self.shader_system
                 .borrow()
@@ -824,6 +869,14 @@ impl<'a> MaterialSystem<'a> {
                     file: file!(),
                     line: line!(),
                 })?;
+            self.shader_system
+                .borrow()
+                .uniform_set_by_index(self.ui_locations.model, model as *const _ as *const c_void)
+                .map_err(|e| MaterialSysError::ShaderSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
         } else {
             return Err(MaterialSysError::UnrecognizedApplyGlobalCall {
                 file: file!(),
@@ -840,36 +893,24 @@ impl<'a> MaterialSystem<'a> {
             })
     }
 
-    pub fn apply_local(&self, material: &Material, model: &Matrix4) -> Result<()> {
-        if material.shader_id == self.material_shader_id {
-            return self
-                .shader_system
-                .borrow()
-                .uniform_set_by_index(
-                    self.material_locations.model,
-                    model as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                });
-        } else if material.shader_id == self.ui_shader_id {
-            return self
-                .shader_system
-                .borrow()
-                .uniform_set_by_index(self.ui_locations.model, model as *const _ as *const c_void)
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                });
-        }
-        return Err(MaterialSysError::CouldNotApplyLocal {
-            file: file!(),
-            line: line!(),
-        });
-    }
+    // pub fn apply_local(&self, material: &Material, model: &Matrix4) -> Result<()> {
+    //     if material.shader_id == self.material_shader_id {
+    //     } else if material.shader_id == self.ui_shader_id {
+    //         return self
+    //             .shader_system
+    //             .borrow()
+    //             .uniform_set_by_index(self.ui_locations.model, model as *const _ as *const c_void)
+    //             .map_err(|e| MaterialSysError::ShaderSysError {
+    //                 source: e,
+    //                 file: file!(),
+    //                 line: line!(),
+    //             });
+    //     }
+    //     return Err(MaterialSysError::CouldNotApplyLocal {
+    //         file: file!(),
+    //         line: line!(),
+    //     });
+    // }
 
     fn insert_hashmap(&mut self, name: &String, mat_ref: &MaterialRef) -> Result<()> {
         self.registered_materials_hashmap
@@ -947,26 +988,6 @@ impl<'a> MaterialSystem<'a> {
                 })?;
             mat.normal_map.texture = texture;
         }
-
-        let shader = self
-            .shader_system
-            .borrow()
-            .get_shader_by_name(&config.shader_name)
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        mat.internal_id = self
-            .frontend_renderer
-            .borrow()
-            .shader_acquire_instance_resources(&mut shader.borrow_mut())
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })? as usize;
         Ok(mat)
     }
 
