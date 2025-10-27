@@ -8,9 +8,10 @@ use application::{AppConfig, ApplicationState};
 
 use crate::application::basic::event::{EventCallback, EventCodes, EventCtx};
 use crate::application::basic::input::InputState;
+use crate::application::basic::math::consts::INVALID_ID;
 use crate::application::basic::window::Key;
 use crate::application::renderer::renderer_types::{Renderer, RendererDebugViewMode};
-use crate::application::resources::resource_types::Mesh;
+use crate::application::resources::resource_types::{MaterialConfig, Mesh};
 use crate::application::systems::material_system::MaterialSystem;
 use crate::application::systems::texture_system::TextureSystem;
 
@@ -59,7 +60,7 @@ impl<'a> Game<'a> {
         delta: f32,
         input_system: &Rc<RefCell<InputState>>,
         renderer: &Rc<RefCell<Renderer>>,
-        meshes: &Vec<Mesh>,
+        meshes: &mut Vec<Mesh>,
     ) -> bool {
         let movement = 15000.0;
 
@@ -116,13 +117,47 @@ impl<'a> Game<'a> {
         self.state.view_dirty = true;
 
         if input_system.borrow().is_key_down(Key::T).unwrap() {
-            let names = ["brick-wall", "door", "stone-wall", "tile", "test_material"];
+            let names = ["brick_wall", "door", "stone_wall", "tile", "test_material"];
             static mut CHOICE: usize = 4;
             let old_name = unsafe { names[CHOICE] };
             unsafe {
                 CHOICE += 1;
                 CHOICE %= 5;
             }
+
+            let new_name = unsafe { names[CHOICE].to_string() };
+
+            let g = &mut meshes[0].geometries[0];
+            let mut material_config = MaterialConfig::default().name(&new_name);
+            let mut instance_id = INVALID_ID;
+            (g.borrow_mut().material, instance_id) = match self
+                .material_system
+                .borrow_mut()
+                .acquire(&mut material_config)
+            {
+                Ok((material, instance_id)) => (material, instance_id),
+                Err(_) => return false,
+            };
+
+            g.borrow_mut().material_instance_id = instance_id;
+
+            let _ = self.material_system.borrow_mut().release(old_name);
+
+            let g = &mut meshes[1].geometries[0];
+            let mut material_config = MaterialConfig::default().name(&new_name);
+            let mut instance_id = INVALID_ID;
+            (g.borrow_mut().material, instance_id) = match self
+                .material_system
+                .borrow_mut()
+                .acquire(&mut material_config)
+            {
+                Ok((material, instance_id)) => (material, instance_id),
+                Err(_) => return false,
+            };
+
+            g.borrow_mut().material_instance_id = instance_id;
+
+            let _ = self.material_system.borrow_mut().release(old_name);
         }
 
         if input_system.borrow().is_key_down(Key::_1).unwrap() {

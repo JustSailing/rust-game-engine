@@ -592,7 +592,7 @@ impl<'a> ApplicationState<'a> {
                     delta,
                     &self.input_system,
                     &self.renderer_system,
-                    &self.meshes,
+                    &mut self.meshes,
                 ) {
                     return Err(AppError::CouldNotUpdateGame {
                         file: file!(),
