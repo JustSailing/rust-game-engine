@@ -264,7 +264,11 @@ impl PartialEq for Vec4 {
     }
 }
 
-pub type Quat = Vec4;
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct Quat {
+    data: [f32; 4],
+}
 
 impl Quat {
     pub fn identity() -> Self {
@@ -281,12 +285,13 @@ impl Quat {
             .sqrt()
     }
 
-    pub fn q_normalize(&mut self) {
-        let length = self.length();
-        self.data[0] /= length;
-        self.data[1] /= length;
-        self.data[2] /= length;
-        self.data[3] /= length;
+    pub fn normalize(mut quat: Quat) -> Quat {
+        let normal = quat.normal();
+        quat.data[0] /= normal;
+        quat.data[1] /= normal;
+        quat.data[2] /= normal;
+        quat.data[3] /= normal;
+        quat
     }
 
     pub fn from_axis_angle(axis: Vec3, angle: f32, normalize: bool) -> Self {
@@ -294,11 +299,11 @@ impl Quat {
         let s = half_angle.sin();
         let c = half_angle.cos();
 
-        let mut q = Self {
+        let q = Self {
             data: [s * axis.data[0], s * axis.data[1], s * axis.data[2], c],
         };
         if normalize {
-            q.q_normalize();
+            return Quat::normalize(q);
         }
         q
     }
@@ -336,22 +341,67 @@ impl Quat {
         out_matrix
     }
 
-    pub fn to_matrix4(mut q: Quat) -> Matrix4 {
+    pub fn to_matrix4(q: Quat) -> Matrix4 {
         let mut out_matrix = Matrix4::identity();
-        q.normalize();
-        let n = q;
+        let n = Quat::normalize(q);
+        let x = n.data[0];
+        let y = n.data[1];
+        let z = n.data[2];
+        let w = n.data[3];
 
-        out_matrix.data[0] = 1.0 - 2.0 * n.data[1] * n.data[1] - 2.0 * n.data[2] * n.data[2];
-        out_matrix.data[1] = 2.0 * n.data[0] * n.data[1] - 2.0 * n.data[2] * n.data[3];
-        out_matrix.data[2] = 2.0 * n.data[0] * n.data[2] + 2.0 * n.data[1] * n.data[3];
+        let x2 = x * x;
+        let y2 = y * y;
+        let z2 = z * z;
+        let xy = x * y;
+        let xz = x * z;
+        let yz = y * z;
+        let wx = w * x;
+        let wy = w * y;
+        let wz = w * z;
 
-        out_matrix.data[4] = 2.0 * n.data[0] * n.data[1] + 2.0 * n.data[2] * n.data[3];
-        out_matrix.data[5] = 1.0 - 2.0 * n.data[0] * n.data[0] - 2.0 * n.data[2] * n.data[2];
-        out_matrix.data[6] = 2.0 * n.data[1] * n.data[2] - 2.0 * n.data[0] * n.data[3];
-
-        out_matrix.data[8] = 2.0 * n.data[0] * n.data[2] - 2.0 * n.data[1] * n.data[3];
-        out_matrix.data[9] = 2.0 * n.data[1] * n.data[2] + 2.0 * n.data[0] * n.data[3];
-        out_matrix.data[10] = 1.0 - 2.0 * n.data[0] * n.data[0] - 2.0 * n.data[1] * n.data[1];
+        out_matrix.data = [
+            1.0 - 2.0 * (y2 + z2),
+            2.0 * (xy - wz),
+            2.0 * (xz + wy),
+            0.0,
+            2.0 * (xy + wz),
+            1.0 - 2.0 * (x2 + z2),
+            2.0 * (yz - wx),
+            0.0,
+            2.0 * (xz - wy),
+            2.0 * (yz + wx),
+            1.0 - 2.0 * (x2 + y2),
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ];
         out_matrix
+    }
+}
+
+impl Mul for Quat {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        let w1 = self.data[3];
+        let x1 = self.data[0];
+        let y1 = self.data[1];
+        let z1 = self.data[2];
+
+        let w2 = rhs.data[3];
+        let x2 = rhs.data[0];
+        let y2 = rhs.data[1];
+        let z2 = rhs.data[2];
+
+        let w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2;
+        let x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2;
+        let y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2;
+        let z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2;
+
+        Self {
+            data: [x, y, z, w], 
+        }
     }
 }

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::application::{
-    basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec4::Vec4},
+    basic::math::{consts::INVALID_ID, transform::Transform, vec4::Vec4},
     renderer::vulkan::vulkan_image::VulkanImage,
 };
 use ash::vk::Sampler;
@@ -203,7 +203,8 @@ impl Default for Geometry {
 #[repr(C)]
 pub struct Mesh {
     pub geometries: Vec<Rc<RefCell<Geometry>>>,
-    pub model: Matrix4,
+    pub transform: Rc<RefCell<Transform>>,
+    //pub model: Matrix4,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

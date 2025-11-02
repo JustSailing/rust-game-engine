@@ -62,7 +62,7 @@ impl<'a> Game<'a> {
         renderer: &Rc<RefCell<Renderer>>,
         meshes: &mut Vec<Mesh>,
     ) -> bool {
-        let movement = 15000.0;
+        let movement = 1500.0;
 
         if input_system.borrow().is_key_down(Key::A).unwrap() {
             self.camera_yaw(1.0 * delta * movement);
@@ -79,7 +79,7 @@ impl<'a> Game<'a> {
             self.camera_pitch(-1.0 * delta * movement);
         }
 
-        let temp_move_speed = 150000.0;
+        let temp_move_speed = 1500.0;
         let mut velocity = Vec3::new_ones();
         if input_system.borrow().is_key_down(Key::W).unwrap() {
             let forward: Vec3 = self.state.view.forward();

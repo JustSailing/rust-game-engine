@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use std::{ptr, thread};
 use thiserror::Error;
 
+use crate::application::basic::math::transform::Transform;
 use crate::application::basic::math::vec2::Vec2;
 use crate::application::basic::math::vec3::{Vec3, Vector2D, geometry_generate_tangents};
 use crate::application::basic::math::vec4::{Quat, Vec4};
@@ -483,7 +484,8 @@ impl<'a> ApplicationState<'a> {
 
         let mut cube_mesh = Mesh {
             geometries: Vec::new(),
-            model: Matrix4::identity(),
+            transform: Rc::new(RefCell::new(Transform::create())),
+            //model: Matrix4::identity(),
         };
 
         let mut geo_config = geometry_system
@@ -509,10 +511,16 @@ impl<'a> ApplicationState<'a> {
 
         let mut cube_mesh2 = Mesh {
             geometries: Vec::new(),
-            model: Matrix4::translation(&Vec3 {
-                data: [10.0, 0.0, 1.0],
-            }),
+            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 1.0)))),
+            // model: Matrix4::translation(&Vec3 {
+            //     data: [20.0, 0.0, 1.0],
+            // }),
         };
+
+        cube_mesh2
+            .transform
+            .borrow_mut()
+            .set_parent(Rc::clone(&cube_mesh.transform));
 
         let mut geo_config2 = geometry_system
             .borrow()
@@ -535,7 +543,49 @@ impl<'a> ApplicationState<'a> {
 
         cube_mesh2.geometries.push(little_cube);
 
-        let meshes = vec![cube_mesh, cube_mesh2];
+        let mut cube_mesh3 = Mesh {
+            geometries: Vec::new(),
+            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(7.5, 0.0, 1.0)))),
+            // model: Matrix4::translation(&Vec3 {
+            //     data: [10.0, 0.0, 1.0],
+            // }),
+        };
+
+        cube_mesh3
+            .transform
+            .borrow_mut()
+            .set_parent(Rc::clone(&cube_mesh2.transform));
+
+        let mut geo_config3 = geometry_system
+            .borrow()
+            .generate_cube_config(2.0, 2.0, 2.0, 1.0, 1.0, "test_cube3", "test_material")
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        geometry_generate_tangents(&mut geo_config3.vertices, &mut geo_config3.indices);
+
+        let little_cube = geometry_system
+            .borrow_mut()
+            .acquire_from_config(geo_config3, true)
+            .map_err(|e| AppError::GeometrySysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        cube_mesh3.geometries.push(little_cube);
+
+        cube_mesh2
+            .transform
+            .borrow_mut()
+            .set_parent(Rc::clone(&cube_mesh.transform));
+        cube_mesh3
+            .transform
+            .borrow_mut()
+            .set_parent(Rc::clone(&cube_mesh.transform));
+        let meshes = vec![cube_mesh, cube_mesh2, cube_mesh3];
 
         if !game.borrow_mut().initialize() {
             return Err(AppError::CouldNotInitializeGame {
@@ -580,7 +630,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })? {
                 let current_time = Instant::now();
-                let delta = current_time.duration_since(last_frame_time).as_secs_f32() / 60.0;
+                let delta = current_time.duration_since(last_frame_time).as_secs_f32();
                 self.input_system.borrow_mut().update(delta).map_err(|e| {
                     AppError::InputSysError {
                         source: e,
@@ -646,15 +696,16 @@ impl<'a> ApplicationState<'a> {
                         line: line!(),
                     })?;
 
-                let rotation = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.5 * 0.01, false);
-                let rotation_matrix = Quat::to_matrix4(rotation);
-                self.meshes[0].model = self.meshes[0].model * rotation_matrix;
-                self.meshes[1].model =
-                    Matrix4::translation(&Vec3::new(10.0, 0.0, 0.0)) * self.meshes[0].model;
+                let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 100.0 * delta, false);
+
+                self.meshes[0].transform.borrow_mut().rotate(quat);
+                self.meshes[1].transform.borrow_mut().rotate(quat);
+                self.meshes[2].transform.borrow_mut().rotate(quat);
                 let mut global_updated = false;
-                for geo in self.meshes.iter() {
-                    for g in geo.geometries.iter() {
+                for mesh in self.meshes.iter() {
+                    for g in mesh.geometries.iter() {
                         //let g_ref = g.borrow_mut();
+
                         self.shader_system
                             .borrow_mut()
                             .use_by_id(g.borrow().material.borrow().shader_id)
@@ -681,6 +732,7 @@ impl<'a> ApplicationState<'a> {
                                 })?;
                             global_updated = true;
                         }
+                        let w = mesh.transform.borrow_mut().get_world();
                         if g.borrow().material.borrow().render_frame_number
                             != self.renderer_system.borrow().frame_number
                         {
@@ -689,7 +741,7 @@ impl<'a> ApplicationState<'a> {
                                 .apply_instance(
                                     &g.borrow().material.borrow(),
                                     g.borrow().material_instance_id,
-                                    &geo.model,
+                                    &w,
                                 )
                                 .map_err(|e| AppError::MaterialSysError {
                                     source: e,
@@ -702,7 +754,7 @@ impl<'a> ApplicationState<'a> {
                         }
 
                         let mut geo_render_data = GeometryRenderData {
-                            model: geo.model,
+                            model: w, //mesh.transform.borrow_mut().get_world(),
                             geometry: Rc::clone(&g),
                         };
 

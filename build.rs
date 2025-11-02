@@ -18,7 +18,6 @@ fn compile_shaders() {
         .status()
         .expect("Failed to execute bash script");
 
-
     if !output.success() {
         eprintln!("Bash script execution failed!");
         panic!()
