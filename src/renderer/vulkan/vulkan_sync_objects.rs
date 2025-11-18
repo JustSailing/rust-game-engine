@@ -61,7 +61,7 @@ impl SyncObjects {
         Ok(SyncObjects {
             image_avail_semaphore: sema1,
             render_finished_semaphore: sema2,
-            fence: fence,
+            fence,
         })
     }
 

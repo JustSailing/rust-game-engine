@@ -17,7 +17,7 @@ use thiserror::Error;
 
 use crate::application::basic::math::transform::Transform;
 use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{Vec3, Vector2D, geometry_generate_tangents};
+use crate::application::basic::math::vec3::{Vec3, Vector2D};
 use crate::application::basic::math::vec4::{Quat, Vec4};
 use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
 use crate::application::resources::resource_types::{
@@ -35,7 +35,9 @@ use basic::math::matrix4::Matrix4;
 use basic::window::{Window, WindowError};
 use renderer::renderer_types::{GeometryRenderData, Renderer, RendererError, RendererPacket};
 use resources::resource_types::Geometry;
-use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
+use systems::geometry_system::{
+    GeometrySysConfig, GeometrySysError, GeometrySystem, geometry_generate_tangents,
+};
 use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
 use systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
 use systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
@@ -276,7 +278,7 @@ impl<'a> ApplicationState<'a> {
 
         let material_shader = resource_system
             .borrow()
-            .load(BUILTIN_SHADER_NAME_MATERIAL, "config", ResourceType::Shader)
+            .load(BUILTIN_SHADER_NAME_MATERIAL, ResourceType::Shader)
             .map_err(|e| AppError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -304,7 +306,7 @@ impl<'a> ApplicationState<'a> {
 
         let ui_shader = resource_system
             .borrow()
-            .load(BUILTIN_SHADER_NAME_UI, "config", ResourceType::Shader)
+            .load(BUILTIN_SHADER_NAME_UI, ResourceType::Shader)
             .map_err(|e| AppError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -450,25 +452,28 @@ impl<'a> ApplicationState<'a> {
         let verts_2d: [Vector2D; 4] = [
             Vector2D {
                 position: Vec2::new_zeroes(),
-                texcoord: Vec2::new_zeroes(),
+                coord: Vec2::new_zeroes(),
             },
             Vector2D {
                 position: Vec2::new(w, h),
-                texcoord: Vec2::new_ones(),
+                coord: Vec2::new_ones(),
             },
             Vector2D {
                 position: Vec2::new(0.0, h),
-                texcoord: Vec2::new(0.0, 1.0),
+                coord: Vec2::new(0.0, 1.0),
             },
             Vector2D {
                 position: Vec2::new(w, 0.0),
-                texcoord: Vec2::new(1.0, 0.0),
+                coord: Vec2::new(1.0, 0.0),
             },
         ];
         let indices_2d: [u32; 6] = [2, 1, 0, 3, 0, 1];
         let ui_config = GeometryConfig::<Vector2D, u32> {
             vertices: Vec::from(verts_2d),
             indices: Vec::from(indices_2d),
+            center: Default::default(),
+            min_extents: Default::default(),
+            max_extents: Default::default(),
             name: String::from("test_ui_geometry"),
             material_name: String::from("test_ui"),
         };
@@ -584,8 +589,55 @@ impl<'a> ApplicationState<'a> {
         cube_mesh3
             .transform
             .borrow_mut()
-            .set_parent(Rc::clone(&cube_mesh.transform));
-        let meshes = vec![cube_mesh, cube_mesh2, cube_mesh3];
+            .set_parent(Rc::clone(&cube_mesh2.transform));
+
+        let mut car_mesh = Mesh {
+            geometries: Vec::new(),
+            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 1.0)))),
+        };
+
+        let mut resource = resource_system
+            .borrow()
+            .load("sponza", ResourceType::Mesh)
+            .map_err(|e| AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        let geometry_configs = match resource.data {
+            ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
+            _ => {
+                return Err(AppError::OperationFailed {
+                    issue: "wrong resource data for falcon".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+        };
+
+        for geo_config in geometry_configs.iter_mut() {
+            geometry_generate_tangents(&mut geo_config.vertices, &mut geo_config.indices);
+            car_mesh.geometries.push(
+                geometry_system
+                    .borrow_mut()
+                    .acquire_from_config(geo_config.clone(), true)
+                    .map_err(|e| AppError::GeometrySysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?,
+            );
+        }
+        resource_system
+            .borrow_mut()
+            .unload(&mut resource)
+            .map_err(|e| AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        let meshes = vec![cube_mesh, cube_mesh2, cube_mesh3, car_mesh];
 
         if !game.borrow_mut().initialize() {
             return Err(AppError::CouldNotInitializeGame {
@@ -594,15 +646,15 @@ impl<'a> ApplicationState<'a> {
             });
         }
         let app_state = Self {
-            game: game,
+            game,
             is_running: false,
             is_suspended: false,
-            window: window,
+            window,
             pos_x: app_config.start_pos_x,
             pos_y: app_config.start_pos_y,
             width: app_config.start_width,
             height: app_config.start_height,
-            meshes: meshes,
+            meshes,
             test_ui_geometry,
             resource_system,
             renderer_system,
@@ -670,8 +722,8 @@ impl<'a> ApplicationState<'a> {
 
                 let mut render_packet = RendererPacket {
                     delta_time: delta,
-                    geometries: geometries,
-                    ui_geometries: ui_geometries,
+                    geometries,
+                    ui_geometries,
                 };
 
                 match self

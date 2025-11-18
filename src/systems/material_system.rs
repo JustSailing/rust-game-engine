@@ -219,7 +219,7 @@ impl<'a> MaterialSystem<'a> {
         }
 
         Ok(Self {
-            config: config,
+            config,
             default_material: Rc::new(RefCell::new(Material::default())),
             default_material_2d: Rc::new(RefCell::new(Material::default())),
             registered_materials_hashmap: registered_hash_map,
@@ -228,9 +228,9 @@ impl<'a> MaterialSystem<'a> {
             material_shader_id: INVALID_ID,
             ui_shader_id: INVALID_ID,
             ui_locations: MaterialUiUniformLocations::default(),
-            texture_system: texture_system,
-            frontend_renderer: frontend_renderer,
-            resource_system: resource_system,
+            texture_system,
+            frontend_renderer,
+            resource_system,
             shader_system,
         })
     }
@@ -319,7 +319,7 @@ impl<'a> MaterialSystem<'a> {
         let mut material_res = self
             .resource_system
             .borrow()
-            .load(&config.name, "gmt", ResourceType::Material)
+            .load(&config.name, ResourceType::Material)
             .map_err(|e| MaterialSysError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -352,6 +352,13 @@ impl<'a> MaterialSystem<'a> {
             ResourceData::ShaderResourceData(_) => {
                 return Err(MaterialSysError::WrongResourceDataType {
                     ty: "ShaderResourceData".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            ResourceData::MeshResourceData(_) => {
+                return Err(MaterialSysError::WrongResourceDataType {
+                    ty: "MeshResourceData".to_string(),
                     file: file!(),
                     line: line!(),
                 });
@@ -938,11 +945,7 @@ impl<'a> MaterialSystem<'a> {
             let texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(
-                    config.diffuse_map_name.clone(),
-                    &config.diffuse_map_type,
-                    config.auto_release,
-                )
+                .acquire(config.diffuse_map_name.clone(), config.auto_release)
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),
@@ -957,11 +960,7 @@ impl<'a> MaterialSystem<'a> {
             let texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(
-                    config.specular_map_name.clone(),
-                    &config.specular_map_type,
-                    config.auto_release,
-                )
+                .acquire(config.specular_map_name.clone(), config.auto_release)
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),
@@ -976,11 +975,7 @@ impl<'a> MaterialSystem<'a> {
             let texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(
-                    config.normal_map_name.clone(),
-                    &config.normal_map_type,
-                    config.auto_release,
-                )
+                .acquire(config.normal_map_name.clone(), config.auto_release)
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),

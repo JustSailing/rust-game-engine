@@ -174,14 +174,14 @@ impl VulkanRenderPass {
             }
         };
         Ok(VulkanRenderPass {
-            renderpass: renderpass,
-            render_area: render_area,
-            clear_colour: clear_colour,
-            depth: depth,
-            stencil: stencil,
+            renderpass,
+            render_area,
+            clear_colour,
+            depth,
+            stencil,
             state: RenderPassState::Ready,
-            has_next_pass: has_next_pass,
-            has_previous_pass: has_previous_pass,
+            has_next_pass,
+            has_previous_pass,
             clear_flags: clear_flag,
         })
     }

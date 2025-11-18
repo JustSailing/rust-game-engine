@@ -1,5 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
+use crate::application::basic::math::vec3::{Vec3, Vector3D};
 use crate::application::{
     basic::math::{consts::INVALID_ID, transform::Transform, vec4::Vec4},
     renderer::vulkan::vulkan_image::VulkanImage,
@@ -81,16 +82,13 @@ pub struct TextureMap {
 #[repr(C)]
 pub struct MaterialConfig {
     pub name: String,
-    pub shader_name: String,
     pub auto_release: bool,
     pub diffuse_colour: Vec4,
     pub shininess: f32,
+    pub shader_name: String,
     pub diffuse_map_name: String,
-    pub diffuse_map_type: String,
     pub specular_map_name: String,
-    pub specular_map_type: String,
     pub normal_map_name: String,
-    pub normal_map_type: String, // could change this to an enum to avoid allocations
 }
 
 impl Default for MaterialConfig {
@@ -100,13 +98,10 @@ impl Default for MaterialConfig {
             auto_release: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             shininess: Default::default(), // might change this to 32.0
-            diffuse_map_name: Default::default(),
-            diffuse_map_type: Default::default(),
             shader_name: String::from("Builtin.Material"),
+            diffuse_map_name: Default::default(),
             specular_map_name: Default::default(),
-            specular_map_type: Default::default(),
             normal_map_name: Default::default(),
-            normal_map_type: Default::default(),
         }
     }
 }
@@ -167,12 +162,29 @@ impl Default for Material {
 }
 
 #[repr(C)]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct GeometryConfig<T: Clone, U: Clone> {
     pub vertices: Vec<T>,
     pub indices: Vec<U>,
+    pub center: Vec3,
+    pub min_extents: Vec3,
+    pub max_extents: Vec3,
     pub name: String,
     pub material_name: String,
+}
+
+impl Default for GeometryConfig<Vector3D, u32> {
+    fn default() -> Self {
+        Self {
+            vertices: Default::default(),
+            indices: Default::default(),
+            center: Default::default(),
+            min_extents: Default::default(),
+            max_extents: Default::default(),
+            name: Default::default(),
+            material_name: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -214,12 +226,12 @@ pub enum ResourceType {
     Binary,
     Image,
     Material,
-    StaticMesh,
+    Mesh,
     Shader,
     Custom,
     Unknown,
 }
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub enum ResourceData {
     Unknown,
@@ -227,6 +239,7 @@ pub enum ResourceData {
     MaterialResourceData(MaterialConfig),
     BinaryResourceData(Vec<u8>),
     ShaderResourceData(ShaderConfig),
+    MeshResourceData(Vec<GeometryConfig<Vector3D, u32>>),
 }
 
 impl Default for ResourceData {
@@ -234,7 +247,7 @@ impl Default for ResourceData {
         Self::Unknown
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[repr(C)]
 pub struct Resource {
     pub loader_id: usize,

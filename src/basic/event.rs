@@ -116,7 +116,7 @@ impl<'a> EventSystem<'a> {
         }
 
         self.registered[code].events.push(RegisteredEvent {
-            listener: listener,
+            listener,
             callback: on_event,
         });
         Ok(())

@@ -116,11 +116,11 @@ impl VulkanCommandBuffer {
                     Ok(())
                 }
                 Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed {
+                    Err(VulkanBackendError::OperationFailed {
                         issue: "could not reset command buffer",
                         file: file!(),
                         line: line!(),
-                    });
+                    })
                 }
             }
         }

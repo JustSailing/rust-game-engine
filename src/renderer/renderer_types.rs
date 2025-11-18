@@ -123,7 +123,7 @@ impl Renderer {
             })?;
 
         Ok(Self {
-            backend: backend,
+            backend,
             projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
             view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, 30.0))),
             view_position: Vec3::new_zeroes(),
@@ -136,7 +136,7 @@ impl Renderer {
             ui_shader_id: INVALID_ID as u32,
             render_mode: RendererDebugViewMode::Default,
             frame_number: 0,
-            resource_system: resource_system,
+            resource_system,
         })
     }
 
@@ -198,12 +198,10 @@ impl Renderer {
         match name.as_str() {
             "Renderpass.Builtin.World" => Ok(BuiltInRenderpass::World),
             "Renderpass.Builtin.UI" => Ok(BuiltInRenderpass::UI),
-            _ => {
-                return Err(RendererError::RendererIdInvalid {
-                    file: file!(),
-                    line: line!(),
-                });
-            }
+            _ => Err(RendererError::RendererIdInvalid {
+                file: file!(),
+                line: line!(),
+            }),
         }
     }
 
@@ -435,40 +433,38 @@ impl Renderer {
 
     fn get_shader_config(resource: &Resource) -> Result<&ShaderConfig> {
         match resource.data {
-            ResourceData::Unknown => {
-                return Err(RendererError::WrongResourceDataType {
-                    expected: "ShaderResourceData",
-                    given: "Unknown",
-                    file: file!(),
-                    line: line!(),
-                });
-            }
+            ResourceData::ShaderResourceData(ref shader_config) => Ok(shader_config),
+            ResourceData::Unknown => Err(RendererError::WrongResourceDataType {
+                expected: "ShaderResourceData",
+                given: "Unknown",
+                file: file!(),
+                line: line!(),
+            }),
 
-            ResourceData::ImageResourceData(_) => {
-                return Err(RendererError::WrongResourceDataType {
-                    expected: "ShaderResourceData",
-                    given: "ImageResourceData",
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::MaterialResourceData(_) => {
-                return Err(RendererError::WrongResourceDataType {
-                    expected: "ShaderResourceData",
-                    given: "MaterialResourceData",
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::BinaryResourceData(_) => {
-                return Err(RendererError::WrongResourceDataType {
-                    expected: "ShaderResourceData",
-                    given: "BinaryResourceData",
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            ResourceData::ShaderResourceData(ref shader_config) => return Ok(shader_config),
-        };
+            ResourceData::ImageResourceData(_) => Err(RendererError::WrongResourceDataType {
+                expected: "ShaderResourceData",
+                given: "ImageResourceData",
+                file: file!(),
+                line: line!(),
+            }),
+            ResourceData::MaterialResourceData(_) => Err(RendererError::WrongResourceDataType {
+                expected: "ShaderResourceData",
+                given: "MaterialResourceData",
+                file: file!(),
+                line: line!(),
+            }),
+            ResourceData::BinaryResourceData(_) => Err(RendererError::WrongResourceDataType {
+                expected: "ShaderResourceData",
+                given: "BinaryResourceData",
+                file: file!(),
+                line: line!(),
+            }),
+            ResourceData::MeshResourceData(_) => Err(RendererError::WrongResourceDataType {
+                expected: "ShaderResourceData",
+                given: "MeshResourceData",
+                file: file!(),
+                line: line!(),
+            }),
+        }
     }
 }

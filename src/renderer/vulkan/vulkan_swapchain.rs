@@ -72,7 +72,7 @@ impl VulkanSwapchain {
         let mut mode_: &PresentModeKHR = &PresentModeKHR::default();
         found = false;
         for mode in &device.swapchain_support.present_modes {
-            if *mode == vk::PresentModeKHR::MAILBOX {
+            if *mode == PresentModeKHR::MAILBOX {
                 mode_ = mode;
                 found = true;
                 break;
@@ -240,11 +240,11 @@ impl VulkanSwapchain {
             image_format: *format_,
             max_frames_in_flight,
             swapchain: swap,
-            swapchain_loader: swapchain_loader,
+            swapchain_loader,
             image_count: images.len() as u32,
-            images: images,
-            views: views,
-            depth_attachment: depth_attachment,
+            images,
+            views,
+            depth_attachment,
         })
     }
 
@@ -305,7 +305,7 @@ impl VulkanSwapchain {
         let mut mode_: &PresentModeKHR = &PresentModeKHR::default();
         found = false;
         for mode in &device.swapchain_support.present_modes {
-            if *mode == vk::PresentModeKHR::MAILBOX {
+            if *mode == PresentModeKHR::MAILBOX {
                 mode_ = mode;
                 found = true;
                 break;
@@ -505,19 +505,19 @@ impl VulkanSwapchain {
                 .queue_present(*present_queue, &present_info)
         };
         match res {
-            Ok(_) => return Ok(true),
+            Ok(_) => Ok(true),
             // recreate swapchain
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
                 //TODO: recreate swapchain
                 //VulkanContext::recreate_swapchain()?;
-                return Ok(false);
+                Ok(false)
             }
             _ => {
-                return Err(VulkanBackendError::OperationFailed {
+                Err(VulkanBackendError::OperationFailed {
                     issue: "present queue did not work properly",
                     file: file!(),
                     line: line!(),
-                });
+                })
             }
         }
     }
@@ -532,17 +532,17 @@ impl VulkanSwapchain {
                 .acquire_next_image(self.swapchain, timeout, semaphore, fence)
         };
         match res {
-            Ok((index, _)) => return Ok((false, index)),
+            Ok((index, _)) => Ok((false, index)),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
-                return Ok((true, 0));
+                Ok((true, 0))
             }
             Err(_) => {
-                return Err(VulkanBackendError::OperationFailed {
-                    issue: "failure to acqurie next image",
+                Err(VulkanBackendError::OperationFailed {
+                    issue: "failure to acquire next image",
                     file: file!(),
                     line: line!(),
-                });
+                })
             }
-        };
+        }
     }
 }

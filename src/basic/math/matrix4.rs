@@ -177,7 +177,7 @@ impl Matrix4 {
         o[15] =
             d * ((t22 * m[10] + t16 * m[2] + t21 * m[6]) - (t20 * m[6] + t23 * m[10] + t17 * m[2]));
 
-        return out_matrix;
+        out_matrix
     }
 
     pub fn translation(position: &Vec3) -> Self {
@@ -193,7 +193,7 @@ impl Matrix4 {
         out_matrix.data[0] = scale.data[0];
         out_matrix.data[5] = scale.data[1];
         out_matrix.data[10] = scale.data[2];
-        return out_matrix;
+        out_matrix
     }
 
     pub fn forward(&self) -> Vec3 {
@@ -239,7 +239,7 @@ impl Matrix4 {
         out_matrix.data[6] = s;
         out_matrix.data[9] = -s;
         out_matrix.data[10] = c;
-        return out_matrix;
+        out_matrix
     }
     pub fn euler_y(angle_radians: f32) -> Matrix4 {
         let mut out_matrix = Matrix4::identity();
@@ -250,7 +250,7 @@ impl Matrix4 {
         out_matrix.data[2] = -s;
         out_matrix.data[8] = s;
         out_matrix.data[10] = c;
-        return out_matrix;
+        out_matrix
     }
     pub fn euler_z(angle_radians: f32) -> Matrix4 {
         let mut out_matrix = Matrix4::identity();
@@ -262,7 +262,7 @@ impl Matrix4 {
         out_matrix.data[1] = s;
         out_matrix.data[4] = -s;
         out_matrix.data[5] = c;
-        return out_matrix;
+        out_matrix
     }
     pub fn euler_xyz(x_radians: f32, y_radians: f32, z_radians: f32) -> Matrix4 {
         let rx = Matrix4::euler_x(x_radians);
@@ -270,7 +270,7 @@ impl Matrix4 {
         let rz = Matrix4::euler_z(z_radians);
         let mut out_matrix = rx * ry;
         out_matrix = out_matrix * rz;
-        return out_matrix;
+        out_matrix
     }
 }
 

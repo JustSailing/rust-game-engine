@@ -117,6 +117,8 @@ impl PartialEq for Vec2 {
         if (self.data[1] - other.data[1]).abs() > FLOAT_EPSILON {
             return false;
         }
-        return true;
+        true
     }
 }
+
+impl Eq for Vec2 {}

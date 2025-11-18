@@ -3,7 +3,7 @@ use std::num::ParseIntError;
 use crate::application::{
     basic::{filesystem::FileHandleError, math::consts::INVALID_ID},
     resources::{
-        loaders::{binary_loader, image_loader, material_loader, shader_loader},
+        loaders::{binary_loader, image_loader, material_loader, mesh_loader, shader_loader},
         resource_types::{Resource, ResourceType},
     },
 };
@@ -28,13 +28,13 @@ pub enum ResourceSysError {
         "resource system error: registered loaders is full. change max count in sys config {file} {line}"
     )]
     RegisteredLoadersFull { file: &'static str, line: u32 },
-    #[error("resource system error: loading resourse loader: {name} {file} {line}")]
+    #[error("resource system error: loading resource loader: {name} {file} {line}")]
     ResourceLoadError {
         name: String,
         file: &'static str,
         line: u32,
     },
-    #[error("resource system error: loading resourse loader: {name} {file} {line}")]
+    #[error("resource system error: loading resource loader: {name} {file} {line}")]
     ResourceUnloadError {
         name: String,
         file: &'static str,
@@ -79,7 +79,7 @@ pub struct ResourceLoader {
     res_type: ResourceType,
     custom_type: Option<String>,
     path_type: String,
-    load: fn(&str, &str, &str, &str) -> Result<Resource>,
+    load: fn(&str, &str, &str) -> Result<Resource>,
     unload: fn(&mut Resource) -> Result<()>,
 }
 
@@ -125,6 +125,17 @@ impl ResourceLoader {
             unload: shader_loader::ShaderLoader::unload,
         }
     }
+
+    pub fn new_mesh_loader() -> ResourceLoader {
+        ResourceLoader {
+            id: INVALID_ID,
+            res_type: ResourceType::Mesh,
+            custom_type: None,
+            path_type: "models".to_string(),
+            load: mesh_loader::MeshLoader::load,
+            unload: mesh_loader::MeshLoader::unload,
+        }
+    }
 }
 
 pub struct ResourceSystem {
@@ -155,9 +166,11 @@ impl ResourceSystem {
         registered_loaders[2].as_mut().unwrap().id = 2;
         registered_loaders[3] = Some(ResourceLoader::new_shader_loader());
         registered_loaders[3].as_mut().unwrap().id = 3;
+        registered_loaders[4] = Some(ResourceLoader::new_mesh_loader());
+        registered_loaders[4].as_mut().unwrap().id = 4;
         Ok(Self {
-            config: config,
-            registered_loaders: registered_loaders,
+            config,
+            registered_loaders,
         })
     }
 
@@ -209,18 +222,14 @@ impl ResourceSystem {
         Ok(())
     }
 
-    pub fn load(&self, name: &str, path_type: &str, res_typ: ResourceType) -> Result<Resource> {
+    pub fn load(&self, name: &str, res_typ: ResourceType) -> Result<Resource> {
         let res = self.registered_loaders.iter().find_map(|ld| {
             if let Some(l) = ld
                 && l.id != INVALID_ID
                 && l.res_type == res_typ
             {
-                let mut res = match (l.load)(
-                    name,
-                    &l.path_type,
-                    self.base_path().unwrap().as_str(),
-                    path_type,
-                ) {
+                let mut res = match (l.load)(name, &l.path_type, self.base_path().unwrap().as_str())
+                {
                     Ok(r) => r,
                     Err(_) => return None,
                 };
@@ -237,7 +246,7 @@ impl ResourceSystem {
                 line: line!(),
             });
         }
-        return Ok(res.unwrap());
+        Ok(res.unwrap())
     }
 
     pub fn unload(&self, resouce: &mut Resource) -> Result<()> {
@@ -248,17 +257,17 @@ impl ResourceSystem {
             });
         }
         if let Some(ref ld) = self.registered_loaders[resouce.loader_id] {
-            return (ld.unload)(resouce);
+            (ld.unload)(resouce)
         } else {
-            return Err(ResourceSysError::ResourceUnloadError {
+            Err(ResourceSysError::ResourceUnloadError {
                 name: resouce.name.clone(),
                 file: file!(),
                 line: line!(),
-            });
+            })
         }
     }
 
     pub fn base_path(&self) -> Result<String> {
-        return Ok(self.config.asset_base_path.clone());
+        Ok(self.config.asset_base_path.clone())
     }
 }

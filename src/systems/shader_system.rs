@@ -257,12 +257,12 @@ impl<'a> ShaderSystem<'a> {
 
         let lookup = HashMap::<String, ShaderRef>::with_capacity(config.max_shader_count as usize);
         Ok(Self {
-            config: config,
-            lookup: lookup,
+            config,
+            lookup,
             current_shader_id: INVALID_ID,
-            registered_shaders: registered_shaders,
-            frontend_renderer: frontend_renderer,
-            texture_system: texture_system,
+            registered_shaders,
+            frontend_renderer,
+            texture_system,
         })
     }
 
@@ -386,30 +386,30 @@ impl<'a> ShaderSystem<'a> {
 
     pub fn get_shader_by_name(&self, name: &str) -> Result<Rc<RefCell<Shader<'a>>>> {
         let id = self.get_shader_id(name)?;
-        return Ok(Rc::clone(&self.registered_shaders[id]));
+        Ok(Rc::clone(&self.registered_shaders[id]))
     }
 
     pub fn get_shader_id(&self, name: &str) -> Result<usize> {
         match self.lookup.get(name) {
             Some(r) => {
                 if r.handle == INVALID_ID {
-                    return Err(ShaderSysError::ShaderInvalid {
+                    Err(ShaderSysError::ShaderInvalid {
                         name: name.to_string(),
                         file: file!(),
                         line: line!(),
-                    });
+                    })
                 } else {
-                    return Ok(r.handle);
+                    Ok(r.handle)
                 }
             }
             None => {
-                return Err(ShaderSysError::ShaderInvalid {
+                Err(ShaderSysError::ShaderInvalid {
                     name: name.to_string(),
                     file: file!(),
                     line: line!(),
-                });
+                })
             }
-        };
+        }
     }
 
     pub fn get_shader_by_id(&self, id: usize) -> Result<Rc<RefCell<Shader<'a>>>> {
@@ -419,7 +419,7 @@ impl<'a> ShaderSystem<'a> {
                 line: line!(),
             });
         }
-        return Ok(Rc::clone(&self.registered_shaders[id]));
+        Ok(Rc::clone(&self.registered_shaders[id]))
     }
 
     pub fn shader_destroy(&self, shader: &Rc<RefCell<Shader<'a>>>) -> Result<()> {
@@ -437,7 +437,7 @@ impl<'a> ShaderSystem<'a> {
 
     pub fn shader_use(&mut self, name: &str) -> Result<()> {
         let id = self.get_shader_id(name)?;
-        return self.use_by_id(id);
+        self.use_by_id(id)
     }
 
     pub fn use_by_id(&mut self, id: usize) -> Result<()> {
@@ -488,7 +488,7 @@ impl<'a> ShaderSystem<'a> {
         }
         let shader = &self.registered_shaders[self.current_shader_id].borrow();
         let index = self.uniform_index(shader, name)?;
-        return self.uniform_set_by_index(index, value);
+        self.uniform_set_by_index(index, value)
     }
 
     pub fn uniform_set_by_index(&self, index: u16, value: *const c_void) -> Result<()> {
@@ -518,7 +518,7 @@ impl<'a> ShaderSystem<'a> {
             shader.bound_scope = uniform.shader_scope;
         }
 
-        return self
+        self
             .frontend_renderer
             .borrow()
             .set_uniform(&mut shader, index as usize, value)
@@ -526,15 +526,15 @@ impl<'a> ShaderSystem<'a> {
                 source: e,
                 file: file!(),
                 line: line!(),
-            });
+            })
     }
 
     pub fn sampler_set_by_index(&self, index: u16, value: *const c_void) -> Result<()> {
-        return self.uniform_set_by_index(index, value);
+        self.uniform_set_by_index(index, value)
     }
 
     pub fn apply_globals(&self) -> Result<()> {
-        return self
+        self
             .frontend_renderer
             .borrow()
             .shader_apply_globals(&mut self.registered_shaders[self.current_shader_id].borrow_mut())
@@ -542,11 +542,11 @@ impl<'a> ShaderSystem<'a> {
                 source: e,
                 file: file!(),
                 line: line!(),
-            });
+            })
     }
 
     pub fn apply_instance(&self) -> Result<()> {
-        return self
+        self
             .frontend_renderer
             .borrow()
             .shader_apply_instance(
@@ -556,7 +556,7 @@ impl<'a> ShaderSystem<'a> {
                 source: e,
                 file: file!(),
                 line: line!(),
-            });
+            })
     }
 
     pub fn bind_instance(&self, instance_id: usize) -> Result<()> {
@@ -564,7 +564,7 @@ impl<'a> ShaderSystem<'a> {
             .borrow_mut()
             .bound_instance_id = instance_id;
 
-        return self
+        self
             .frontend_renderer
             .borrow()
             .shader_bind_instance(&mut self.registered_shaders[self.current_shader_id].borrow_mut())
@@ -572,7 +572,7 @@ impl<'a> ShaderSystem<'a> {
                 source: e,
                 file: file!(),
                 line: line!(),
-            });
+            })
     }
 
     fn add_sampler(
@@ -608,7 +608,7 @@ impl<'a> ShaderSystem<'a> {
                 config.name, shader_config.name
             );
             return Err(ShaderSysError::ShaderAddSamplerError {
-                reason: reason,
+                reason,
                 file: file!(),
                 line: line!(),
             });

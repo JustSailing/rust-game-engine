@@ -142,7 +142,7 @@ impl<'a> InputState<'a> {
             &ctx,
         ) {
             Ok(_) => Ok(()),
-            Err(_) => return Err(InputSysError::NotInitialized),
+            Err(_) => Err(InputSysError::NotInitialized),
         }
     }
 

@@ -93,7 +93,7 @@ impl VulkanDevice {
             };
             requirements
                 .device_extension_names
-                .push(ash::vk::KHR_SWAPCHAIN_NAME);
+                .push(KHR_SWAPCHAIN_NAME);
             let mut queue_info = PhysicalDeviceQueueFamilyInfo {
                 graphics_family_index: -1,
                 present_family_index: -1,
@@ -198,9 +198,9 @@ impl VulkanDevice {
             return Ok(VulkanDevice {
                 device: dev,
                 physical_device: phys_dev,
-                properties: properties,
-                features: features,
-                memory: memory,
+                properties,
+                features,
+                memory,
                 swapchain_support: swap_info,
                 graphics_command_pool: graph_pool,
                 graphics_queue_index: queue_info.graphics_family_index,
@@ -212,11 +212,11 @@ impl VulkanDevice {
                 depth_format: Format::default(),
             });
         }
-        return Err(VulkanBackendError::OperationFailed {
+        Err(VulkanBackendError::OperationFailed {
             issue: "Could not find suitable device",
             file: file!(),
             line: line!(),
-        });
+        })
     }
 
     pub fn query_swapchain_support(

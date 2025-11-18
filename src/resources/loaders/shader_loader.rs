@@ -15,8 +15,8 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ShaderLoader;
 
 impl ShaderLoader {
-    pub fn load(name: &str, path: &str, base_path: &str, path_type: &str) -> Result<Resource> {
-        let full_path = format!("{}/{}/{}.{}", base_path, path, name, path_type);
+    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+        let full_path = format!("{}/{}/{}.{}", base_path, path, name, "config");
         let mut file_handle =
             FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
                 ResourceSysError::FileError {

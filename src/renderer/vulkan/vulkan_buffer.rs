@@ -88,12 +88,12 @@ impl VulkanBuffer {
 
         let vk_buffer = Self {
             buffer,
-            size: size,
+            size,
             usage_flags: usage,
             is_locked: false,
-            memory: memory,
+            memory,
             memory_index,
-            memory_property_flags: memory_property_flags,
+            memory_property_flags,
         };
         if bind_on_create {
             match vk_buffer.bind(device, 0) {

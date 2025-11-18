@@ -52,7 +52,7 @@ impl<'a> Game<'a> {
         self.state.view = Matrix4::translation(&self.state.camera_position);
         self.state.view = Matrix4::inverse(&self.state.view);
         self.state.view_dirty = true;
-        return true;
+        true
     }
 
     pub fn update(
@@ -127,7 +127,7 @@ impl<'a> Game<'a> {
 
             let new_name = unsafe { names[CHOICE].to_string() };
 
-            let g = &mut meshes[0].geometries[0];
+            let g = &meshes[0].geometries[0];
             let mut material_config = MaterialConfig::default().name(&new_name);
             let mut instance_id = INVALID_ID;
             (g.borrow_mut().material, instance_id) = match self
@@ -143,10 +143,10 @@ impl<'a> Game<'a> {
 
             let _ = self.material_system.borrow_mut().release(old_name);
 
-            let g = &mut meshes[1].geometries[0];
-            let mut material_config = MaterialConfig::default().name(&new_name);
-            let mut instance_id = INVALID_ID;
-            (g.borrow_mut().material, instance_id) = match self
+            let g2 = &meshes[1].geometries[0];
+            material_config = MaterialConfig::default().name(&new_name);
+            instance_id = INVALID_ID;
+            (g2.borrow_mut().material, instance_id) = match self
                 .material_system
                 .borrow_mut()
                 .acquire(&mut material_config)
@@ -185,17 +185,17 @@ impl<'a> Game<'a> {
             .borrow_mut()
             .set_view(self.state.view, self.state.camera_position)
         {
-            Ok(_) => return true,
-            Err(_) => return false,
+            Ok(_) => true,
+            Err(_) => false,
         }
     }
 
     pub fn render(&self, _delta: f32) -> bool {
-        return true;
+        true
     }
 
     pub fn resize(&self, _width: u32, _height: u32) -> bool {
-        return true;
+        true
     }
 
     fn recalculate_view(&mut self) {
@@ -236,8 +236,8 @@ impl<'a> EventCallback for Game<'a> {
     ) -> bool {
         match EventCodes::from(code) {
             EventCodes::ApplicationQuit => {
-                println!("in event call back handle event");
-                return true;
+                println!("in game event call back handle event");
+                true
             }
             EventCodes::KeyPressed => todo!(),
             EventCodes::KeyReleased => todo!(),

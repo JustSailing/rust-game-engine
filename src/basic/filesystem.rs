@@ -48,10 +48,10 @@ impl FileHandle {
         let mut options = OpenOptions::new();
         match modes {
             FileModes::READ => options.read(true),
-            FileModes::WRITE => options.write(true),
-            FileModes::RW => options.read(true).write(true),
+            FileModes::WRITE => options.write(true).create(true),
+            FileModes::RW => options.read(true).write(true).create(true),
         };
-
+      
         match options.open(path) {
             Ok(f) => Ok(Self {
                 file: f,
@@ -68,9 +68,9 @@ impl FileHandle {
         let mut reader = BufReader::new(&self.file);
         let mut line = String::new();
         match reader.read_line(&mut line) {
-            Ok(0) => return Ok((0, "".to_string())),
-            Ok(x) => return Ok((x, line)),
-            Err(_) => return Err(FileHandleError::CannotReadln.into()),
+            Ok(0) => Ok((0, "".to_string())),
+            Ok(x) => Ok((x, line)),
+            Err(_) => Err(FileHandleError::CannotReadln.into()),
         }
     }
 

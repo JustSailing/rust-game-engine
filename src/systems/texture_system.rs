@@ -121,14 +121,14 @@ impl TextureSystem {
         }
 
         Ok(Self {
-            config: config,
+            config,
             default_texture: Rc::new(RefCell::new(Texture::default())),
             default_specular_texture: Rc::new(RefCell::new(Texture::default())),
-            default_normal_texture: (Rc::new(RefCell::new(Texture::default()))),
+            default_normal_texture: Rc::new(RefCell::new(Texture::default())),
             registered_textures: registered_array,
             registered_textures_hashmap: registered_hash_map,
-            frontend_renderer: frontend_renderer,
-            resource_system: resource_system,
+            frontend_renderer,
+            resource_system,
         })
     }
 
@@ -151,7 +151,7 @@ impl TextureSystem {
             .has_transparency(false)
             .width(TEX_DIMENSION as u32)
             .height(TEX_DIMENSION as u32)
-            .channel_count(CHANNELS as u8)
+            .channel_count(CHANNELS)
             .generation(INVALID_ID);
         self.frontend_renderer
             .borrow()
@@ -235,11 +235,11 @@ impl TextureSystem {
             })
     }
 
-    fn load_texture(&self, name: &str, path_type: &str) -> Result<Texture> {
+    fn load_texture(&self, name: &str) -> Result<Texture> {
         let mut img_res = self
             .resource_system
             .borrow()
-            .load(name, path_type, ResourceType::Image)
+            .load(name, ResourceType::Image)
             .map_err(|e| TextureSysError::ResourceSysError {
                 source: e,
                 file: file!(),
@@ -275,17 +275,24 @@ impl TextureSystem {
                     line: line!(),
                 });
             }
+            ResourceData::MeshResourceData(_) => {
+                return Err(TextureSysError::WrongResourceDataType {
+                    ty: "MeshResourceData".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
         };
         let total_size = data.width * data.height * data.channel_count as u32;
-        let mut transparancy = false;
+        let mut transparency = false;
         for i in 0..total_size as usize - 3 {
             if data.pixels[i + 3] < 255 {
-                transparancy = true;
+                transparency = true;
                 break;
             }
         }
         let mut texture = Texture::default()
-            .has_transparency(transparancy)
+            .has_transparency(transparency)
             .width(data.width)
             .height(data.height)
             .channel_count(data.channel_count)
@@ -310,12 +317,7 @@ impl TextureSystem {
         Ok(texture)
     }
 
-    pub fn acquire(
-        &mut self,
-        name: String,
-        path_type: &str,
-        auto_release: bool,
-    ) -> Result<Rc<RefCell<Texture>>> {
+    pub fn acquire(&mut self, name: String, auto_release: bool) -> Result<Rc<RefCell<Texture>>> {
         if name == DEFAULT_TEXTURE_NAME {
             println!(
                 "WARN: texture acquire was called with default texture name. Use get_default_texture for 'default'"
@@ -356,17 +358,12 @@ impl TextureSystem {
             }
             texture_ref = *tex_ref;
         }
-        self.register_texture(&name, path_type, &texture_ref)?;
+        self.register_texture(&name, &texture_ref)?;
         Ok(Rc::clone(&self.registered_textures[texture_ref.handle]))
     }
 
-    pub fn register_texture(
-        &mut self,
-        name: &String,
-        path_type: &str,
-        tex_ref: &TextureRef,
-    ) -> Result<()> {
-        self.registered_textures[tex_ref.handle].replace(self.load_texture(&name, path_type)?);
+    pub fn register_texture(&mut self, name: &String, tex_ref: &TextureRef) -> Result<()> {
+        self.registered_textures[tex_ref.handle].replace(self.load_texture(&name)?);
         self.registered_textures[tex_ref.handle].borrow_mut().id = tex_ref.handle;
         self.registered_textures_hashmap
             .insert(name.clone(), *tex_ref);
@@ -403,7 +400,7 @@ impl TextureSystem {
                     line: line!(),
                 })?;
             self.registered_textures[tex_ref.handle].borrow_mut().id = INVALID_ID;
-            // don't think i need the 2 lines below
+            // don't think I need the 2 lines below
             tex_ref.handle = INVALID_ID;
             tex_ref.auto_release = false;
         }
@@ -438,7 +435,7 @@ impl TextureSystem {
                     }
                 });
             if option.is_none() {
-                // not sure if i should error out
+                // not sure if I should error out
                 return Ok(());
             }
             if let Some(ref mut opt) = option {
@@ -464,7 +461,7 @@ impl TextureSystem {
                     line: line!(),
                 })?;
             self.registered_textures[tex_ref.handle].borrow_mut().id = INVALID_ID;
-            // don't think i need the 2 lines below
+            // don't think I need the 2 lines below
             tex_ref.handle = INVALID_ID;
             tex_ref.auto_release = false;
         }

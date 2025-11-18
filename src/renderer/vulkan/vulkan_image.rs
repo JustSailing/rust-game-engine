@@ -112,20 +112,20 @@ impl VulkanImage {
         if create_view {
             image_view = Some(Self::create_view(device, image, format, view_aspect_flags)?);
             return Ok(VulkanImage {
-                image: image,
+                image,
                 memory: device_memory,
                 view: image_view,
-                width: width,
-                height: height,
+                width,
+                height,
             });
         }
 
         Ok(VulkanImage {
-            image: image,
+            image,
             memory: device_memory,
             view: image_view,
-            width: width,
-            height: height,
+            width,
+            height,
         })
     }
 

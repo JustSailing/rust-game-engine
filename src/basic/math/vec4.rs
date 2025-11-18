@@ -260,9 +260,11 @@ impl PartialEq for Vec4 {
         if (self.data[3] - other.data[3]).abs() > FLOAT_EPSILON {
             return false;
         }
-        return true;
+        true
     }
 }
+
+impl Eq for Vec4 {}
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
@@ -400,8 +402,6 @@ impl Mul for Quat {
         let y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2;
         let z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2;
 
-        Self {
-            data: [x, y, z, w], 
-        }
+        Self { data: [x, y, z, w] }
     }
 }

@@ -103,7 +103,7 @@ impl<'a> GeometrySystem<'a> {
         let (geo, geo_2d) = (Geometry::default(), Geometry::default());
 
         Ok(Self {
-            config: config,
+            config,
             default_geometry: Rc::new(RefCell::new(geo)),
             default_geometry_2d: Rc::new(RefCell::new(geo_2d)),
             registered_geometries: registered_array,
@@ -114,15 +114,15 @@ impl<'a> GeometrySystem<'a> {
     }
 
     pub fn get_default_geometry(&self) -> Result<Rc<RefCell<Geometry>>> {
-        return Ok(Rc::clone(&self.default_geometry));
+        Ok(Rc::clone(&self.default_geometry))
     }
 
     pub fn get_default_geometry_2d(&self) -> Result<Rc<RefCell<Geometry>>> {
-        return Ok(Rc::clone(&self.default_geometry_2d));
+        Ok(Rc::clone(&self.default_geometry_2d))
     }
 
     pub fn destroy_default_geometry(&self) -> Result<()> {
-        return Ok(self
+        Ok(self
             .frontend_renderer
             .borrow_mut()
             .destroy_geometry(&self.default_geometry.borrow())
@@ -130,11 +130,11 @@ impl<'a> GeometrySystem<'a> {
                 source: e,
                 file: file!(),
                 line: line!(),
-            })?);
+            })?)
     }
 
     pub fn destroy_default_geometry2d(&self) -> Result<()> {
-        return Ok(self
+        Ok(self
             .frontend_renderer
             .borrow_mut()
             .destroy_geometry(&self.default_geometry_2d.borrow())
@@ -142,7 +142,7 @@ impl<'a> GeometrySystem<'a> {
                 source: e,
                 file: file!(),
                 line: line!(),
-            })?);
+            })?)
     }
 
     pub fn acquire_by_id(&mut self, id: usize) -> Result<Rc<RefCell<Geometry>>> {
@@ -157,7 +157,7 @@ impl<'a> GeometrySystem<'a> {
         };
 
         geo_ref.reference_count += 1;
-        return Ok(Rc::clone(&self.registered_geometries[geo_ref.handle]));
+        Ok(Rc::clone(&self.registered_geometries[geo_ref.handle]))
     }
 
     pub fn acquire_from_config<T: Clone, U: Clone>(
@@ -185,7 +185,7 @@ impl<'a> GeometrySystem<'a> {
         }
         let geometry = &self.registered_geometries[geo_ref.handle];
         self.create_geometry(geo_ref.handle, config)?;
-        return Ok(Rc::clone(geometry));
+        Ok(Rc::clone(geometry))
     }
 
     pub fn generate_cube_config(
@@ -201,6 +201,9 @@ impl<'a> GeometrySystem<'a> {
         let mut config: GeometryConfig<Vector3D, u32> = GeometryConfig {
             vertices: Vec::with_capacity(4 * 6),
             indices: Vec::with_capacity(6 * 6),
+            center: Default::default(),
+            min_extents: Default::default(),
+            max_extents: Default::default(),
             name: name.to_string(),
             material_name: material_name.to_string(),
         };
@@ -222,7 +225,7 @@ impl<'a> GeometrySystem<'a> {
         let vert0 = Vector3D {
             position: Vec3::new(min_x, min_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
-            texcoord: Vec2::new(min_uvx, min_uvy),
+            coord: Vec2::new(min_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -231,7 +234,7 @@ impl<'a> GeometrySystem<'a> {
         let vert1: Vector3D = Vector3D {
             position: Vec3::new(max_x, max_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
-            texcoord: Vec2::new(max_uvx, max_uvy),
+            coord: Vec2::new(max_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -240,7 +243,7 @@ impl<'a> GeometrySystem<'a> {
         let vert2: Vector3D = Vector3D {
             position: Vec3::new(min_x, max_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
-            texcoord: Vec2::new(min_uvx, max_uvy),
+            coord: Vec2::new(min_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -249,7 +252,7 @@ impl<'a> GeometrySystem<'a> {
         let vert3: Vector3D = Vector3D {
             position: Vec3::new(max_x, min_y, max_z),
             normal: Vec3::new(0.0, 0.0, -1.0),
-            texcoord: Vec2::new(max_uvx, min_uvy),
+            coord: Vec2::new(max_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -258,7 +261,7 @@ impl<'a> GeometrySystem<'a> {
         let vert4 = Vector3D {
             position: Vec3::new(max_x, min_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
-            texcoord: Vec2::new(min_uvx, min_uvy),
+            coord: Vec2::new(min_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -267,7 +270,7 @@ impl<'a> GeometrySystem<'a> {
         let vert5: Vector3D = Vector3D {
             position: Vec3::new(min_x, max_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
-            texcoord: Vec2::new(max_uvx, max_uvy),
+            coord: Vec2::new(max_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -276,7 +279,7 @@ impl<'a> GeometrySystem<'a> {
         let vert6: Vector3D = Vector3D {
             position: Vec3::new(max_x, max_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
-            texcoord: Vec2::new(min_uvx, max_uvy),
+            coord: Vec2::new(min_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -285,7 +288,7 @@ impl<'a> GeometrySystem<'a> {
         let vert7: Vector3D = Vector3D {
             position: Vec3::new(min_x, min_y, min_z),
             normal: Vec3::new(0.0, 0.0, 1.0),
-            texcoord: Vec2::new(max_uvx, min_uvy),
+            coord: Vec2::new(max_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -294,7 +297,7 @@ impl<'a> GeometrySystem<'a> {
         let vert8 = Vector3D {
             position: Vec3::new(min_x, min_y, min_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
-            texcoord: Vec2::new(min_uvx, min_uvy),
+            coord: Vec2::new(min_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -303,7 +306,7 @@ impl<'a> GeometrySystem<'a> {
         let vert9: Vector3D = Vector3D {
             position: Vec3::new(min_x, max_y, max_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
-            texcoord: Vec2::new(max_uvx, max_uvy),
+            coord: Vec2::new(max_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -312,7 +315,7 @@ impl<'a> GeometrySystem<'a> {
         let vert10: Vector3D = Vector3D {
             position: Vec3::new(min_x, max_y, min_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
-            texcoord: Vec2::new(min_uvx, max_uvy),
+            coord: Vec2::new(min_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -321,7 +324,7 @@ impl<'a> GeometrySystem<'a> {
         let vert11: Vector3D = Vector3D {
             position: Vec3::new(min_x, min_y, max_z),
             normal: Vec3::new(-1.0, 0.0, 0.0),
-            texcoord: Vec2::new(max_uvx, min_uvy),
+            coord: Vec2::new(max_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -330,7 +333,7 @@ impl<'a> GeometrySystem<'a> {
         let vert12: Vector3D = Vector3D {
             position: Vec3::new(max_x, min_y, max_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
-            texcoord: Vec2::new(min_uvx, min_uvy),
+            coord: Vec2::new(min_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -339,7 +342,7 @@ impl<'a> GeometrySystem<'a> {
         let vert13: Vector3D = Vector3D {
             position: Vec3::new(max_x, max_y, min_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
-            texcoord: Vec2::new(max_uvx, max_uvy),
+            coord: Vec2::new(max_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -348,7 +351,7 @@ impl<'a> GeometrySystem<'a> {
         let vert14: Vector3D = Vector3D {
             position: Vec3::new(max_x, max_y, max_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
-            texcoord: Vec2::new(min_uvx, max_uvy),
+            coord: Vec2::new(min_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -357,7 +360,7 @@ impl<'a> GeometrySystem<'a> {
         let vert15 = Vector3D {
             position: Vec3::new(max_x, min_y, min_z),
             normal: Vec3::new(1.0, 0.0, 0.0),
-            texcoord: Vec2::new(max_uvx, min_uvy),
+            coord: Vec2::new(max_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -366,7 +369,7 @@ impl<'a> GeometrySystem<'a> {
         let vert16: Vector3D = Vector3D {
             position: Vec3::new(max_x, min_y, max_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
-            texcoord: Vec2::new(min_uvx, min_uvy),
+            coord: Vec2::new(min_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -375,7 +378,7 @@ impl<'a> GeometrySystem<'a> {
         let vert17: Vector3D = Vector3D {
             position: Vec3::new(min_x, min_y, min_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
-            texcoord: Vec2::new(max_uvx, max_uvy),
+            coord: Vec2::new(max_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -384,7 +387,7 @@ impl<'a> GeometrySystem<'a> {
         let vert18: Vector3D = Vector3D {
             position: Vec3::new(max_x, min_y, min_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
-            texcoord: Vec2::new(min_uvx, max_uvy),
+            coord: Vec2::new(min_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -393,7 +396,7 @@ impl<'a> GeometrySystem<'a> {
         let vert19 = Vector3D {
             position: Vec3::new(min_x, min_y, max_z),
             normal: Vec3::new(0.0, -1.0, 0.0),
-            texcoord: Vec2::new(max_uvx, min_uvy),
+            coord: Vec2::new(max_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -402,7 +405,7 @@ impl<'a> GeometrySystem<'a> {
         let vert20: Vector3D = Vector3D {
             position: Vec3::new(min_x, max_y, max_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
-            texcoord: Vec2::new(min_uvx, min_uvy),
+            coord: Vec2::new(min_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -411,7 +414,7 @@ impl<'a> GeometrySystem<'a> {
         let vert21: Vector3D = Vector3D {
             position: Vec3::new(max_x, max_y, min_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
-            texcoord: Vec2::new(max_uvx, max_uvy),
+            coord: Vec2::new(max_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -420,7 +423,7 @@ impl<'a> GeometrySystem<'a> {
         let vert22: Vector3D = Vector3D {
             position: Vec3::new(min_x, max_y, min_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
-            texcoord: Vec2::new(min_uvx, max_uvy),
+            coord: Vec2::new(min_uvx, max_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -429,7 +432,7 @@ impl<'a> GeometrySystem<'a> {
         let vert23 = Vector3D {
             position: Vec3::new(max_x, max_y, max_z),
             normal: Vec3::new(0.0, 1.0, 0.0),
-            texcoord: Vec2::new(max_uvx, min_uvy),
+            coord: Vec2::new(max_uvx, min_uvy),
             colour: Vec4::new_zeroes(),
             tangent: Vec4::new_zeroes(),
         };
@@ -574,28 +577,28 @@ impl<'a> GeometrySystem<'a> {
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, -0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
-                texcoord: Vec2::new(0.0, 0.0),
+                coord: Vec2::new(0.0, 0.0),
                 colour: Vec4::new_zeroes(),
                 tangent: Vec4::new_zeroes(),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, 0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
-                texcoord: Vec2::new(1.0, 1.0),
+                coord: Vec2::new(1.0, 1.0),
                 colour: Vec4::new_zeroes(),
                 tangent: Vec4::new_zeroes(),
             },
             Vector3D {
                 position: Vec3::new(-0.5 * FACTOR, 0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
-                texcoord: Vec2::new(0.0, 1.0),
+                coord: Vec2::new(0.0, 1.0),
                 colour: Vec4::new_zeroes(),
                 tangent: Vec4::new_zeroes(),
             },
             Vector3D {
                 position: Vec3::new(0.5 * FACTOR, -0.5 * FACTOR, 0.0),
                 normal: Vec3::new_zeroes(),
-                texcoord: Vec2::new(1.0, 0.0),
+                coord: Vec2::new(1.0, 0.0),
                 colour: Vec4::new_zeroes(),
                 tangent: Vec4::new_zeroes(),
             },
@@ -628,19 +631,19 @@ impl<'a> GeometrySystem<'a> {
         let verts_2d: [Vector2D; VERT_COUNT] = [
             Vector2D {
                 position: Vec2::new(-0.5 * FACTOR, -0.5 * FACTOR),
-                texcoord: Vec2::new_zeroes(),
+                coord: Vec2::new_zeroes(),
             },
             Vector2D {
                 position: Vec2::new(0.5 * FACTOR, 0.5 * FACTOR),
-                texcoord: Vec2::new_ones(),
+                coord: Vec2::new_ones(),
             },
             Vector2D {
                 position: Vec2::new(-0.5 * FACTOR, 0.5 * FACTOR),
-                texcoord: Vec2::new(0.0, 1.0),
+                coord: Vec2::new(0.0, 1.0),
             },
             Vector2D {
                 position: Vec2::new(0.5 * FACTOR, -0.5 * FACTOR),
-                texcoord: Vec2::new(1.0, 0.0),
+                coord: Vec2::new(1.0, 0.0),
             },
         ];
         let indices_2d: [u32; INDEX_COUNT] = [2, 1, 0, 3, 0, 1];
@@ -698,4 +701,101 @@ impl<'a> Drop for GeometrySystem<'a> {
             //let _ = self.destroy_geometry(i);
         }
     }
+}
+
+pub fn geometry_generate_tangents(vertices: &mut [Vector3D], indices: &mut [u32]) {
+    for i in (0..indices.len()).step_by(3) {
+        let i0 = indices[i + 0] as usize;
+        let i1 = indices[i + 1] as usize;
+        let i2 = indices[i + 2] as usize;
+
+        let edge1 = vertices[i1].position - vertices[i0].position;
+        let edge2 = vertices[i2].position - vertices[i0].position;
+
+        let delta_u1 = vertices[i1].coord.data[0] - vertices[i0].coord.data[0];
+        let delta_v1 = vertices[i1].coord.data[1] - vertices[i0].coord.data[1];
+
+        let delta_u2 = vertices[i2].coord.data[0] - vertices[i0].coord.data[0];
+        let delta_v2 = vertices[i2].coord.data[1] - vertices[i0].coord.data[1];
+
+        let dividend = delta_u1 * delta_v2 - delta_u2 * delta_v1;
+        let fc = 1.0 / dividend;
+
+        let mut tangent = Vec3::new(
+            fc * (delta_v2 * edge1.data[0] - delta_v1 * edge2.data[0]),
+            fc * (delta_v2 * edge1.data[1] - delta_v1 * edge2.data[1]),
+            fc * (delta_v2 * edge1.data[2] - delta_v1 * edge2.data[2]),
+        );
+
+        tangent.normalize();
+
+        let sx = delta_u1;
+        let sy = delta_u2;
+        let tx = delta_v1;
+        let ty = delta_v2;
+        let handedness = if (tx * sy - ty * sx) < 0.0 { -1.0 } else { 1.0 };
+        let t4 = Vec4::vec3_to_vec4(&tangent, handedness);
+
+        vertices[i0].tangent = t4;
+        vertices[i1].tangent = t4;
+        vertices[i2].tangent = t4;
+    }
+}
+
+pub fn geometry_generate_normals(vertices: &mut [Vector3D], indices: &mut [u32]) {
+    for i in (0..indices.len()).step_by(3) {
+        let i0 = indices[i + 0] as usize;
+        let i1 = indices[i + 1] as usize;
+        let i2 = indices[i + 2] as usize;
+
+        let edge1 = vertices[i1].position - vertices[i0].position;
+        let edge2 = vertices[i2].position - vertices[i0].position;
+
+        let mut normal = edge1.cross(&edge2);
+        normal.normalize();
+
+        vertices[i0].normal = normal;
+        vertices[i1].normal = normal;
+        vertices[i2].normal = normal;
+    }
+}
+
+pub fn reassign_index(indices: &mut [u32], from: u32, to: u32) {
+    for index in indices.iter_mut() {
+        if *index == from {
+            *index = to;
+        } else if *index > from {
+            *index -= 1;
+        }
+    }
+}
+
+pub fn geometry_deduplicate_vertices(
+    geometry_config: &mut GeometryConfig<Vector3D, u32>,
+) -> Vec<Vector3D> {
+    let vertices = &mut geometry_config.vertices;
+    let indices = &mut geometry_config.indices;
+    let mut out_vertices = Vec::with_capacity(vertices.len());
+    let mut found_count = 0;
+    for i in 0..vertices.len() {
+        let mut found = false;
+        for j in 0..out_vertices.len() {
+            if vertices[i] == out_vertices[j] {
+                reassign_index(indices, (i - found_count) as u32, j as u32);
+                found = true;
+                found_count += 1;
+                break;
+            }
+        }
+        if !found {
+            out_vertices.push(vertices[i]);
+        }
+    }
+    println!(
+        "geometry_deduplicate_vertices: removed {:?}, orig/now {:?}/{:?}",
+        vertices.len() - out_vertices.len(),
+        vertices.len(),
+        out_vertices.len()
+    );
+    out_vertices
 }

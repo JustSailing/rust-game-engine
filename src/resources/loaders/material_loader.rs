@@ -11,8 +11,8 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct MaterialLoader;
 
 impl MaterialLoader {
-    pub fn load(name: &str, path: &str, base_path: &str, res_type: &str) -> Result<Resource> {
-        let full_path = format!("{}/{}/{}.{}", base_path, path, name, res_type);
+    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+        let full_path = format!("{}/{}/{}.{}", base_path, path, name, "gmt");
         let mut file_handle =
             FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
                 ResourceSysError::FileError {
@@ -48,11 +48,8 @@ impl MaterialLoader {
                     config.diffuse_colour = dif_col;
                 }
                 "diffuse_map_name" => config.diffuse_map_name = split[1].trim().to_string(),
-                "diffuse_map_type" => config.diffuse_map_type = split[1].trim().to_string(),
                 "specular_map_name" => config.specular_map_name = split[1].trim().to_string(),
-                "specular_map_type" => config.specular_map_type = split[1].trim().to_string(),
                 "normal_map_name" => config.normal_map_name = split[1].trim().to_string(),
-                "normal_map_type" => config.normal_map_type = split[1].trim().to_string(),
                 "shininess" => {
                     config.shininess = split[1].trim().to_string().parse::<f32>().unwrap()
                 }
@@ -70,7 +67,7 @@ impl MaterialLoader {
         let res = Resource {
             loader_id: INVALID_ID,
             name: name.to_string(),
-            full_path: full_path,
+            full_path,
             data: res_data,
         };
         Ok(res)

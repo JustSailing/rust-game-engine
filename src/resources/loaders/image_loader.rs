@@ -1,3 +1,5 @@
+use std::fs;
+
 use crate::application::{
     basic::math::consts::INVALID_ID,
     resources::resource_types::{ImageData, Resource, ResourceData},
@@ -18,14 +20,51 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ImageLoader;
 
 impl ImageLoader {
-    pub fn load(name: &str, path: &str, base_path: &str, img_type: &str) -> Result<Resource> {
-        let mut file_path = format!("{}/{}/{}.{}", base_path, path, name, img_type);
-        file_path = file_path
-            .chars()
-            .filter(|c| !c.is_whitespace() && *c != '\n')
-            .collect();
+    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+        // FIXME: need to find name with out extension
+        let directory = format!("{}/{}", base_path, path);
+        let entries =
+            fs::read_dir(&directory).map_err(|_| ResourceSysError::ResourceLoadError {
+                name: name.to_string(),
+                file: file!(),
+                line: line!(),
+            })?;
 
-        let data = image::open(&file_path)
+        let mut full_filename = String::from("");
+        let mut found = false;
+        for entry in entries {
+            if let Ok(e) = entry {
+                let full_path = e.path();
+                let file_name = if full_path.file_stem().is_none() {
+                    continue;
+                } else {
+                    full_path.file_stem().unwrap()
+                };
+                let file = file_name.to_str().unwrap();
+                if file == name {
+                    full_filename = full_path.into_os_string().into_string().map_err(|_| {
+                        ResourceSysError::ResourceLoadError {
+                            name: "could not convert pathbuf to string".to_string(),
+                            file: file!(),
+                            line: line!(),
+                        }
+                    })?;
+                    found = true;
+                    break;
+                }
+            } else {
+                continue;
+            }
+        }
+
+        if !found {
+            return Err(ResourceSysError::ImageLoaderError {
+                file: file!(),
+                line: line!(),
+            });
+        }
+
+        let data = image::open(&full_filename)
             .map_err(|e| ResourceSysError::ImageError {
                 source: e,
                 file: file!(),
@@ -48,7 +87,7 @@ impl ImageLoader {
         let res = Resource {
             loader_id: INVALID_ID,
             name: name.to_string(),
-            full_path: file_path,
+            full_path: full_filename,
             data: res_data,
         };
         Ok(res)

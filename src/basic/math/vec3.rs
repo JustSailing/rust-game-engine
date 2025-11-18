@@ -200,80 +200,37 @@ impl PartialEq for Vec3 {
         if (self.data[2] - other.data[2]).abs() > FLOAT_EPSILON {
             return false;
         }
-        return true;
+        true
     }
 }
 
-#[derive(Clone, Copy)]
+impl Eq for Vec3 {}
+
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct Vector3D {
     pub position: Vec3,
     pub normal: Vec3,
-    pub texcoord: Vec2,
+    pub coord: Vec2,
     pub colour: Vec4,
     pub tangent: Vec4,
 }
 
-pub fn geometry_generate_tangents(vertices: &mut [Vector3D], indices: &mut [u32]) {
-    for i in (0..indices.len()).step_by(3) {
-        let i0 = indices[i + 0] as usize;
-        let i1 = indices[i + 1] as usize;
-        let i2 = indices[i + 2] as usize;
-
-        let edge1 = vertices[i1].position - vertices[i0].position;
-        let edge2 = vertices[i2].position - vertices[i0].position;
-
-        let delta_u1 = vertices[i1].texcoord.data[0] - vertices[i0].texcoord.data[0];
-        let delta_v1 = vertices[i1].texcoord.data[1] - vertices[i0].texcoord.data[1];
-
-        let delta_u2 = vertices[i2].texcoord.data[0] - vertices[i0].texcoord.data[0];
-        let delta_v2 = vertices[i2].texcoord.data[1] - vertices[i0].texcoord.data[1];
-
-        let dividend = delta_u1 * delta_v2 - delta_u2 * delta_v1;
-        let fc = 1.0 / dividend;
-
-        let mut tangent = Vec3::new(
-            fc * (delta_v2 * edge1.data[0] - delta_v1 * edge2.data[0]),
-            fc * (delta_v2 * edge1.data[1] - delta_v1 * edge2.data[1]),
-            fc * (delta_v2 * edge1.data[2] - delta_v1 * edge2.data[2]),
-        );
-
-        tangent.normalize();
-
-        let sx = delta_u1;
-        let sy = delta_u2;
-        let tx = delta_v1;
-        let ty = delta_v2;
-        let handedness = if (tx * sy - ty * sx) < 0.0 { -1.0 } else { 1.0 };
-        let t4 = Vec4::vec3_to_vec4(&tangent, handedness);
-
-        vertices[i0].tangent = t4;
-        vertices[i1].tangent = t4;
-        vertices[i2].tangent = t4;
+impl PartialEq for Vector3D {
+    fn eq(&self, other: &Self) -> bool {
+        self.position == other.position
+            && self.normal == other.normal
+            && self.coord == other.coord
+            && self.colour == other.colour
+            && self.tangent == other.tangent
     }
 }
 
-pub fn geometry_generate_normals(vertices: &mut [Vector3D], indices: &mut [u32]) {
-    for i in (0..indices.len()).step_by(3) {
-        let i0 = indices[i + 0] as usize;
-        let i1 = indices[i + 1] as usize;
-        let i2 = indices[i + 2] as usize;
-
-        let edge1 = vertices[i1].position - vertices[i0].position;
-        let edge2 = vertices[i2].position - vertices[i0].position;
-
-        let mut normal = edge1.cross(&edge2);
-        normal.normalize();
-
-        vertices[i0].normal = normal;
-        vertices[i1].normal = normal;
-        vertices[i2].normal = normal;
-    }
-}
+impl Eq for Vector3D {}
 
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Vector2D {
     pub position: Vec2,
-    pub texcoord: Vec2,
+    pub coord: Vec2,
 }
