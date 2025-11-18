@@ -598,7 +598,7 @@ impl<'a> ApplicationState<'a> {
 
         let mut resource = resource_system
             .borrow()
-            .load("sponza", ResourceType::Mesh)
+            .load("falcon", ResourceType::Mesh)
             .map_err(|e| AppError::ResourceSysError {
                 source: e,
                 file: file!(),
