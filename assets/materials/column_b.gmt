@@ -1,0 +1,9 @@
+# material file
+version=0.1
+name=column_b
+diffuse_colour=0.588 0.588 0.588 1
+shininess=10
+diffuse_map_name=sponza_column_b_diff
+specular_map_name=sponza_column_b_spec
+normal_map_name=sponza_column_b_ddn
+shader=Shader.Builtin.Material

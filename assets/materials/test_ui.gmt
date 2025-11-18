@@ -3,5 +3,4 @@ version=0.1
 name=test_ui_material
 diffuse_colour=1.0 1.0 1.0 1.0
 diffuse_map_name=logo
-diffuse_map_type=png
 shader=Shader.Builtin.UI

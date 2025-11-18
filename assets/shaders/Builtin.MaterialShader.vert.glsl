@@ -45,7 +45,7 @@ void main() {
   out_dto.shininess = instance_ubo.shininess;
   out_dto.frag_position = vec3(instance_ubo.model * vec4(in_position, 1.0));
   mat3 m3_model = mat3(instance_ubo.model);
-  out_dto.normal = m3_model * in_normal;
+  out_dto.normal = normalize(m3_model * in_normal);
   out_dto.tangent = vec4(normalize(m3_model * in_tangent.xyz), in_tangent.w);
   out_dto.view_position = global_ubo.view_position;
   out_mode = global_ubo.mode;
