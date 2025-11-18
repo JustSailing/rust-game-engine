@@ -550,11 +550,7 @@ impl MeshLoader {
                                     name.to_str().unwrap().trim().to_string();
                             }
                         }
-                        _ => {
-                            println!(
-                                "issue reading texture map name in import_obj_material_library_file"
-                            );
-                        }
+                        _ => {}
                     }
                 }
                 'b' => {

@@ -111,6 +111,11 @@ impl MaterialConfig {
         self.name = name.clone();
         self
     }
+
+    pub fn auto_release(mut self, auto_release: bool) -> Self {
+        self.auto_release = auto_release;
+        self
+    }
 }
 #[repr(C)]
 #[derive(Debug)]

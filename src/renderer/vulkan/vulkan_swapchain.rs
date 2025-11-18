@@ -512,13 +512,11 @@ impl VulkanSwapchain {
                 //VulkanContext::recreate_swapchain()?;
                 Ok(false)
             }
-            _ => {
-                Err(VulkanBackendError::OperationFailed {
-                    issue: "present queue did not work properly",
-                    file: file!(),
-                    line: line!(),
-                })
-            }
+            _ => Err(VulkanBackendError::OperationFailed {
+                issue: "present queue did not work properly",
+                file: file!(),
+                line: line!(),
+            }),
         }
     }
     pub fn acquire_next_image_index(
@@ -536,13 +534,11 @@ impl VulkanSwapchain {
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
                 Ok((true, 0))
             }
-            Err(_) => {
-                Err(VulkanBackendError::OperationFailed {
-                    issue: "failure to acquire next image",
-                    file: file!(),
-                    line: line!(),
-                })
-            }
+            Err(_) => Err(VulkanBackendError::OperationFailed {
+                issue: "failure to acquire next image",
+                file: file!(),
+                line: line!(),
+            }),
         }
     }
 }

@@ -219,7 +219,7 @@ impl<'a> ApplicationState<'a> {
             )?,
         ));
 
-        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 100 };
+        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 4096 };
         let texture_system = Rc::new(RefCell::new(
             TextureSystem::initialize(
                 texture_sys_config,
@@ -333,7 +333,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 100 };
+        let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 4096 };
         let material_system = Rc::new(RefCell::new(
             MaterialSystem::initialize(
                 material_sys_config,
@@ -358,7 +358,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 100 };
+        let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 4096 };
         let geometry_system = Rc::new(RefCell::new(
             GeometrySystem::initialize(
                 geometry_sys_config,
@@ -551,9 +551,6 @@ impl<'a> ApplicationState<'a> {
         let mut cube_mesh3 = Mesh {
             geometries: Vec::new(),
             transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(7.5, 0.0, 1.0)))),
-            // model: Matrix4::translation(&Vec3 {
-            //     data: [10.0, 0.0, 1.0],
-            // }),
         };
 
         cube_mesh3
@@ -586,6 +583,7 @@ impl<'a> ApplicationState<'a> {
             .transform
             .borrow_mut()
             .set_parent(Rc::clone(&cube_mesh.transform));
+
         cube_mesh3
             .transform
             .borrow_mut()
@@ -637,7 +635,58 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-        let meshes = vec![cube_mesh, cube_mesh2, cube_mesh3, car_mesh];
+
+        let mut sponza_mesh = Mesh {
+            geometries: Vec::new(),
+            transform: Rc::new(RefCell::new(Transform::from_pos_rot_scale(
+                Vec3::new(15.0, 0.0, 1.0),
+                Quat::identity(),
+                Vec3::new(0.05, 0.05, 0.05),
+            ))),
+        };
+
+        let mut resource = resource_system
+            .borrow()
+            .load("sponza", ResourceType::Mesh)
+            .map_err(|e| AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
+        let geometry_configs = match resource.data {
+            ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
+            _ => {
+                return Err(AppError::OperationFailed {
+                    issue: "wrong resource data for falcon".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+        };
+
+        for geo_config in geometry_configs.iter_mut() {
+            geometry_generate_tangents(&mut geo_config.vertices, &mut geo_config.indices);
+            sponza_mesh.geometries.push(
+                geometry_system
+                    .borrow_mut()
+                    .acquire_from_config(geo_config.clone(), true)
+                    .map_err(|e| AppError::GeometrySysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?,
+            );
+        }
+        resource_system
+            .borrow_mut()
+            .unload(&mut resource)
+            .map_err(|e| AppError::ResourceSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        let meshes = vec![cube_mesh, cube_mesh2, cube_mesh3, car_mesh, sponza_mesh];
 
         if !game.borrow_mut().initialize() {
             return Err(AppError::CouldNotInitializeGame {

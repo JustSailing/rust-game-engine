@@ -91,9 +91,7 @@ impl VulkanDevice {
                 sampler_anisotropy: true,
                 discrete_gpu: false,
             };
-            requirements
-                .device_extension_names
-                .push(KHR_SWAPCHAIN_NAME);
+            requirements.device_extension_names.push(KHR_SWAPCHAIN_NAME);
             let mut queue_info = PhysicalDeviceQueueFamilyInfo {
                 graphics_family_index: -1,
                 present_family_index: -1,

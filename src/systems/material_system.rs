@@ -326,7 +326,7 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
 
-        let config = match material_res.data {
+        let mat_config = match material_res.data {
             ResourceData::MaterialResourceData(ref mut material_config) => material_config,
             ResourceData::Unknown => {
                 return Err(MaterialSysError::WrongResourceDataType {
@@ -365,7 +365,9 @@ impl<'a> MaterialSystem<'a> {
             }
         };
 
-        let (material, shader_instance_id) = self.acquire_from_config(config)?;
+        mat_config.auto_release = config.auto_release;
+
+        let (material, shader_instance_id) = self.acquire_from_config(mat_config)?;
 
         self.resource_system
             .borrow()
@@ -942,7 +944,7 @@ impl<'a> MaterialSystem<'a> {
         if config.diffuse_map_name.len() > 0 {
             mat.diffuse_map_name = config.diffuse_map_name.clone();
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
-            let texture = self
+            mat.diffuse_map.texture = self
                 .texture_system
                 .borrow_mut()
                 .acquire(config.diffuse_map_name.clone(), config.auto_release)
@@ -951,7 +953,17 @@ impl<'a> MaterialSystem<'a> {
                     file: file!(),
                     line: line!(),
                 })?;
-            mat.diffuse_map.texture = texture;
+        } else {
+            mat.diffuse_map.use_type = TextureUse::MapDiffuse;
+            mat.diffuse_map.texture =
+                self.texture_system
+                    .borrow()
+                    .get_default_texture()
+                    .map_err(|e| MaterialSysError::TextureSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
         }
 
         if config.specular_map_name.len() > 0 {
@@ -967,6 +979,17 @@ impl<'a> MaterialSystem<'a> {
                     line: line!(),
                 })?;
             mat.specular_map.texture = texture;
+        } else {
+            mat.specular_map.use_type = TextureUse::MapDiffuse;
+            mat.specular_map.texture = self
+                .texture_system
+                .borrow()
+                .get_default_specular_texture()
+                .map_err(|e| MaterialSysError::TextureSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
         }
 
         if config.normal_map_name.len() > 0 {
@@ -982,6 +1005,17 @@ impl<'a> MaterialSystem<'a> {
                     line: line!(),
                 })?;
             mat.normal_map.texture = texture;
+        } else {
+            mat.normal_map.use_type = TextureUse::MapDiffuse;
+            mat.normal_map.texture = self
+                .texture_system
+                .borrow()
+                .get_default_normal_texture()
+                .map_err(|e| MaterialSysError::TextureSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
         }
         Ok(mat)
     }
@@ -1038,16 +1072,5 @@ impl<'a> MaterialSystem<'a> {
         }
 
         Ok(())
-    }
-}
-
-impl<'a> Drop for MaterialSystem<'a> {
-    fn drop(&mut self) {
-        let _ = self.destroy_material(&self.default_material.borrow());
-        for mat in self.registered_materials.iter() {
-            if mat.borrow().id != INVALID_ID {
-                let _ = self.destroy_material(&mat.borrow());
-            }
-        }
     }
 }

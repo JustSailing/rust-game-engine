@@ -1877,7 +1877,6 @@ impl<'a> VulkanContext {
             );
         }
 
-
         Ok(())
     }
     pub fn shader_acquire_instance_resources(&self, shader: &mut Shader) -> Result<u32> {

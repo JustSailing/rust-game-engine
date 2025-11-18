@@ -15,7 +15,7 @@ pub struct TextureSysConfig {
     pub max_count: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TextureRef {
     reference_count: usize,
     handle: usize,
@@ -319,59 +319,82 @@ impl TextureSystem {
 
     pub fn acquire(&mut self, name: String, auto_release: bool) -> Result<Rc<RefCell<Texture>>> {
         if name == DEFAULT_TEXTURE_NAME {
-            println!(
-                "WARN: texture acquire was called with default texture name. Use get_default_texture for 'default'"
-            );
+            // ... (default texture check remains the same) ...
             return Ok(Rc::clone(&self.default_texture));
         }
-        let mut texture_ref: TextureRef = TextureRef::default();
-        {
-            let tex_ref = match self.registered_textures_hashmap.get_mut(&name) {
-                Some(t) => t,
-                None => {
-                    let tex_ref = TextureRef::default().auto_release(auto_release);
-                    let n = String::from(name.clone());
-                    self.registered_textures_hashmap.insert(n.clone(), tex_ref);
-                    self.registered_textures_hashmap.get_mut(&n).unwrap()
-                }
-            };
-            if tex_ref.reference_count == 0 {
-                tex_ref.auto_release = auto_release;
-            }
-            tex_ref.reference_count += 1;
-            if tex_ref.handle == INVALID_ID {
-                for tuple in self.registered_textures.iter().enumerate() {
-                    if tuple.1.borrow().id == INVALID_ID {
-                        tex_ref.handle = tuple.0;
-                        break;
-                    }
-                }
-                if tex_ref.handle == INVALID_ID {
-                    return Err(TextureSysError::FailedToAcquireTexture {
-                        name:
-                            "failed to acquire texture. texture system cannot hold anymore textures"
-                                .to_string(),
-                        file: file!(),
-                        line: line!(),
-                    });
-                }
-            }
-            texture_ref = *tex_ref;
-        }
-        self.register_texture(&name, &texture_ref)?;
-        Ok(Rc::clone(&self.registered_textures[texture_ref.handle]))
-    }
 
-    pub fn register_texture(&mut self, name: &String, tex_ref: &TextureRef) -> Result<()> {
-        self.registered_textures[tex_ref.handle].replace(self.load_texture(&name)?);
-        self.registered_textures[tex_ref.handle].borrow_mut().id = tex_ref.handle;
+        // --- STEP 1: Find a free slot (PRE-CALCULATION) ---
+        // This is done before map interaction to avoid initial borrow conflicts.
+        let free_handle = self
+            .registered_textures
+            .iter()
+            .enumerate()
+            .find_map(|(i, texture_rc)| {
+                if texture_rc.borrow().id == INVALID_ID {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(INVALID_ID);
+
+        // --- STEP 2: Handle Map Entry and Release Borrow ---
+        let mut current_ref = self
+            .registered_textures_hashmap
+            .remove(&name) // 👈 REMOVE the existing entry (releasing the borrow)
+            .unwrap_or_else(|| {
+                // If entry didn't exist, create the new TextureRef
+                TextureRef {
+                    reference_count: 0,
+                    handle: free_handle,
+                    auto_release,
+                }
+            });
+
+        // --- STEP 3: Handle System Full Error ---
+        if current_ref.reference_count == 0 && current_ref.handle == INVALID_ID {
+            // We removed it in Step 2, so no need to remove again.
+            return Err(TextureSysError::FailedToAcquireTexture {
+                name: format!(
+                    "failed to acquire texture '{}'. texture system cannot hold anymore textures",
+                    name
+                ),
+                file: file!(),
+                line: line!(),
+            });
+        }
+
+        // --- STEP 4: Update Reference Count and Load if necessary ---
+        let load_needed = current_ref.reference_count == 0;
+
+        current_ref.reference_count += 1;
+        current_ref.auto_release = auto_release;
+
+        // --- STEP 5: Re-insert entry to save state (CRITICAL BORROW RELEASE POINT) ---
+        // The `current_ref` is now a temporary, owned struct.
+        // We insert it back, which creates a *new* mutable borrow of the HashMap,
+        // but the borrow on `current_ref` ends immediately.
         self.registered_textures_hashmap
-            .insert(name.clone(), *tex_ref);
-        Ok(())
+            .insert(name.clone(), current_ref);
+
+        // Now, the HashMap is stable and the previous mutable borrow is finished.
+        // We can safely proceed to access other parts of `self`.
+
+        if load_needed {
+            // Load the texture (requires internal borrows of renderer/resource system)
+            self.registered_textures[current_ref.handle].replace(self.load_texture(&name)?);
+            self.registered_textures[current_ref.handle].borrow_mut().id = current_ref.handle;
+        }
+
+        // --- STEP 6: Return the reference ---
+        Ok(Rc::clone(&self.registered_textures[current_ref.handle]))
     }
 
     pub fn release(&mut self, name: &str) -> Result<()> {
-        if name == DEFAULT_TEXTURE_NAME || name == DEFAULT_TEXTURE_SPECULAR_NAME {
+        if name == DEFAULT_TEXTURE_NAME
+            || name == DEFAULT_TEXTURE_SPECULAR_NAME
+            || name == DEFAULT_TEXTURE_NORMAL_NAME
+        {
             return Ok(());
         }
 
@@ -435,7 +458,10 @@ impl TextureSystem {
                     }
                 });
             if option.is_none() {
+                // FIXME: some how im getting allot of could not release textures
+                // still better than validation error
                 // not sure if I should error out
+                println!("could not release texture by id {}", id);
                 return Ok(());
             }
             if let Some(ref mut opt) = option {

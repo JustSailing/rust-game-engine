@@ -2,14 +2,18 @@ use crate::application::{
     basic::math::{
         consts::INVALID_ID,
         vec2::Vec2,
-        vec3::{Vec3, Vector2D, Vector3D},
+        vec3::{Vec3, Vector2D, Vector3D, VectorKey},
         vec4::Vec4,
     },
     renderer::renderer_types::{Renderer, RendererError},
     resources::resource_types::{Geometry, GeometryConfig, MaterialConfig},
     systems::material_system::{MaterialSysError, MaterialSystem},
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+    rc::Rc,
+};
 use thiserror::Error;
 pub struct GeometrySysConfig {
     pub max_count: usize,
@@ -184,7 +188,7 @@ impl<'a> GeometrySystem<'a> {
             });
         }
         let geometry = &self.registered_geometries[geo_ref.handle];
-        self.create_geometry(geo_ref.handle, config)?;
+        self.create_geometry(geo_ref.handle, config, auto_release)?;
         Ok(Rc::clone(geometry))
     }
 
@@ -503,6 +507,7 @@ impl<'a> GeometrySystem<'a> {
         &self,
         handle: usize,
         config: GeometryConfig<T, U>,
+        auto_release: bool,
     ) -> Result<()> {
         let geo = &self.registered_geometries[handle];
 
@@ -515,7 +520,9 @@ impl<'a> GeometrySystem<'a> {
                 line: line!(),
             })?;
 
-        let mut material_config = MaterialConfig::default().name(&config.material_name);
+        let mut material_config = MaterialConfig::default()
+            .name(&config.material_name)
+            .auto_release(auto_release);
         let mut g = geo.borrow_mut();
 
         (g.material, g.material_instance_id) = self
@@ -674,35 +681,6 @@ impl<'a> GeometrySystem<'a> {
     }
 }
 
-impl<'a> Drop for GeometrySystem<'a> {
-    fn drop(&mut self) {
-        let _ = self.destroy_default_geometry();
-        let _ = self
-            .material_system
-            .borrow_mut()
-            .destroy_material(&mut self.default_geometry.borrow_mut().material.borrow_mut());
-        let _ = self.destroy_default_geometry2d();
-        let _ = self
-            .material_system
-            .borrow_mut()
-            .destroy_material(&mut self.default_geometry_2d.borrow_mut().material.borrow_mut());
-        self.default_geometry.replace(Geometry::default());
-        self.default_geometry_2d.replace(Geometry::default());
-        for (_, geo) in self.registered_geometries.iter_mut().enumerate() {
-            if geo.borrow().id == INVALID_ID {
-                continue;
-            }
-            {
-                let _ = self
-                    .material_system
-                    .borrow_mut()
-                    .destroy_material(&mut geo.borrow_mut().material.borrow_mut());
-            }
-            //let _ = self.destroy_geometry(i);
-        }
-    }
-}
-
 pub fn geometry_generate_tangents(vertices: &mut [Vector3D], indices: &mut [u32]) {
     for i in (0..indices.len()).step_by(3) {
         let i0 = indices[i + 0] as usize;
@@ -760,42 +738,42 @@ pub fn geometry_generate_normals(vertices: &mut [Vector3D], indices: &mut [u32])
     }
 }
 
-pub fn reassign_index(indices: &mut [u32], from: u32, to: u32) {
-    for index in indices.iter_mut() {
-        if *index == from {
-            *index = to;
-        } else if *index > from {
-            *index -= 1;
-        }
-    }
-}
-
 pub fn geometry_deduplicate_vertices(
     geometry_config: &mut GeometryConfig<Vector3D, u32>,
 ) -> Vec<Vector3D> {
-    let vertices = &mut geometry_config.vertices;
+    let original_vertices = &geometry_config.vertices;
     let indices = &mut geometry_config.indices;
-    let mut out_vertices = Vec::with_capacity(vertices.len());
-    let mut found_count = 0;
-    for i in 0..vertices.len() {
-        let mut found = false;
-        for j in 0..out_vertices.len() {
-            if vertices[i] == out_vertices[j] {
-                reassign_index(indices, (i - found_count) as u32, j as u32);
-                found = true;
-                found_count += 1;
-                break;
-            }
-        }
-        if !found {
-            out_vertices.push(vertices[i]);
-        }
+
+    // Map: Key=VectorKey (quantized), Value=u32 (the new unique index)
+    let mut vertex_to_new_index = BTreeMap::new();
+    let mut out_vertices = Vec::with_capacity(original_vertices.len());
+
+    let mut old_to_new_index_map = Vec::with_capacity(original_vertices.len());
+
+    for (_, vertex) in original_vertices.iter().enumerate() {
+        // Convert the Vector3D to its quantized key
+        let key = VectorKey::from(vertex);
+
+        let new_index = *vertex_to_new_index.entry(key).or_insert_with(|| {
+            // Vertex is new. Assign it the next available index.
+            let next_index = out_vertices.len() as u32;
+            out_vertices.push(vertex.clone());
+            next_index
+        });
+
+        old_to_new_index_map.push(new_index);
+    }
+
+    // Remap the indices array
+    for index in indices.iter_mut() {
+        *index = old_to_new_index_map[*index as usize];
     }
     println!(
         "geometry_deduplicate_vertices: removed {:?}, orig/now {:?}/{:?}",
-        vertices.len() - out_vertices.len(),
-        vertices.len(),
+        original_vertices.len() - out_vertices.len(),
+        original_vertices.len(),
         out_vertices.len()
     );
+
     out_vertices
 }

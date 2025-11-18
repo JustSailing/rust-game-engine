@@ -115,13 +115,11 @@ impl VulkanCommandBuffer {
                     self.state = CommandBufferState::Reset;
                     Ok(())
                 }
-                Err(_) => {
-                    Err(VulkanBackendError::OperationFailed {
-                        issue: "could not reset command buffer",
-                        file: file!(),
-                        line: line!(),
-                    })
-                }
+                Err(_) => Err(VulkanBackendError::OperationFailed {
+                    issue: "could not reset command buffer",
+                    file: file!(),
+                    line: line!(),
+                }),
             }
         }
     }

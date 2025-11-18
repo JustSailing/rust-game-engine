@@ -51,7 +51,7 @@ impl FileHandle {
             FileModes::WRITE => options.write(true).create(true),
             FileModes::RW => options.read(true).write(true).create(true),
         };
-      
+
         match options.open(path) {
             Ok(f) => Ok(Self {
                 file: f,

@@ -234,3 +234,34 @@ pub struct Vector2D {
     pub position: Vec2,
     pub coord: Vec2,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VectorKey([i32; 16]);
+
+impl From<&Vector3D> for VectorKey {
+    fn from(v: &Vector3D) -> Self {
+        let mut data = [0i32; 16];
+        let mut i = 0;
+        const QUANTIZE_MULTIPLIER: f32 = 1_000_000.0;
+        // Helper macro to process VecN data and apply quantization
+        // We use round() before casting to safely handle floats that are slightly
+        // above or below the integer boundary due to noise.
+        macro_rules! process_vec {
+            ($vec:expr) => {
+                for val in $vec.data.iter() {
+                    // Quantize: (float * Multiplier) -> round() -> i32
+                    data[i] = (val * QUANTIZE_MULTIPLIER).round() as i32;
+                    i += 1;
+                }
+            };
+        }
+
+        process_vec!(v.position); // 3 components
+        process_vec!(v.normal); // 3 components
+        process_vec!(v.coord); // 2 components
+        process_vec!(v.colour); // 4 components
+        process_vec!(v.tangent); // 4 components
+
+        VectorKey(data)
+    }
+}

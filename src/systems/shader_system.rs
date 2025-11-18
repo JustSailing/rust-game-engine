@@ -402,13 +402,11 @@ impl<'a> ShaderSystem<'a> {
                     Ok(r.handle)
                 }
             }
-            None => {
-                Err(ShaderSysError::ShaderInvalid {
-                    name: name.to_string(),
-                    file: file!(),
-                    line: line!(),
-                })
-            }
+            None => Err(ShaderSysError::ShaderInvalid {
+                name: name.to_string(),
+                file: file!(),
+                line: line!(),
+            }),
         }
     }
 
@@ -518,8 +516,7 @@ impl<'a> ShaderSystem<'a> {
             shader.bound_scope = uniform.shader_scope;
         }
 
-        self
-            .frontend_renderer
+        self.frontend_renderer
             .borrow()
             .set_uniform(&mut shader, index as usize, value)
             .map_err(|e| ShaderSysError::RendererSysError {
@@ -534,8 +531,7 @@ impl<'a> ShaderSystem<'a> {
     }
 
     pub fn apply_globals(&self) -> Result<()> {
-        self
-            .frontend_renderer
+        self.frontend_renderer
             .borrow()
             .shader_apply_globals(&mut self.registered_shaders[self.current_shader_id].borrow_mut())
             .map_err(|e| ShaderSysError::RendererSysError {
@@ -546,8 +542,7 @@ impl<'a> ShaderSystem<'a> {
     }
 
     pub fn apply_instance(&self) -> Result<()> {
-        self
-            .frontend_renderer
+        self.frontend_renderer
             .borrow()
             .shader_apply_instance(
                 &mut self.registered_shaders[self.current_shader_id].borrow_mut(),
@@ -564,8 +559,7 @@ impl<'a> ShaderSystem<'a> {
             .borrow_mut()
             .bound_instance_id = instance_id;
 
-        self
-            .frontend_renderer
+        self.frontend_renderer
             .borrow()
             .shader_bind_instance(&mut self.registered_shaders[self.current_shader_id].borrow_mut())
             .map_err(|e| ShaderSysError::RendererSysError {
