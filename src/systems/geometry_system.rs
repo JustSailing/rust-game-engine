@@ -8,6 +8,7 @@ use crate::application::{
     renderer::renderer_types::{Renderer, RendererError},
     resources::resource_types::{Geometry, GeometryConfig, MaterialConfig},
     systems::material_system::{MaterialSysError, MaterialSystem},
+    systems::shader_system::{ShaderSysError, ShaderSystem},
 };
 use std::{
     cell::RefCell,
@@ -50,6 +51,12 @@ pub enum GeometrySysError {
         file: &'static str,
         line: u32,
     },
+    #[error("{source}\nshader system error: error returned from shader system {file} {line}")]
+    ShaderSysError {
+        source: ShaderSysError,
+        file: &'static str,
+        line: u32,
+    },
 }
 
 #[derive(Copy, Clone, Default)]
@@ -84,6 +91,9 @@ pub struct GeometrySystem<'a> {
     registered_geometries_hashmap: HashMap<usize, GeometryRef>,
     frontend_renderer: Rc<RefCell<Renderer>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
+    // NOTE: should change this. It's only here to release shader resources
+    // have issues destroying samplers since they are being used by a descriptor set
+    shader_system: Rc<RefCell<ShaderSystem<'a>>>,
 }
 
 impl<'a> GeometrySystem<'a> {
@@ -91,6 +101,7 @@ impl<'a> GeometrySystem<'a> {
         config: GeometrySysConfig,
         frontend_renderer: Rc<RefCell<Renderer>>,
         material_system: Rc<RefCell<MaterialSystem<'a>>>,
+        shader_system: Rc<RefCell<ShaderSystem<'a>>>,
     ) -> Result<Self> {
         if config.max_count == 0 {
             return Err(GeometrySysError::GeometryCountZero {
@@ -114,6 +125,7 @@ impl<'a> GeometrySystem<'a> {
             registered_geometries_hashmap: registered_hash_map,
             frontend_renderer,
             material_system,
+            shader_system,
         })
     }
 
@@ -454,7 +466,7 @@ impl<'a> GeometrySystem<'a> {
 
         config.name = name.to_string();
         config.material_name = material_name.to_string();
-
+        geometry_generate_tangents(&mut config.vertices, &mut config.indices);
         Ok(config)
     }
 
@@ -681,6 +693,34 @@ impl<'a> GeometrySystem<'a> {
     }
 }
 
+impl<'a> Drop for GeometrySystem<'a> {
+    fn drop(&mut self) {
+        for geo in self.registered_geometries.iter_mut() {
+            if geo.borrow().id == INVALID_ID {
+                continue;
+            }
+            match self
+                .shader_system
+                .borrow()
+                .get_shader_by_id(geo.borrow().material.borrow().shader_id)
+            {
+                Ok(s) => {
+                    let _ = self
+                        .frontend_renderer
+                        .borrow_mut()
+                        .shader_release_instance_resources(
+                            &mut s.borrow_mut(),
+                            geo.borrow().material_instance_id as u32,
+                        );
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                }
+            }
+        }
+    }
+}
+
 pub fn geometry_generate_tangents(vertices: &mut [Vector3D], indices: &mut [u32]) {
     for i in (0..indices.len()).step_by(3) {
         let i0 = indices[i + 0] as usize;
@@ -744,14 +784,12 @@ pub fn geometry_deduplicate_vertices(
     let original_vertices = &geometry_config.vertices;
     let indices = &mut geometry_config.indices;
 
-    // Map: Key=VectorKey (quantized), Value=u32 (the new unique index)
     let mut vertex_to_new_index = BTreeMap::new();
     let mut out_vertices = Vec::with_capacity(original_vertices.len());
 
     let mut old_to_new_index_map = Vec::with_capacity(original_vertices.len());
 
     for (_, vertex) in original_vertices.iter().enumerate() {
-        // Convert the Vector3D to its quantized key
         let key = VectorKey::from(vertex);
 
         let new_index = *vertex_to_new_index.entry(key).or_insert_with(|| {
@@ -764,7 +802,6 @@ pub fn geometry_deduplicate_vertices(
         old_to_new_index_map.push(new_index);
     }
 
-    // Remap the indices array
     for index in indices.iter_mut() {
         *index = old_to_new_index_map[*index as usize];
     }

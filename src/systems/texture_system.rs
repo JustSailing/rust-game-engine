@@ -461,6 +461,9 @@ impl TextureSystem {
                 // FIXME: some how im getting allot of could not release textures
                 // still better than validation error
                 // not sure if I should error out
+                // INFO: I think this is fixed for now
+                // Removed deletion of material textures to the texture system Drop rather than the
+                // materieal system or the geometry system
                 println!("could not release texture by id {}", id);
                 return Ok(());
             }

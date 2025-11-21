@@ -8,7 +8,7 @@ use crate::application::{
     },
     resources::resource_types::{
         ShaderAttributeType, ShaderConfig, ShaderScope, ShaderUniformConfig, ShaderUniformType,
-        Texture,
+        TextureMap,
     },
     systems::texture_system::{TextureSysError, TextureSystem},
 };
@@ -123,7 +123,7 @@ pub struct Shader<'a> {
     pub global_ubo_offset: usize,
     pub ubo_size: usize,
     pub ubo_stride: usize,
-    pub global_textures: Vec<Rc<RefCell<Texture>>>,
+    pub global_texture_maps: Vec<Rc<RefCell<TextureMap>>>,
     instance_texture_count: usize,
     pub bound_instance_id: usize,
     pub bound_ubo_offset: usize,
@@ -156,7 +156,7 @@ impl<'a> Default for Shader<'a> {
             ubo_stride: Default::default(),
             push_constant_size: Default::default(),
             push_constant_stride: Default::default(),
-            global_textures: Default::default(),
+            global_texture_maps: Default::default(),
             instance_texture_count: Default::default(),
             bound_instance_id: Default::default(),
             bound_ubo_offset: Default::default(),
@@ -381,7 +381,7 @@ impl<'a> ShaderSystem<'a> {
                 auto_release: true,
             },
         );
-        Ok(out_shader.clone())
+        Ok(Rc::clone(out_shader))
     }
 
     pub fn get_shader_by_name(&self, name: &str) -> Result<Rc<RefCell<Shader<'a>>>> {
@@ -610,7 +610,7 @@ impl<'a> ShaderSystem<'a> {
 
         let mut location = 0;
         if config.scope == ShaderScope::Global {
-            let global_texture_count = shader.global_textures.len();
+            let global_texture_count = shader.global_texture_maps.len();
             if global_texture_count + 1 > self.config.max_global_textures as usize {
                 return Err(ShaderSysError::MaxGlobalTexturesReached {
                     file: file!(),
@@ -618,7 +618,17 @@ impl<'a> ShaderSystem<'a> {
                 });
             }
             location = global_texture_count;
-            shader.global_textures.push(
+            // NOTE: create default texture maps here
+            let mut texture_map = TextureMap::default();
+            self.frontend_renderer
+                .borrow_mut()
+                .texture_map_acquire_resources(&mut texture_map)
+                .map_err(|e| ShaderSysError::RendererSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })?;
+            texture_map.texture =
                 self.texture_system
                     .borrow()
                     .get_default_texture()
@@ -626,8 +636,11 @@ impl<'a> ShaderSystem<'a> {
                         source: e,
                         file: file!(),
                         line: line!(),
-                    })?,
-            )
+                    })?;
+
+            shader
+                .global_texture_maps
+                .push(Rc::new(RefCell::new(texture_map)));
         } else {
             if shader.instance_texture_count + 1 > self.config.max_instance_textures as usize {
                 return Err(ShaderSysError::MaxInstanceTexturesReached {

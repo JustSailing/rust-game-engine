@@ -6,7 +6,10 @@ use crate::application::{
         math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3, vec4::Vec4},
     },
     renderer::renderer_types::{Renderer, RendererError},
-    resources::resource_types::{Material, MaterialConfig, ResourceData, ResourceType, TextureUse},
+    resources::resource_types::{
+        Material, MaterialConfig, ResourceData, ResourceType, TextureFilter, TextureRepeat,
+        TextureUse,
+    },
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{ShaderSysError, ShaderSystem},
@@ -294,10 +297,15 @@ impl<'a> MaterialSystem<'a> {
 
         material.shader_id = shader.borrow().id;
         //self.material_shader_id = material.shader_id;
+        let maps = vec![
+            &material.diffuse_map,
+            &material.specular_map,
+            &material.normal_map,
+        ];
         material.internal_id = self
             .frontend_renderer
             .borrow()
-            .shader_acquire_instance_resources(&mut shader.borrow_mut())
+            .shader_acquire_instance_resources(&mut shader.borrow_mut(), &maps)
             .map_err(|e| MaterialSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -618,16 +626,24 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
         // FIXME: changing internal id means nothing
-        let material_instance_id = self
-            .frontend_renderer
-            .borrow()
-            .shader_acquire_instance_resources(&mut shader.borrow_mut())
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })? as usize;
-
+        let mut material_instance_id = INVALID_ID;
+        {
+            let material = self.registered_materials[mat_ref.handle].borrow();
+            let maps = vec![
+                &material.diffuse_map,
+                &material.specular_map,
+                &material.normal_map,
+            ];
+            material_instance_id = self
+                .frontend_renderer
+                .borrow()
+                .shader_acquire_instance_resources(&mut shader.borrow_mut(), &maps)
+                .map_err(|e| MaterialSysError::RendererSysError {
+                    source: e,
+                    file: file!(),
+                    line: line!(),
+                })? as usize;
+        }
         self.insert_hashmap(&config.name, &mat_ref)?;
         Ok((
             Rc::clone(&self.registered_materials[mat_ref.handle]),
@@ -661,7 +677,7 @@ impl<'a> MaterialSystem<'a> {
         if mat_ref.reference_count == 0 && mat_ref.auto_release {
             let mat = &self.registered_materials[mat_ref.handle];
 
-            self.destroy_material(&mat.borrow())?;
+            self.destroy_material(&mut mat.borrow_mut())?;
             self.registered_materials[mat_ref.handle].replace(Material::default());
 
             // don't think i need the 2 lines below
@@ -804,7 +820,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.material_locations.diffuse_texture,
-                    material.diffuse_map.texture.as_ptr() as *const _ as *const c_void,
+                    &material.diffuse_map as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -815,7 +831,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.material_locations.specular_texture,
-                    material.specular_map.texture.as_ptr() as *const _ as *const c_void,
+                    &material.specular_map as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -826,7 +842,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.material_locations.normal_texture,
-                    material.normal_map.texture.as_ptr() as *const _ as *const c_void,
+                    &material.normal_map.texture as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -871,7 +887,7 @@ impl<'a> MaterialSystem<'a> {
                 .borrow()
                 .uniform_set_by_index(
                     self.ui_locations.diffuse_texture,
-                    material.diffuse_map.texture.as_ptr() as *const _ as *const c_void,
+                    &material.diffuse_map as *const _ as *const c_void,
                 )
                 .map_err(|e| MaterialSysError::ShaderSysError {
                     source: e,
@@ -941,6 +957,21 @@ impl<'a> MaterialSystem<'a> {
         mat.name = config.name.clone();
         mat.diffuse_colour = config.diffuse_colour.clone();
         mat.shininess = config.shininess;
+
+        mat.diffuse_map.filter_minify = TextureFilter::Linear;
+        mat.diffuse_map.filter_magnify = TextureFilter::Linear;
+        mat.diffuse_map.repeat_u = TextureRepeat::Repeat;
+        mat.diffuse_map.repeat_v = TextureRepeat::Repeat;
+        mat.diffuse_map.repeat_w = TextureRepeat::Repeat;
+        self.frontend_renderer
+            .borrow()
+            .texture_map_acquire_resources(&mut mat.diffuse_map)
+            .map_err(|e| MaterialSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
         if config.diffuse_map_name.len() > 0 {
             mat.diffuse_map_name = config.diffuse_map_name.clone();
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
@@ -965,6 +996,20 @@ impl<'a> MaterialSystem<'a> {
                         line: line!(),
                     })?;
         }
+
+        mat.specular_map.filter_minify = TextureFilter::Linear;
+        mat.specular_map.filter_magnify = TextureFilter::Linear;
+        mat.specular_map.repeat_u = TextureRepeat::Repeat;
+        mat.specular_map.repeat_v = TextureRepeat::Repeat;
+        mat.specular_map.repeat_w = TextureRepeat::Repeat;
+        self.frontend_renderer
+            .borrow()
+            .texture_map_acquire_resources(&mut mat.specular_map)
+            .map_err(|e| MaterialSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
         if config.specular_map_name.len() > 0 {
             mat.specular_map_name = config.specular_map_name.clone();
@@ -991,6 +1036,20 @@ impl<'a> MaterialSystem<'a> {
                     line: line!(),
                 })?;
         }
+
+        mat.normal_map.filter_minify = TextureFilter::Linear;
+        mat.normal_map.filter_magnify = TextureFilter::Linear;
+        mat.normal_map.repeat_u = TextureRepeat::Repeat;
+        mat.normal_map.repeat_v = TextureRepeat::Repeat;
+        mat.normal_map.repeat_w = TextureRepeat::Repeat;
+        self.frontend_renderer
+            .borrow()
+            .texture_map_acquire_resources(&mut mat.normal_map)
+            .map_err(|e| MaterialSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
 
         if config.normal_map_name.len() > 0 {
             mat.normal_map_name = config.normal_map_name.clone();
@@ -1020,7 +1079,7 @@ impl<'a> MaterialSystem<'a> {
         Ok(mat)
     }
 
-    pub fn destroy_material(&self, material: &Material) -> Result<()> {
+    pub fn destroy_material(&self, material: &mut Material) -> Result<()> {
         let id = material.diffuse_map.texture.borrow().id;
         self.texture_system
             .borrow_mut()
@@ -1044,6 +1103,30 @@ impl<'a> MaterialSystem<'a> {
             .borrow_mut()
             .release_by_id(id)
             .map_err(|e| MaterialSysError::TextureSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.frontend_renderer
+            .borrow()
+            .texture_map_release_resources(&mut material.diffuse_map)
+            .map_err(|e| MaterialSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.frontend_renderer
+            .borrow()
+            .texture_map_release_resources(&mut material.specular_map)
+            .map_err(|e| MaterialSysError::RendererSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        self.frontend_renderer
+            .borrow()
+            .texture_map_release_resources(&mut material.normal_map)
+            .map_err(|e| MaterialSysError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
@@ -1072,5 +1155,28 @@ impl<'a> MaterialSystem<'a> {
         }
 
         Ok(())
+    }
+}
+
+impl<'a> Drop for MaterialSystem<'a> {
+    fn drop(&mut self) {
+        // mainly used to to destroy samplers
+        for mat in self.registered_materials.iter_mut() {
+            if mat.borrow().id == INVALID_ID {
+                continue;
+            }
+            let _ = self
+                .frontend_renderer
+                .borrow()
+                .texture_map_release_resources(&mut mat.borrow_mut().diffuse_map);
+            let _ = self
+                .frontend_renderer
+                .borrow()
+                .texture_map_release_resources(&mut mat.borrow_mut().specular_map);
+            let _ = self
+                .frontend_renderer
+                .borrow()
+                .texture_map_release_resources(&mut mat.borrow_mut().normal_map);
+        }
     }
 }

@@ -243,9 +243,7 @@ impl From<&Vector3D> for VectorKey {
         let mut data = [0i32; 16];
         let mut i = 0;
         const QUANTIZE_MULTIPLIER: f32 = 1_000_000.0;
-        // Helper macro to process VecN data and apply quantization
-        // We use round() before casting to safely handle floats that are slightly
-        // above or below the integer boundary due to noise.
+
         macro_rules! process_vec {
             ($vec:expr) => {
                 for val in $vec.data.iter() {
@@ -256,11 +254,11 @@ impl From<&Vector3D> for VectorKey {
             };
         }
 
-        process_vec!(v.position); // 3 components
-        process_vec!(v.normal); // 3 components
-        process_vec!(v.coord); // 2 components
-        process_vec!(v.colour); // 4 components
-        process_vec!(v.tangent); // 4 components
+        process_vec!(v.position);
+        process_vec!(v.normal);
+        process_vec!(v.coord);
+        process_vec!(v.colour);
+        process_vec!(v.tangent);
 
         VectorKey(data)
     }

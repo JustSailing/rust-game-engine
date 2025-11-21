@@ -128,7 +128,7 @@ impl<'a> Game<'a> {
             let new_name = unsafe { names[CHOICE].to_string() };
 
             let g = &meshes[0].geometries[0];
-            let mut material_config = MaterialConfig::default().name(&new_name);
+            let mut material_config = MaterialConfig::default().name(&new_name).auto_release(true);
             let mut instance_id = INVALID_ID;
             (g.borrow_mut().material, instance_id) = match self
                 .material_system

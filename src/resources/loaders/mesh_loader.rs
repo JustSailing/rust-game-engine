@@ -337,7 +337,7 @@ impl MeshLoader {
             let v = geometry_deduplicate_vertices(&mut geometry_configs[i]);
             geometry_configs[i].vertices = v;
         }
-        Self::write_gsm_file(gsm_name, &name, group_count, &geometry_configs)?;
+        Self::write_gsm_file(gsm_name, &name, &geometry_configs)?;
         Ok(())
     }
 
@@ -349,11 +349,15 @@ impl MeshLoader {
     }
 
     fn write_gsm_file(
-        _gsm_name: &String,
+        gsm_name: &String,
         _name: &String,
-        _count: usize,
         _geometry_configs: &Vec<GeometryConfig<Vector3D, u32>>,
     ) -> Result<()> {
+        if FileHandle::exists(&gsm_name) {
+            println!("WARN: {} already exists", &gsm_name);
+            return Ok(());
+        }
+
         Ok(())
     }
 

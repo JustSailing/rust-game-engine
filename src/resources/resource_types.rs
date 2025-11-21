@@ -5,7 +5,7 @@ use crate::application::{
     basic::math::{consts::INVALID_ID, transform::Transform, vec4::Vec4},
     renderer::vulkan::vulkan_image::VulkanImage,
 };
-use ash::vk::Sampler;
+use ash::vk::{Filter, Sampler, SamplerAddressMode};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -15,6 +15,7 @@ pub struct Texture {
     pub height: u32,
     pub channel_count: u8,
     pub has_transparency: bool,
+    pub is_writeable: bool,
     pub generation: usize,
     pub internal_data: TextureData,
 }
@@ -22,6 +23,10 @@ pub struct Texture {
 impl Texture {
     pub fn has_transparency(mut self, has_transparency: bool) -> Self {
         self.has_transparency = has_transparency;
+        self
+    }
+    pub fn is_writeable(mut self, is_writeable: bool) -> Self {
+        self.is_writeable = is_writeable;
         self
     }
     pub fn width(mut self, width: u32) -> Self {
@@ -50,16 +55,17 @@ impl Default for Texture {
             height: 0,
             channel_count: 0,
             has_transparency: false,
+            is_writeable: false,
             generation: INVALID_ID,
             internal_data: unsafe { std::mem::zeroed() },
         }
     }
 }
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct TextureData {
     pub image: VulkanImage,
-    pub sampler: Sampler,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -71,11 +77,68 @@ pub enum TextureUse {
     MapNormal = 0x03,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub enum TextureFilter {
+    Nearest = 0x0,
+    Linear = 0x1,
+}
+
+impl Into<Filter> for TextureFilter {
+    fn into(self) -> Filter {
+        match self {
+            TextureFilter::Nearest => Filter::NEAREST,
+            TextureFilter::Linear => Filter::LINEAR,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub enum TextureRepeat {
+    Repeat = 0x1,
+    MirroredRepeat = 0x2,
+    ClampToEdge = 0x3,
+    ClampToBorder = 0x4,
+}
+
+impl Into<SamplerAddressMode> for TextureRepeat {
+    fn into(self) -> SamplerAddressMode {
+        match self {
+            TextureRepeat::Repeat => SamplerAddressMode::REPEAT,
+            TextureRepeat::MirroredRepeat => SamplerAddressMode::MIRRORED_REPEAT,
+            TextureRepeat::ClampToEdge => SamplerAddressMode::CLAMP_TO_EDGE,
+            TextureRepeat::ClampToBorder => SamplerAddressMode::CLAMP_TO_BORDER,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct TextureMap {
     pub texture: Rc<RefCell<Texture>>,
     pub use_type: TextureUse,
+    pub filter_minify: TextureFilter,
+    pub filter_magnify: TextureFilter,
+    pub repeat_u: TextureRepeat,
+    pub repeat_v: TextureRepeat,
+    pub repeat_w: TextureRepeat,
+    pub internal_data: Sampler,
+}
+
+impl Default for TextureMap {
+    fn default() -> Self {
+        Self {
+            texture: Default::default(),
+            use_type: TextureUse::Unknown,
+            filter_minify: TextureFilter::Linear,
+            filter_magnify: TextureFilter::Linear,
+            repeat_u: TextureRepeat::Repeat,
+            repeat_v: TextureRepeat::Repeat,
+            repeat_w: TextureRepeat::Repeat,
+            internal_data: Sampler::null(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -146,19 +209,39 @@ impl Default for Material {
             name: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             diffuse_map_name: Default::default(),
+            // for texture repeat and filter
+            // it would probably be a good idea to have an Unknown variant
             diffuse_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,
+                filter_minify: TextureFilter::Nearest,
+                filter_magnify: TextureFilter::Nearest,
+                repeat_u: TextureRepeat::Repeat,
+                repeat_v: TextureRepeat::Repeat,
+                repeat_w: TextureRepeat::Repeat,
+                internal_data: Sampler::null(),
             },
             specular_map_name: Default::default(),
             specular_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,
+                filter_minify: TextureFilter::Nearest,
+                filter_magnify: TextureFilter::Nearest,
+                repeat_u: TextureRepeat::Repeat,
+                repeat_v: TextureRepeat::Repeat,
+                repeat_w: TextureRepeat::Repeat,
+                internal_data: Sampler::null(),
             },
             normal_map_name: Default::default(),
             normal_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,
+                filter_minify: TextureFilter::Nearest,
+                filter_magnify: TextureFilter::Nearest,
+                repeat_u: TextureRepeat::Repeat,
+                repeat_v: TextureRepeat::Repeat,
+                repeat_w: TextureRepeat::Repeat,
+                internal_data: Sampler::null(),
             },
             shininess: Default::default(),
             render_frame_number: INVALID_ID as u64,

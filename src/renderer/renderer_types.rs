@@ -10,7 +10,7 @@ use crate::application::{
     },
     renderer::vulkan::vulkan_backend::{BuiltInRenderpass, VulkanBackendError, VulkanContext},
     resources::resource_types::{
-        Geometry, Resource, ResourceData, ShaderConfig, ShaderStage, Texture,
+        Geometry, Resource, ResourceData, ShaderConfig, ShaderStage, Texture, TextureMap,
     },
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
@@ -143,16 +143,6 @@ impl Renderer {
     pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
         self.backend
             .create_texture(name, pixels, texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn set_default_texture(&mut self, texture: Rc<RefCell<Texture>>) -> Result<()> {
-        self.backend
-            .set_default_texture(texture)
             .map_err(|e| RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
@@ -379,9 +369,46 @@ impl Renderer {
 
         Ok(())
     }
-    pub fn shader_acquire_instance_resources(&self, shader: &mut Shader) -> Result<u32> {
+    pub fn set_default_texture(&mut self, default_texture: Rc<RefCell<Texture>>) -> Result<()> {
         self.backend
-            .shader_acquire_instance_resources(shader)
+            .set_default_texture(default_texture)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        Ok(())
+    }
+
+    pub fn texture_map_acquire_resources(&self, map: &mut TextureMap) -> Result<()> {
+        self.backend
+            .texture_map_acquire_resources(map)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        Ok(())
+    }
+
+    pub fn texture_map_release_resources(&self, map: &mut TextureMap) -> Result<()> {
+        self.backend
+            .texture_map_release_resources(map)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+        Ok(())
+    }
+
+    pub fn shader_acquire_instance_resources(
+        &self,
+        shader: &mut Shader,
+        maps: &Vec<&TextureMap>,
+    ) -> Result<u32> {
+        self.backend
+            .shader_acquire_instance_resources(shader, maps)
             .map_err(|e| RendererError::BackendRendererError {
                 source: e,
                 file: file!(),

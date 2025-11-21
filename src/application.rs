@@ -35,9 +35,7 @@ use basic::math::matrix4::Matrix4;
 use basic::window::{Window, WindowError};
 use renderer::renderer_types::{GeometryRenderData, Renderer, RendererError, RendererPacket};
 use resources::resource_types::Geometry;
-use systems::geometry_system::{
-    GeometrySysConfig, GeometrySysError, GeometrySystem, geometry_generate_tangents,
-};
+use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
 use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
 use systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
 use systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
@@ -364,6 +362,7 @@ impl<'a> ApplicationState<'a> {
                 geometry_sys_config,
                 Rc::clone(&renderer_system),
                 Rc::clone(&material_system),
+                Rc::clone(&shader_system),
             )
             .map_err(|e| AppError::GeometrySysError {
                 source: e,
@@ -490,10 +489,9 @@ impl<'a> ApplicationState<'a> {
         let mut cube_mesh = Mesh {
             geometries: Vec::new(),
             transform: Rc::new(RefCell::new(Transform::create())),
-            //model: Matrix4::identity(),
         };
 
-        let mut geo_config = geometry_system
+        let geo_config = geometry_system
             .borrow()
             .generate_cube_config(10.0, 10.0, 10.0, 1.0, 1.0, "test_cube", "test_material")
             .map_err(|e| AppError::GeometrySysError {
@@ -501,7 +499,6 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-        geometry_generate_tangents(&mut geo_config.vertices, &mut geo_config.indices);
 
         cube_mesh.geometries.push(
             geometry_system
@@ -517,9 +514,6 @@ impl<'a> ApplicationState<'a> {
         let mut cube_mesh2 = Mesh {
             geometries: Vec::new(),
             transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 1.0)))),
-            // model: Matrix4::translation(&Vec3 {
-            //     data: [20.0, 0.0, 1.0],
-            // }),
         };
 
         cube_mesh2
@@ -527,7 +521,7 @@ impl<'a> ApplicationState<'a> {
             .borrow_mut()
             .set_parent(Rc::clone(&cube_mesh.transform));
 
-        let mut geo_config2 = geometry_system
+        let geo_config2 = geometry_system
             .borrow()
             .generate_cube_config(5.0, 5.0, 5.0, 1.0, 1.0, "test_cube2", "test_material")
             .map_err(|e| AppError::GeometrySysError {
@@ -535,7 +529,6 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-        geometry_generate_tangents(&mut geo_config2.vertices, &mut geo_config2.indices);
 
         let little_cube = geometry_system
             .borrow_mut()
@@ -558,7 +551,7 @@ impl<'a> ApplicationState<'a> {
             .borrow_mut()
             .set_parent(Rc::clone(&cube_mesh2.transform));
 
-        let mut geo_config3 = geometry_system
+        let geo_config3 = geometry_system
             .borrow()
             .generate_cube_config(2.0, 2.0, 2.0, 1.0, 1.0, "test_cube3", "test_material")
             .map_err(|e| AppError::GeometrySysError {
@@ -566,7 +559,6 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-        geometry_generate_tangents(&mut geo_config3.vertices, &mut geo_config3.indices);
 
         let little_cube = geometry_system
             .borrow_mut()
@@ -615,7 +607,6 @@ impl<'a> ApplicationState<'a> {
         };
 
         for geo_config in geometry_configs.iter_mut() {
-            geometry_generate_tangents(&mut geo_config.vertices, &mut geo_config.indices);
             car_mesh.geometries.push(
                 geometry_system
                     .borrow_mut()
@@ -666,7 +657,6 @@ impl<'a> ApplicationState<'a> {
         };
 
         for geo_config in geometry_configs.iter_mut() {
-            geometry_generate_tangents(&mut geo_config.vertices, &mut geo_config.indices);
             sponza_mesh.geometries.push(
                 geometry_system
                     .borrow_mut()

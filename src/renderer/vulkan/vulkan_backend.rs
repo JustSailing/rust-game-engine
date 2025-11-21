@@ -17,7 +17,7 @@ use crate::application::{
     },
     resources::resource_types::{
         Geometry, ResourceData, ResourceType, ShaderAttributeType, ShaderScope, ShaderStage,
-        ShaderUniformType, Texture,
+        ShaderUniformType, Texture, TextureMap,
     },
     systems::{
         geometry_system::DEFAULT_GEOMETRY_NAME,
@@ -37,13 +37,13 @@ use ash::{
         DescriptorBufferInfo, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags,
         DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
         DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
-        DescriptorType, DeviceSize, Extent2D, Fence, Filter, Format, Framebuffer,
-        FramebufferCreateInfo, ImageAspectFlags, ImageLayout, ImageTiling, ImageType,
-        ImageUsageFlags, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
-        PipelineBindPoint, PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D,
-        SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode, ShaderModule,
-        ShaderModuleCreateInfo, ShaderStageFlags, SubmitInfo, SurfaceKHR,
-        VertexInputAttributeDescription, Viewport, WriteDescriptorSet,
+        DescriptorType, DeviceSize, Extent2D, Fence, Format, Framebuffer, FramebufferCreateInfo,
+        ImageAspectFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags, IndexType,
+        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineBindPoint,
+        PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D, Sampler,
+        SamplerCreateInfo, SamplerMipmapMode, ShaderModule, ShaderModuleCreateInfo,
+        ShaderStageFlags, SubmitInfo, SurfaceKHR, VertexInputAttributeDescription, Viewport,
+        WriteDescriptorSet,
     },
 };
 #[cfg(feature = "debug")]
@@ -165,7 +165,7 @@ pub struct VulkanShaderInstanceState {
     id: u32,
     offset: u64,
     descriptor_set_state: VulkanShaderDescriptorSetState,
-    instance_textures: Vec<Rc<RefCell<Texture>>>,
+    instance_texture_maps: Vec<Rc<RefCell<TextureMap>>>,
 }
 
 impl Default for VulkanShaderInstanceState {
@@ -174,7 +174,7 @@ impl Default for VulkanShaderInstanceState {
             id: INVALID_ID as u32,
             offset: Default::default(),
             descriptor_set_state: Default::default(),
-            instance_textures: Default::default(),
+            instance_texture_maps: Default::default(),
         }
     }
 }
@@ -237,8 +237,8 @@ pub struct VulkanContext {
     dbg_instance_loader: debug_utils::Instance,
     #[cfg(feature = "debug")]
     debug_utils_loader: debug_utils::Device,
-    image_index: u32,
     default_texture: Rc<RefCell<Texture>>,
+    image_index: u32,
     resource_system: Rc<RefCell<ResourceSystem>>,
     frame_delta_time: f32,
     geometry_vertex_offset: u64,
@@ -492,7 +492,6 @@ impl<'a> VulkanContext {
                 world_framebuffers: world_framebuffers,
                 resource_system: resource_system,
                 default_texture: Rc::new(RefCell::new(Texture::default())),
-
                 dbg_messenger: debug_messenger,
                 dbg_instance_loader: debug_instance_loader,
                 debug_utils_loader: debug_utils_loader,
@@ -503,6 +502,7 @@ impl<'a> VulkanContext {
         {
             println!("Vulkan Instance created");
             Ok(Self {
+                default_texture: Rc::new(RefCell::new(Texture::default())),
                 frame_delta_time: 0.0,
                 geometry_vertex_offset: 0,
                 geometry_index_offset: 0,
@@ -528,7 +528,6 @@ impl<'a> VulkanContext {
                 swapchain_framebuffers: swap_framebuffers,
                 world_framebuffers,
                 resource_system,
-                default_texture: Rc::new(RefCell::new(Texture::default())),
             })
         }
     }
@@ -1021,36 +1020,8 @@ impl<'a> VulkanContext {
 
         staging.destroy(&self.device);
 
-        let sampler_info = SamplerCreateInfo::default()
-            .mag_filter(Filter::LINEAR)
-            .min_filter(Filter::LINEAR)
-            .address_mode_u(SamplerAddressMode::REPEAT)
-            .address_mode_v(SamplerAddressMode::REPEAT)
-            .address_mode_w(SamplerAddressMode::REPEAT)
-            .anisotropy_enable(true)
-            .max_anisotropy(16.0)
-            .border_color(BorderColor::INT_OPAQUE_BLACK)
-            .unnormalized_coordinates(false)
-            .compare_enable(false)
-            .compare_op(CompareOp::ALWAYS)
-            .mipmap_mode(SamplerMipmapMode::LINEAR)
-            .mip_lod_bias(0.0)
-            .min_lod(0.0)
-            .max_lod(0.0);
-
-        texture.internal_data.sampler = unsafe {
-            match self.device.device.create_sampler(&sampler_info, None) {
-                Ok(s) => s,
-                Err(_) => {
-                    return Err(VulkanBackendError::OperationFailed {
-                        issue: "could not create sampler",
-                        file: file!(),
-                        line: line!(),
-                    });
-                }
-            }
-        };
         let _ = name;
+        // TODO: should move parts of this into where the sampler is created
         #[cfg(feature = "debug")]
         {
             let image_name: CString = CString::new(name).unwrap();
@@ -1059,17 +1030,15 @@ impl<'a> VulkanContext {
                     .object_name(&image_name)
                     .object_handle(texture.internal_data.image.view.unwrap());
 
-            //let image_name: CString = CString::new(name).unwrap();
             let image_name_info: vk::DebugUtilsObjectNameInfoEXT<'_> =
                 vk::DebugUtilsObjectNameInfoEXT::default()
                     .object_name(&image_name)
                     .object_handle(texture.internal_data.image.image);
 
-            //let image_name = CString::new(name).unwrap();
-            let sampler_name_info: vk::DebugUtilsObjectNameInfoEXT<'_> =
-                vk::DebugUtilsObjectNameInfoEXT::default()
-                    .object_name(&image_name)
-                    .object_handle(texture.internal_data.sampler);
+            //         let sampler_name_info: vk::DebugUtilsObjectNameInfoEXT<'_> =
+            //             vk::DebugUtilsObjectNameInfoEXT::default()
+            //                 .object_name(&image_name)
+            //                 .object_handle(texture.internal_data.sampler);
             unsafe {
                 self.debug_utils_loader
                     .set_debug_utils_object_name(&image_name_info)
@@ -1078,13 +1047,13 @@ impl<'a> VulkanContext {
                         file: file!(),
                         line: line!(),
                     })?;
-                self.debug_utils_loader
-                    .set_debug_utils_object_name(&sampler_name_info)
-                    .map_err(|_| VulkanBackendError::OperationFailed {
-                        issue: "failed to name sampler object for debugging",
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                //             self.debug_utils_loader
+                //                 .set_debug_utils_object_name(&sampler_name_info)
+                //                 .map_err(|_| VulkanBackendError::OperationFailed {
+                //                     issue: "failed to name sampler object for debugging",
+                //                     file: file!(),
+                //                     line: line!(),
+                //                 })?;
                 self.debug_utils_loader
                     .set_debug_utils_object_name(&image_view_name_info)
                     .map_err(|_| VulkanBackendError::OperationFailed {
@@ -1097,20 +1066,10 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn set_default_texture(&mut self, texture: Rc<RefCell<Texture>>) -> Result<()> {
-        self.default_texture = texture;
-        Ok(())
-    }
-
     pub fn destroy_texture(&self, texture: &Texture) -> Result<()> {
         let _ = unsafe { self.device.device.device_wait_idle() };
 
         texture.internal_data.image.destroy(&self.device);
-        unsafe {
-            self.device
-                .device
-                .destroy_sampler(texture.internal_data.sampler, None)
-        };
         Ok(())
     }
 
@@ -1824,7 +1783,9 @@ impl<'a> VulkanContext {
             for i in 0..total_sampler_count {
                 image_infos[i as usize].image_view = internal_data.instance_states
                     [shader.bound_instance_id]
-                    .instance_textures[i as usize]
+                    .instance_texture_maps[i as usize]
+                    .borrow()
+                    .texture
                     .borrow()
                     .internal_data
                     .image
@@ -1833,11 +1794,10 @@ impl<'a> VulkanContext {
                 image_infos[i as usize].image_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 image_infos[i as usize].sampler = internal_data.instance_states
                     [shader.bound_instance_id]
-                    .instance_textures[i as usize]
+                    .instance_texture_maps[i as usize]
                     .borrow()
-                    .internal_data
-                    .sampler;
-                //self.default_texture.borrow().internal_data.sampler;
+                    .internal_data;
+
                 update_sampler_count += 1;
             }
 
@@ -1879,7 +1839,55 @@ impl<'a> VulkanContext {
 
         Ok(())
     }
-    pub fn shader_acquire_instance_resources(&self, shader: &mut Shader) -> Result<u32> {
+
+    pub fn set_default_texture(&mut self, default_texture: Rc<RefCell<Texture>>) -> Result<()> {
+        self.default_texture = default_texture;
+        Ok(())
+    }
+
+    pub fn texture_map_acquire_resources(&self, map: &mut TextureMap) -> Result<()> {
+        let mut sampler_create_info = SamplerCreateInfo::default();
+
+        sampler_create_info.min_filter = map.filter_minify.into();
+        sampler_create_info.mag_filter = map.filter_magnify.into();
+
+        sampler_create_info.address_mode_u = map.repeat_u.into();
+        sampler_create_info.address_mode_v = map.repeat_v.into();
+        sampler_create_info.address_mode_w = map.repeat_w.into();
+
+        sampler_create_info.anisotropy_enable = vk::TRUE;
+        sampler_create_info.max_anisotropy = 16.0;
+        sampler_create_info.border_color = BorderColor::INT_OPAQUE_BLACK;
+        sampler_create_info.unnormalized_coordinates = vk::FALSE;
+        sampler_create_info.compare_enable = vk::FALSE;
+        sampler_create_info.compare_op = CompareOp::ALWAYS;
+        sampler_create_info.mipmap_mode = SamplerMipmapMode::LINEAR;
+        sampler_create_info.mip_lod_bias = 0.0;
+        sampler_create_info.min_lod = 0.0;
+        sampler_create_info.max_lod = 0.0;
+
+        map.internal_data = unsafe {
+            self.device
+                .device
+                .create_sampler(&sampler_create_info, None)?
+        };
+
+        Ok(())
+    }
+
+    pub fn texture_map_release_resources(&self, map: &mut TextureMap) -> Result<()> {
+        unsafe {
+            self.device.device.destroy_sampler(map.internal_data, None);
+        }
+        map.internal_data = Sampler::null();
+        Ok(())
+    }
+
+    pub fn shader_acquire_instance_resources(
+        &self,
+        shader: &mut Shader,
+        maps: &Vec<&TextureMap>,
+    ) -> Result<u32> {
         let internal_data = match shader.internal_data {
             ShaderInternalData::Vulkan(ref mut vulkan_shader) => vulkan_shader,
             ShaderInternalData::Unknown => {
@@ -1909,19 +1917,22 @@ impl<'a> VulkanContext {
 
         let instance_state = &mut internal_data.instance_states[instance_id as usize];
 
-        let instance_texture_count = internal_data.vulkan_shader_config.descriptor_set_configs
+        let instance_texture_map_count = internal_data.vulkan_shader_config.descriptor_set_configs
             [DESC_SET_INDEX_INSTANCE]
             .bindings[BINDING_INDEX_SAMPLER]
             .descriptor_count;
 
         instance_state
-            .instance_textures
-            .reserve(instance_texture_count as usize);
-
-        for _ in 0..instance_texture_count {
+            .instance_texture_maps
+            .reserve(instance_texture_map_count as usize);
+        // NOTE: not sure if to use instance_texture_map_count or map.len()
+        for i in 0..instance_texture_map_count {
             instance_state
-                .instance_textures
-                .push(Rc::clone(&self.default_texture));
+                .instance_texture_maps
+                .push(Rc::new(RefCell::new((*maps[i as usize]).clone())));
+            instance_state.instance_texture_maps[i as usize]
+                .borrow_mut()
+                .texture = Rc::clone(&self.default_texture);
         }
 
         let set_state = &mut instance_state.descriptor_set_state;
@@ -2000,7 +2011,7 @@ impl<'a> VulkanContext {
                 })?;
         };
         instance_state.descriptor_set_state = VulkanShaderDescriptorSetState::default();
-        instance_state.instance_textures.clear();
+        instance_state.instance_texture_maps.clear();
         instance_state.offset = INVALID_ID as u64;
         instance_state.id = INVALID_ID as u32;
         Ok(())
@@ -2024,12 +2035,15 @@ impl<'a> VulkanContext {
         let uniform = shader.uniforms[uniform_index];
         if uniform.uniform_type == ShaderUniformType::Sampler {
             if uniform.shader_scope == ShaderScope::Global {
-                shader.global_textures[uniform.location as usize] =
-                    Rc::new(RefCell::new(unsafe { *(value as *const _) }));
+                let tex_map_ptr = value as *const TextureMap;
+                let tex_map: TextureMap = unsafe { (*tex_map_ptr).clone() };
+                shader.global_texture_maps[uniform.location as usize] =
+                    Rc::new(RefCell::new(tex_map));
             } else {
-                internal_data.instance_states[shader.bound_instance_id].instance_textures
-                    [uniform.location as usize] =
-                    Rc::new(RefCell::new(unsafe { *(value as *const _) }));
+                let tex_map_ptr = value as *const TextureMap;
+                let tex_map: TextureMap = unsafe { (*tex_map_ptr).clone() };
+                internal_data.instance_states[shader.bound_instance_id].instance_texture_maps
+                    [uniform.location as usize] = Rc::new(RefCell::new(tex_map));
             }
         } else {
             if uniform.shader_scope == ShaderScope::Local {
