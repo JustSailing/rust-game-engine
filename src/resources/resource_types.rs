@@ -6,27 +6,36 @@ use crate::application::{
     renderer::vulkan::vulkan_image::VulkanImage,
 };
 use ash::vk::{Filter, Sampler, SamplerAddressMode};
+use bitflags::bitflags;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct Texture {
     pub id: usize,
     pub width: u32,
     pub height: u32,
     pub channel_count: u8,
-    pub has_transparency: bool,
-    pub is_writeable: bool,
+    pub flags: TextureFlags,
     pub generation: usize,
+    pub name: String,
     pub internal_data: TextureData,
 }
 
 impl Texture {
-    pub fn has_transparency(mut self, has_transparency: bool) -> Self {
-        self.has_transparency = has_transparency;
+    pub fn transparency_flag(mut self, transparency: bool) -> Self {
+        if transparency {
+            self.flags.insert(TextureFlags::Transparency);
+        } else {
+            self.flags.remove(TextureFlags::Transparency);
+        }
         self
     }
-    pub fn is_writeable(mut self, is_writeable: bool) -> Self {
-        self.is_writeable = is_writeable;
+    pub fn writeable_flag(mut self, is_writeable: bool) -> Self {
+        if is_writeable {
+            self.flags.insert(TextureFlags::Writable);
+        } else {
+            self.flags.remove(TextureFlags::Writable);
+        }
         self
     }
     pub fn width(mut self, width: u32) -> Self {
@@ -45,6 +54,10 @@ impl Texture {
         self.generation = generation;
         self
     }
+    pub fn name(mut self, name: String) -> Self {
+        self.name = name;
+        self
+    }
 }
 
 impl Default for Texture {
@@ -54,15 +67,25 @@ impl Default for Texture {
             width: 0,
             height: 0,
             channel_count: 0,
-            has_transparency: false,
-            is_writeable: false,
+            flags: Default::default(),
             generation: INVALID_ID,
-            internal_data: unsafe { std::mem::zeroed() },
+            name: Default::default(),
+            internal_data: Default::default(),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+bitflags! {
+    #[repr(C)]
+    #[derive(Debug,Default, Clone, Copy, PartialEq, Eq)]
+    pub struct TextureFlags: u32 {
+        const Transparency = 0x1;
+        const Writable = 0x2;
+        const Wrapped = 0x4;
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct TextureData {
     pub image: VulkanImage,
@@ -190,11 +213,8 @@ pub struct Material {
     pub render_frame_number: u64,
     pub name: String,
     pub diffuse_colour: Vec4,
-    pub diffuse_map_name: String,
     pub diffuse_map: TextureMap,
-    pub specular_map_name: String,
     pub specular_map: TextureMap,
-    pub normal_map_name: String,
     pub normal_map: TextureMap,
     pub shininess: f32,
 }
@@ -208,7 +228,6 @@ impl Default for Material {
             shader_id: INVALID_ID,
             name: Default::default(),
             diffuse_colour: Vec4::new_ones(),
-            diffuse_map_name: Default::default(),
             // for texture repeat and filter
             // it would probably be a good idea to have an Unknown variant
             diffuse_map: TextureMap {
@@ -221,7 +240,6 @@ impl Default for Material {
                 repeat_w: TextureRepeat::Repeat,
                 internal_data: Sampler::null(),
             },
-            specular_map_name: Default::default(),
             specular_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,
@@ -232,7 +250,6 @@ impl Default for Material {
                 repeat_w: TextureRepeat::Repeat,
                 internal_data: Sampler::null(),
             },
-            normal_map_name: Default::default(),
             normal_map: TextureMap {
                 texture: Rc::new(RefCell::new(Texture::default())),
                 use_type: TextureUse::Unknown,

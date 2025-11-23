@@ -13,10 +13,7 @@ use crate::application::{
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{ShaderSysError, ShaderSystem},
-        texture_system::{
-            DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_NORMAL_NAME, DEFAULT_TEXTURE_SPECULAR_NAME,
-            TextureSysError, TextureSystem,
-        },
+        texture_system::{TextureSysError, TextureSystem},
     },
 };
 
@@ -255,7 +252,6 @@ impl<'a> MaterialSystem<'a> {
                     line: line!(),
                 })?;
         material.diffuse_map.use_type = TextureUse::MapDiffuse;
-        material.diffuse_map_name = DEFAULT_TEXTURE_NAME.to_string();
 
         material.specular_map.texture = self
             .texture_system
@@ -267,7 +263,6 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
         material.specular_map.use_type = TextureUse::MapSpecular;
-        material.specular_map_name = DEFAULT_TEXTURE_SPECULAR_NAME.to_string();
 
         material.normal_map.texture = self
             .texture_system
@@ -279,7 +274,6 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             })?;
         material.normal_map.use_type = TextureUse::MapNormal;
-        material.normal_map_name = DEFAULT_TEXTURE_NORMAL_NAME.to_string();
 
         material.shininess = 32.0;
 
@@ -973,12 +967,11 @@ impl<'a> MaterialSystem<'a> {
             })?;
 
         if config.diffuse_map_name.len() > 0 {
-            mat.diffuse_map_name = config.diffuse_map_name.clone();
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
             mat.diffuse_map.texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(config.diffuse_map_name.clone(), config.auto_release)
+                .acquire(&config.diffuse_map_name, config.auto_release)
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),
@@ -1012,12 +1005,11 @@ impl<'a> MaterialSystem<'a> {
             })?;
 
         if config.specular_map_name.len() > 0 {
-            mat.specular_map_name = config.specular_map_name.clone();
             mat.specular_map.use_type = TextureUse::MapSpecular;
             let texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(config.specular_map_name.clone(), config.auto_release)
+                .acquire(&config.specular_map_name, config.auto_release)
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),
@@ -1052,12 +1044,11 @@ impl<'a> MaterialSystem<'a> {
             })?;
 
         if config.normal_map_name.len() > 0 {
-            mat.normal_map_name = config.normal_map_name.clone();
             mat.normal_map.use_type = TextureUse::MapNormal;
             let texture = self
                 .texture_system
                 .borrow_mut()
-                .acquire(config.normal_map_name.clone(), config.auto_release)
+                .acquire(&config.normal_map_name, config.auto_release)
                 .map_err(|e| MaterialSysError::TextureSysError {
                     source: e,
                     file: file!(),
@@ -1080,28 +1071,27 @@ impl<'a> MaterialSystem<'a> {
     }
 
     pub fn destroy_material(&self, material: &mut Material) -> Result<()> {
-        let id = material.diffuse_map.texture.borrow().id;
         self.texture_system
             .borrow_mut()
-            .release_by_id(id)
+            .release(&material.diffuse_map.texture.borrow().name)
             .map_err(|e| MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
-        let id = material.specular_map.texture.borrow().id;
+
         self.texture_system
             .borrow_mut()
-            .release_by_id(id)
+            .release(&material.specular_map.texture.borrow().name)
             .map_err(|e| MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?;
-        let id = material.normal_map.texture.borrow().id;
+
         self.texture_system
             .borrow_mut()
-            .release_by_id(id)
+            .release(&material.normal_map.texture.borrow().name)
             .map_err(|e| MaterialSysError::TextureSysError {
                 source: e,
                 file: file!(),

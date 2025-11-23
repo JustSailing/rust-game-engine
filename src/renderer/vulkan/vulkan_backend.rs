@@ -9,6 +9,7 @@ use crate::application::{
             vulkan_buffer::VulkanBuffer,
             vulkan_command_buffer::VulkanCommandBuffer,
             vulkan_device::VulkanDevice,
+            vulkan_image::VulkanImage,
             vulkan_pipeline::VulkanPipeline,
             vulkan_renderpass::{ClearFlag, VulkanRenderPass},
             vulkan_swapchain::VulkanSwapchain,
@@ -23,6 +24,7 @@ use crate::application::{
         geometry_system::DEFAULT_GEOMETRY_NAME,
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{Shader, ShaderInternalData},
+        texture_system::TextureSystem,
     },
 };
 
@@ -38,8 +40,8 @@ use ash::{
         DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
         DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
         DescriptorType, DeviceSize, Extent2D, Fence, Format, Framebuffer, FramebufferCreateInfo,
-        ImageAspectFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags, IndexType,
-        MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineBindPoint,
+        ImageAspectFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags, ImageView,
+        IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineBindPoint,
         PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D, Sampler,
         SamplerCreateInfo, SamplerMipmapMode, ShaderModule, ShaderModuleCreateInfo,
         ShaderStageFlags, SubmitInfo, SurfaceKHR, VertexInputAttributeDescription, Viewport,
@@ -240,6 +242,7 @@ pub struct VulkanContext {
     default_texture: Rc<RefCell<Texture>>,
     image_index: u32,
     resource_system: Rc<RefCell<ResourceSystem>>,
+    texture_system: Rc<RefCell<TextureSystem>>,
     frame_delta_time: f32,
     geometry_vertex_offset: u64,
     geometry_index_offset: u64,
@@ -270,6 +273,7 @@ impl<'a> VulkanContext {
         name: &str,
         window: &Window,
         resource_system: Rc<RefCell<ResourceSystem>>,
+        texture_system: Rc<RefCell<TextureSystem>>,
     ) -> Result<Self> {
         let entry = unsafe { Entry::load()? };
 
@@ -333,6 +337,7 @@ impl<'a> VulkanContext {
             &surface_loader,
             window.width,
             window.height,
+            &texture_system,
         )?;
 
         // create renderpass
@@ -366,9 +371,16 @@ impl<'a> VulkanContext {
 
         let mut swap_framebuffers = Vec::new();
         let mut world_framebuffers = Vec::new();
-        for i in 0..swap.views.len() {
+        for i in 0..swap.render_textures.len() {
             let mut world_attachments = Vec::new();
-            world_attachments.push(swap.views[i]);
+            world_attachments.push(
+                swap.render_textures[i]
+                    .borrow()
+                    .internal_data
+                    .image
+                    .view
+                    .unwrap(),
+            );
             world_attachments.push(swap.depth_attachment.view.unwrap());
             let world_framebuffer_create_info = FramebufferCreateInfo::default()
                 .render_pass(main_renderpass.renderpass)
@@ -395,7 +407,14 @@ impl<'a> VulkanContext {
             world_framebuffers.push(world_framebuffer);
 
             let mut ui_attachments = Vec::new();
-            ui_attachments.push(swap.views[i]);
+            ui_attachments.push(
+                swap.render_textures[i]
+                    .borrow()
+                    .internal_data
+                    .image
+                    .view
+                    .unwrap(),
+            );
 
             let ui_framebuffer_create_info = FramebufferCreateInfo::default()
                 .render_pass(ui_renderpass.renderpass)
@@ -491,6 +510,7 @@ impl<'a> VulkanContext {
                 swapchain_framebuffers: swap_framebuffers,
                 world_framebuffers: world_framebuffers,
                 resource_system: resource_system,
+                texture_system: texture_system,
                 default_texture: Rc::new(RefCell::new(Texture::default())),
                 dbg_messenger: debug_messenger,
                 dbg_instance_loader: debug_instance_loader,
@@ -528,6 +548,7 @@ impl<'a> VulkanContext {
                 swapchain_framebuffers: swap_framebuffers,
                 world_framebuffers,
                 resource_system,
+                texture_system,
             })
         }
     }
@@ -799,6 +820,7 @@ impl<'a> VulkanContext {
             &self.surface_loader,
             self.framebuffer_width,
             self.framebuffer_height,
+            &self.texture_system,
         )?;
 
         self.main_renderpass
@@ -850,9 +872,16 @@ impl<'a> VulkanContext {
     fn regenerate_framebuffers(&mut self) -> Result<()> {
         let mut world_framebuffers = Vec::new();
         let mut swap_framebuffers = Vec::new();
-        for i in 0..self.swapchain.views.len() {
+        for i in 0..self.swapchain.render_textures.len() {
             let mut world_attachments = Vec::new();
-            world_attachments.push(self.swapchain.views[i]);
+            world_attachments.push(
+                self.swapchain.render_textures[i]
+                    .borrow()
+                    .internal_data
+                    .image
+                    .view
+                    .unwrap(),
+            );
             world_attachments.push(self.swapchain.depth_attachment.view.unwrap());
             let framebuffer_create_info = FramebufferCreateInfo::default()
                 .render_pass(self.main_renderpass.renderpass)
@@ -880,7 +909,14 @@ impl<'a> VulkanContext {
             world_framebuffers.push(framebuffer);
 
             let mut ui_attachments = Vec::new();
-            ui_attachments.push(self.swapchain.views[i]);
+            ui_attachments.push(
+                self.swapchain.render_textures[i]
+                    .borrow()
+                    .internal_data
+                    .image
+                    .view
+                    .unwrap(),
+            );
 
             let ui_framebuffer_create_info = FramebufferCreateInfo::default()
                 .render_pass(self.ui_renderpass.renderpass)
@@ -951,21 +987,8 @@ impl<'a> VulkanContext {
             * texture.height as u64
             * texture.channel_count as u64) as DeviceSize;
         let image_format = Format::R8G8B8A8_UNORM;
-        let usage = BufferUsageFlags::TRANSFER_SRC;
-        let memory_property_flags =
-            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT;
-        let staging = VulkanBuffer::create(
-            &self.instance,
-            &self.device,
-            image_size,
-            usage,
-            memory_property_flags,
-            true,
-        )?;
 
-        staging.load_data(&self.device, 0, image_size, MemoryMapFlags::empty(), pixels)?;
-
-        texture.internal_data.image = super::vulkan_image::VulkanImage::create(
+        texture.internal_data.image = VulkanImage::create(
             &self.instance,
             ImageType::TYPE_2D,
             texture.width,
@@ -982,43 +1005,7 @@ impl<'a> VulkanContext {
             &self.device,
         )?;
 
-        let mut temp_command_buffer = VulkanCommandBuffer::allocate_and_begin_single_use(
-            &self.device,
-            self.device.graphics_command_pool,
-        )?;
-
-        texture.internal_data.image.transition_layout(
-            &self.device,
-            &temp_command_buffer,
-            image_format,
-            ImageLayout::UNDEFINED,
-            ImageLayout::TRANSFER_DST_OPTIMAL,
-            0,
-        )?;
-
-        texture.internal_data.image.copy_from_buffer(
-            &self.device,
-            &staging,
-            &temp_command_buffer,
-            0,
-        );
-
-        texture.internal_data.image.transition_layout(
-            &self.device,
-            &temp_command_buffer,
-            image_format,
-            ImageLayout::TRANSFER_DST_OPTIMAL,
-            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            0,
-        )?;
-
-        temp_command_buffer.end_single_use(
-            &self.device,
-            self.device.graphics_command_pool,
-            self.device.graphics_queue,
-        )?;
-
-        staging.destroy(&self.device);
+        self.write_data_texture(texture, 0, image_size as u64, pixels)?;
 
         let _ = name;
         // TODO: should move parts of this into where the sampler is created
@@ -1063,6 +1050,126 @@ impl<'a> VulkanContext {
                     })?;
             }
         }
+        Ok(())
+    }
+
+    pub fn write_data_texture(
+        &self,
+        texture: &mut Texture,
+        _offset: u32,
+        size: u64,
+        pixels: &[u8],
+    ) -> Result<()> {
+        let image_format = Format::R8G8B8A8_UNORM;
+        let usage = BufferUsageFlags::TRANSFER_SRC;
+        let memory_property_flags =
+            MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT;
+        let staging = VulkanBuffer::create(
+            &self.instance,
+            &self.device,
+            size,
+            usage,
+            memory_property_flags,
+            true,
+        )?;
+
+        staging.load_data(&self.device, 0, size, MemoryMapFlags::empty(), pixels)?;
+
+        let mut temp_command_buffer = VulkanCommandBuffer::allocate_and_begin_single_use(
+            &self.device,
+            self.device.graphics_command_pool,
+        )?;
+
+        texture.internal_data.image.transition_layout(
+            &self.device,
+            &temp_command_buffer,
+            image_format,
+            ImageLayout::UNDEFINED,
+            ImageLayout::TRANSFER_DST_OPTIMAL,
+            0,
+        )?;
+
+        texture.internal_data.image.copy_from_buffer(
+            &self.device,
+            &staging,
+            &temp_command_buffer,
+            0,
+        );
+
+        texture.internal_data.image.transition_layout(
+            &self.device,
+            &temp_command_buffer,
+            image_format,
+            ImageLayout::TRANSFER_DST_OPTIMAL,
+            ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            0,
+        )?;
+
+        temp_command_buffer.end_single_use(
+            &self.device,
+            self.device.graphics_command_pool,
+            self.device.graphics_queue,
+        )?;
+
+        staging.destroy(&self.device);
+        if texture.generation == INVALID_ID {
+            texture.generation = 0
+        } else {
+            texture.generation += 1
+        };
+        Ok(())
+    }
+
+    pub fn create_writable_texture(&self, texture: &mut Texture) -> Result<()> {
+        let image_format = Format::R8G8B8A8_UNORM;
+
+        texture.internal_data.image = VulkanImage::create(
+            &self.instance,
+            ImageType::TYPE_2D,
+            texture.width,
+            texture.height,
+            image_format,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::TRANSFER_SRC
+                | ImageUsageFlags::TRANSFER_DST
+                | ImageUsageFlags::SAMPLED
+                | ImageUsageFlags::COLOR_ATTACHMENT,
+            MemoryPropertyFlags::DEVICE_LOCAL,
+            true,
+            ImageAspectFlags::COLOR,
+            &self.device,
+        )?;
+        if texture.generation == INVALID_ID {
+            texture.generation = 0
+        } else {
+            texture.generation += 1
+        };
+        Ok(())
+    }
+
+    pub fn resize_texture(
+        &self,
+        texture: &mut Texture,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<()> {
+        texture.internal_data.image.destroy(&self.device);
+        texture.internal_data.image = VulkanImage::create(
+            &self.instance,
+            ImageType::TYPE_2D,
+            new_width,
+            new_height,
+            Format::R8G8B8A8_UNORM,
+            ImageTiling::OPTIMAL,
+            ImageUsageFlags::TRANSFER_SRC
+                | ImageUsageFlags::TRANSFER_DST
+                | ImageUsageFlags::SAMPLED
+                | ImageUsageFlags::COLOR_ATTACHMENT,
+            MemoryPropertyFlags::DEVICE_LOCAL,
+            true,
+            ImageAspectFlags::COLOR,
+            &self.device,
+        )?;
         Ok(())
     }
 
@@ -1781,7 +1888,7 @@ impl<'a> VulkanContext {
             let mut image_infos =
                 [DescriptorImageInfo::default(); VULKAN_SHADER_MAX_GLOBAL_TEXTURES];
             for i in 0..total_sampler_count {
-                image_infos[i as usize].image_view = internal_data.instance_states
+                image_infos[i as usize].image_view = if internal_data.instance_states
                     [shader.bound_instance_id]
                     .instance_texture_maps[i as usize]
                     .borrow()
@@ -1790,7 +1897,20 @@ impl<'a> VulkanContext {
                     .internal_data
                     .image
                     .view
-                    .unwrap();
+                    .is_none()
+                {
+                    ImageView::null()
+                } else {
+                    internal_data.instance_states[shader.bound_instance_id].instance_texture_maps
+                        [i as usize]
+                        .borrow()
+                        .texture
+                        .borrow()
+                        .internal_data
+                        .image
+                        .view
+                        .unwrap()
+                };
                 image_infos[i as usize].image_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 image_infos[i as usize].sampler = internal_data.instance_states
                     [shader.bound_instance_id]

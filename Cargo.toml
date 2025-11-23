@@ -12,6 +12,7 @@ ash = {version = "0.38.0", features = ["linked"]}
 image = "0.25.8"
 thiserror = "2.0.17"
 x11 = "2.21.0"
+bitflags = "2.10.0"
 
 [features]
 debug = []

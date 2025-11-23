@@ -207,9 +207,10 @@ impl<'a> ApplicationState<'a> {
         window.set_title(app_config.name);
         window.show();
 
-        let renderer_system = Rc::new(RefCell::new(
-            Renderer::initialize(app_config.name, &window, resource_system.clone()).map_err(
-                |e| AppError::RendererSysError {
+        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 4096 };
+        let texture_system = Rc::new(RefCell::new(
+            TextureSystem::initialize(texture_sys_config, Rc::clone(&resource_system)).map_err(
+                |e| AppError::TextureSysError {
                     source: e,
                     file: file!(),
                     line: line!(),
@@ -217,19 +218,25 @@ impl<'a> ApplicationState<'a> {
             )?,
         ));
 
-        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 4096 };
-        let texture_system = Rc::new(RefCell::new(
-            TextureSystem::initialize(
-                texture_sys_config,
-                Rc::clone(&renderer_system),
+        let renderer_system = Rc::new(RefCell::new(
+            Renderer::initialize(
+                app_config.name,
+                &window,
                 Rc::clone(&resource_system),
+                Rc::clone(&texture_system),
             )
-            .map_err(|e| AppError::TextureSysError {
+            .map_err(|e| AppError::RendererSysError {
                 source: e,
                 file: file!(),
                 line: line!(),
             })?,
         ));
+
+        // NOTE: This should be temporary when there's a better way for the swapchain to
+        // have access to the texture system
+        texture_system
+            .borrow_mut()
+            .set_renderer(Rc::clone(&renderer_system));
 
         texture_system
             .borrow_mut()
@@ -254,7 +261,6 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-
         let shader_sys_config = ShaderSysConfig {
             max_shader_count: 1024,
             max_uniform_count: 128,

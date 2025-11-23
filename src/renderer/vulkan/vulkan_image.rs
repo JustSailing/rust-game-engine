@@ -17,14 +17,14 @@ use ash::{
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct VulkanImage {
     pub image: Image,
     pub memory: DeviceMemory,
     pub view: Option<ImageView>,
-    width: u32,
-    height: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl VulkanImage {

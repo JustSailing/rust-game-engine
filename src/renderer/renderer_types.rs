@@ -1,7 +1,7 @@
 use crate::application::{
     basic::{
         math::{
-            consts::{INVALID_ID, deg_to_rad},
+            consts::{deg_to_rad, INVALID_ID},
             matrix4::Matrix4,
             vec3::Vec3,
             vec4::Vec4,
@@ -15,6 +15,7 @@ use crate::application::{
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::Shader,
+        texture_system::TextureSystem,
     },
 };
 
@@ -114,13 +115,19 @@ impl Renderer {
         app_name: &str,
         window: &Window,
         resource_system: Rc<RefCell<ResourceSystem>>,
+        texture_system: Rc<RefCell<TextureSystem>>,
     ) -> Result<Self> {
-        let backend = VulkanContext::initialize(app_name, window, resource_system.clone())
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        let backend = VulkanContext::initialize(
+            app_name,
+            window,
+            Rc::clone(&resource_system),
+            texture_system,
+        )
+        .map_err(|e| RendererError::BackendRendererError {
+            source: e,
+            file: file!(),
+            line: line!(),
+        })?;
 
         Ok(Self {
             backend,
@@ -143,6 +150,42 @@ impl Renderer {
     pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
         self.backend
             .create_texture(name, pixels, texture)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })
+    }
+
+    pub fn create_writable_texture(&self, texture: &mut Texture) -> Result<()> {
+        self.backend.create_writable_texture(texture).map_err(|e| {
+            RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            }
+        })
+    }
+
+    pub fn write_data_texture(
+        &self,
+        texture: &mut Texture,
+        offset: u32,
+        size: u64,
+        pixels: &[u8],
+    ) -> Result<()> {
+        self.backend
+            .write_data_texture(texture, offset, size, pixels)
+            .map_err(|e| RendererError::BackendRendererError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })
+    }
+
+    pub fn resize_texture(&self, texture: &mut Texture, width: u32, height: u32) -> Result<()> {
+        self.backend
+            .resize_texture(texture, width, height)
             .map_err(|e| RendererError::BackendRendererError {
                 source: e,
                 file: file!(),
