@@ -1,29 +1,15 @@
 use crate::application::{
-    basic::{
-        math::{
-            consts::{deg_to_rad, INVALID_ID},
-            matrix4::Matrix4,
-            vec3::Vec3,
-            vec4::Vec4,
-        },
-        window::Window,
-    },
-    renderer::vulkan::vulkan_backend::{BuiltInRenderpass, VulkanBackendError, VulkanContext},
-    resources::resource_types::{
-        Geometry, Resource, ResourceData, ShaderConfig, ShaderStage, Texture, TextureMap,
-    },
-    systems::{
-        resource_system::{ResourceSysError, ResourceSystem},
-        shader_system::Shader,
-        texture_system::TextureSystem,
-    },
+    basic::math::consts::INVALID_ID,
+    basic::math::{matrix4::Matrix4, vec4::Vec4},
+    renderer::vulkan::vulkan_backend::VulkanRenderPass,
+    resources::resource_types::{Geometry, Texture},
 };
+// this can be temporary
+use ash::vk::Framebuffer;
 
-use std::{cell::RefCell, ffi::c_void, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use thiserror::Error;
-
-type Result<T> = std::result::Result<T, RendererError>;
+use bitflags::bitflags;
 
 pub enum RendererBackendType {
     Vulkan,
@@ -51,490 +37,62 @@ pub enum RendererDebugViewMode {
     Normals = 2,
 }
 
-#[derive(Error, Debug)]
-pub enum RendererError {
-    #[error("frontend renderer error: already initialized {} {}", file, line)]
-    AlreadyInitialized { file: &'static str, line: u32 },
-    #[error("frontend renderer error: already shutdown {} {}", file, line)]
-    AlreadyShutdown { file: &'static str, line: u32 },
-    #[error("frontend renderer error: not initialized {} {}", file, line)]
-    NotInitialized { file: &'static str, line: u32 },
-    #[error("frontend renderer error: renderpass id is not recognized {file} {line}")]
-    RendererIdInvalid { file: &'static str, line: u32 },
-    #[error(
-        "{source}\nfrontend renderer error: backend renderer error {} {}",
-        file,
-        line
-    )]
-    BackendRendererError {
-        source: VulkanBackendError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nfrontend renderer error: resource system error {file} {line}")]
-    ResouceSysError {
-        source: ResourceSysError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error(
-        "frontend renderer error: wrong resource type given: {given}, expected: {expected} {file} {line}"
-    )]
-    WrongResourceDataType {
-        expected: &'static str,
-        given: &'static str,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("frontend renderer error: shader system error {file} {line}")]
-    ShaderSysError { file: &'static str, line: u32 },
-    #[error("frontend renderer error: material system error {file} {line}")]
-    MaterialSysError { file: &'static str, line: u32 },
+bitflags! {
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct RenderpassClearFlags: u32 {
+    const ColourBuffer = 1 << 1;
+    const DepthBuffer = 1 << 2;
+    const StencilBuffer = 1 << 3;
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct RenderpassConfig {
+    pub name: String,
+    pub prev_name: String,
+    pub next_name: String,
+    pub render_area: Vec4,
+    pub clear_color: Vec4,
+    pub clear_flags: RenderpassClearFlags,
 }
 
 #[repr(C)]
-pub struct Renderer {
-    backend: VulkanContext,
-    resource_system: Rc<RefCell<ResourceSystem>>,
-    pub projection: Matrix4,
-    pub view: Matrix4,
-    pub view_position: Vec3,
-    pub ambient_colour: Vec4,
-    pub ui_projection: Matrix4,
-    pub ui_view: Matrix4,
-    far_clip: f32,
-    near_clip: f32,
-    material_shader_id: u32,
-    ui_shader_id: u32,
-    pub render_mode: RendererDebugViewMode,
-    pub frame_number: u64,
+#[derive(Debug, Clone)]
+pub struct Renderpass {
+    pub id: usize,
+    pub render_area: Vec4,
+    pub clear_colour: Vec4,
+    pub clear_flags: RenderpassClearFlags,
+    pub targets: Vec<RenderTarget>,
+    pub internal_data: VulkanRenderPass,
 }
 
-impl Renderer {
-    pub fn initialize(
-        app_name: &str,
-        window: &Window,
-        resource_system: Rc<RefCell<ResourceSystem>>,
-        texture_system: Rc<RefCell<TextureSystem>>,
-    ) -> Result<Self> {
-        let backend = VulkanContext::initialize(
-            app_name,
-            window,
-            Rc::clone(&resource_system),
-            texture_system,
-        )
-        .map_err(|e| RendererError::BackendRendererError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
-
-        Ok(Self {
-            backend,
-            projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
-            view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, 30.0))),
-            view_position: Vec3::new_zeroes(),
-            ambient_colour: Vec4::new(0.25, 0.25, 0.25, 1.0),
-            ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
-            ui_view: Matrix4::inverse(&Matrix4::identity()),
-            far_clip: 1000.0,
-            near_clip: 0.1,
-            material_shader_id: INVALID_ID as u32,
-            ui_shader_id: INVALID_ID as u32,
-            render_mode: RendererDebugViewMode::Default,
-            frame_number: 0,
-            resource_system,
-        })
-    }
-
-    pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
-        self.backend
-            .create_texture(name, pixels, texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn create_writable_texture(&self, texture: &mut Texture) -> Result<()> {
-        self.backend.create_writable_texture(texture).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })
-    }
-
-    pub fn write_data_texture(
-        &self,
-        texture: &mut Texture,
-        offset: u32,
-        size: u64,
-        pixels: &[u8],
-    ) -> Result<()> {
-        self.backend
-            .write_data_texture(texture, offset, size, pixels)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn resize_texture(&self, texture: &mut Texture, width: u32, height: u32) -> Result<()> {
-        self.backend
-            .resize_texture(texture, width, height)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn destroy_texture(&self, texture: &Texture) -> Result<()> {
-        self.backend
-            .destroy_texture(&texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn create_geometry<T: Clone, U: Clone>(
-        &mut self,
-        geometry: &mut Geometry,
-        vertices: &[T],
-        indicies: &[U],
-    ) -> Result<()> {
-        self.backend
-            .create_geometry(geometry, vertices, indicies)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn destroy_geometry(&mut self, geometry: &Geometry) -> Result<()> {
-        self.backend
-            .destroy_geometry(geometry)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-    pub fn get_renderpass_id(&self, name: &String) -> Result<BuiltInRenderpass> {
-        match name.as_str() {
-            "Renderpass.Builtin.World" => Ok(BuiltInRenderpass::World),
-            "Renderpass.Builtin.UI" => Ok(BuiltInRenderpass::UI),
-            _ => Err(RendererError::RendererIdInvalid {
-                file: file!(),
-                line: line!(),
-            }),
+impl Default for Renderpass {
+    fn default() -> Self {
+        Self {
+            id: INVALID_ID,
+            render_area: Vec4::new_zeroes(),
+            clear_colour: Vec4::new_zeroes(),
+            clear_flags: RenderpassClearFlags::empty(),
+            targets: Default::default(),
+            internal_data: Default::default(),
         }
     }
+}
 
-    pub fn begin_frame(&mut self, packet: &mut RendererPacket) -> Result<bool> {
-        self.backend.begin_frame(packet.delta_time).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })
-    }
+#[repr(C)]
+#[derive(Debug, Default, Clone)]
+pub struct RenderTarget {
+    pub sync_to_window: u32,
+    pub attachments: Vec<Rc<RefCell<Texture>>>,
+    pub internal_framebuffer: Framebuffer,
+}
 
-    pub fn begin_renderpass(&mut self, renderpass_id: BuiltInRenderpass) -> Result<()> {
-        self.backend.begin_renderpass(renderpass_id).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-        Ok(())
-    }
-
-    pub fn end_renderpass(&mut self, renderpass_id: BuiltInRenderpass) -> Result<()> {
-        self.backend.end_renderpass(renderpass_id).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-        Ok(())
-    }
-
-    pub fn end_frame(&mut self, delta: f32) -> Result<()> {
-        self.backend
-            .end_frame(delta)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        self.frame_number += 1;
-        Ok(())
-    }
-
-    pub fn draw_geometry(&mut self, data: &mut GeometryRenderData, _delta: f32) -> Result<()> {
-        self.frame_number += 1;
-        self.backend
-            .draw_geometry(data)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        Ok(())
-    }
-
-    pub fn on_resize(&mut self, width: i32, height: i32) -> Result<()> {
-        self.projection = Matrix4::perspective(
-            45.0,
-            width as f32 / height as f32,
-            self.near_clip,
-            self.far_clip,
-        );
-        self.ui_projection =
-            Matrix4::orthographic(0.0, width as f32, height as f32, 0.0, -100.0, 100.0);
-        self.backend
-            .on_resize(width, height)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-
-    pub fn set_view(&mut self, view: Matrix4, view_position: Vec3) -> Result<()> {
-        self.view = view;
-        self.view_position = view_position;
-        Ok(())
-    }
-
-    pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()> {
-        match render_mode {
-            0 => self.render_mode = RendererDebugViewMode::Default,
-            1 => self.render_mode = RendererDebugViewMode::Lighting,
-            2 => self.render_mode = RendererDebugViewMode::Normals,
-            // should warn here
-            _ => self.render_mode = RendererDebugViewMode::Default,
-        }
-
-        Ok(())
-    }
-
-    pub fn shader_create(
-        &mut self,
-        shader: &mut Shader,
-        renderpass_id: BuiltInRenderpass,
-        stage_count: u8,
-        stage_filenames: &Vec<String>,
-        stages: &Vec<ShaderStage>,
-    ) -> Result<()> {
-        self.backend
-            .shader_create(shader, renderpass_id, stage_count, stage_filenames, stages)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        Ok(())
-    }
-    pub fn shader_destroy(&self, shader: &mut Shader) -> Result<()> {
-        self.backend
-            .shader_destroy(shader)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        Ok(())
-    }
-
-    pub fn shader_use(&self, shader: &Shader) -> Result<()> {
-        self.backend
-            .shader_use(shader)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        Ok(())
-    }
-    pub fn shader_bind_globals(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_bind_globals(shader).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-        Ok(())
-    }
-    pub fn shader_bind_instance(&self, shader: &mut Shader) -> Result<()> {
-        self.backend
-            .shader_bind_instance(shader, shader.bound_instance_id as u32)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        Ok(())
-    }
-    pub fn shader_apply_globals(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_apply_globals(shader).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-        Ok(())
-    }
-    pub fn shader_apply_instance(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_apply_instance(shader).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-
-        Ok(())
-    }
-    pub fn set_default_texture(&mut self, default_texture: Rc<RefCell<Texture>>) -> Result<()> {
-        self.backend
-            .set_default_texture(default_texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        Ok(())
-    }
-
-    pub fn texture_map_acquire_resources(&self, map: &mut TextureMap) -> Result<()> {
-        self.backend
-            .texture_map_acquire_resources(map)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        Ok(())
-    }
-
-    pub fn texture_map_release_resources(&self, map: &mut TextureMap) -> Result<()> {
-        self.backend
-            .texture_map_release_resources(map)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-        Ok(())
-    }
-
-    pub fn shader_acquire_instance_resources(
-        &self,
-        shader: &mut Shader,
-        maps: &Vec<&TextureMap>,
-    ) -> Result<u32> {
-        self.backend
-            .shader_acquire_instance_resources(shader, maps)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
-    }
-    pub fn shader_release_instance_resources(
-        &self,
-        shader: &mut Shader,
-        instance_id: u32,
-    ) -> Result<()> {
-        self.backend
-            .shader_release_instance_resources(shader, instance_id)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        Ok(())
-    }
-    pub fn set_uniform(
-        &self,
-        shader: &mut Shader,
-        uniform_index: usize,
-        value: *const c_void,
-    ) -> Result<()> {
-        self.backend
-            .set_uniform(shader, uniform_index, value)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        Ok(())
-    }
-
-    fn destroy_renderer_backend(&self) -> Result<()> {
-        Ok(self
-            .backend
-            .shutdown()
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?)
-    }
-
-    fn get_shader_config(resource: &Resource) -> Result<&ShaderConfig> {
-        match resource.data {
-            ResourceData::ShaderResourceData(ref shader_config) => Ok(shader_config),
-            ResourceData::Unknown => Err(RendererError::WrongResourceDataType {
-                expected: "ShaderResourceData",
-                given: "Unknown",
-                file: file!(),
-                line: line!(),
-            }),
-
-            ResourceData::ImageResourceData(_) => Err(RendererError::WrongResourceDataType {
-                expected: "ShaderResourceData",
-                given: "ImageResourceData",
-                file: file!(),
-                line: line!(),
-            }),
-            ResourceData::MaterialResourceData(_) => Err(RendererError::WrongResourceDataType {
-                expected: "ShaderResourceData",
-                given: "MaterialResourceData",
-                file: file!(),
-                line: line!(),
-            }),
-            ResourceData::BinaryResourceData(_) => Err(RendererError::WrongResourceDataType {
-                expected: "ShaderResourceData",
-                given: "BinaryResourceData",
-                file: file!(),
-                line: line!(),
-            }),
-            ResourceData::MeshResourceData(_) => Err(RendererError::WrongResourceDataType {
-                expected: "ShaderResourceData",
-                given: "MeshResourceData",
-                file: file!(),
-                line: line!(),
-            }),
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct RendererBackendConfig {
+    pub application_name: String,
+    pub renderpass_configs: Vec<RenderpassConfig>,
+    // Although in the Kohi game engine this is here. Leting the backend handle this
+    // is more in line with how the architecture of the game engine is now might change later
+    // pub on_rendertarget_refresh_required: fn() -> (),
 }

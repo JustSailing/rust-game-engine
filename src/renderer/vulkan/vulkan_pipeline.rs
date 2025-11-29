@@ -11,8 +11,9 @@ use ash::vk::{
 };
 
 use crate::application::renderer::vulkan::{
-    vulkan_backend::VulkanBackendError, vulkan_command_buffer::VulkanCommandBuffer,
-    vulkan_device::VulkanDevice, vulkan_renderpass::VulkanRenderPass,
+    vulkan_backend::{VulkanBackendError, VulkanRenderPass},
+    vulkan_command_buffer::VulkanCommandBuffer,
+    vulkan_device::VulkanDevice,
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;

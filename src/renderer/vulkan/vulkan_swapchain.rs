@@ -1,6 +1,8 @@
 use crate::application::renderer::vulkan::{
     vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice, vulkan_image::VulkanImage,
 };
+
+//use crate::application::renderer::renderer_types::RenderTarget;
 use crate::application::resources::resource_types::{Texture, TextureData};
 use crate::application::systems::texture_system::TextureSystem;
 use ash::{
@@ -25,7 +27,8 @@ pub struct VulkanSwapchain {
     swapchain_loader: swapchain::Device,
     pub image_count: u32,
     pub render_textures: Vec<Rc<RefCell<Texture>>>,
-    pub depth_attachment: VulkanImage,
+    pub depth_texture: Rc<RefCell<Texture>>,
+    //pub render_targets: Vec<RenderTarget>,
 }
 
 impl VulkanSwapchain {
@@ -250,19 +253,39 @@ impl VulkanSwapchain {
             });
         }
 
-        let depth_attachment = VulkanImage::create(
-            instance,
-            ImageType::TYPE_2D,
-            swapchain_extent.width,
-            swapchain_extent.height,
-            device.depth_format,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-            true,
-            ImageAspectFlags::DEPTH,
-            device,
-        )?;
+        let depth_texture_data = TextureData {
+            image: VulkanImage::create(
+                instance,
+                ImageType::TYPE_2D,
+                swapchain_extent.width,
+                swapchain_extent.height,
+                device.depth_format,
+                ImageTiling::OPTIMAL,
+                ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                MemoryPropertyFlags::DEVICE_LOCAL,
+                true,
+                ImageAspectFlags::DEPTH,
+                device,
+            )?,
+        };
+
+        let depth_texture = texture_system
+            .borrow_mut()
+            .wrap_internal(
+                "__internal_default_depth_texture__",
+                swapchain_extent.width,
+                swapchain_extent.height,
+                device.channel_count as u8,
+                false,
+                true,
+                false,
+                depth_texture_data,
+            )
+            .map_err(|_| VulkanBackendError::OperationFailed {
+                issue: "could not wrap depth texture",
+                file: file!(),
+                line: line!(),
+            })?;
 
         Ok(VulkanSwapchain {
             image_format: *format_,
@@ -271,12 +294,18 @@ impl VulkanSwapchain {
             swapchain_loader,
             image_count: images.len() as u32,
             render_textures,
-            depth_attachment,
+            depth_texture,
+            //render_targets: Vec::new(),
         })
     }
 
     pub fn destroy(&self, device: &VulkanDevice) {
-        self.depth_attachment.destroy(device);
+        self.depth_texture
+            .borrow_mut()
+            .internal_data
+            .image
+            .destroy(device);
+
         for i in 0..self.render_textures.len() {
             if let Some(view) = self.render_textures[i]
                 .borrow_mut()
@@ -466,7 +495,11 @@ impl VulkanSwapchain {
                 })?;
         }
 
-        self.depth_attachment.destroy(device);
+        self.depth_texture
+            .borrow_mut()
+            .internal_data
+            .image
+            .destroy(device);
         for i in 0..self.render_textures.len() {
             if let Some(view) = self.render_textures[i]
                 .borrow_mut()
@@ -538,26 +571,46 @@ impl VulkanSwapchain {
             });
         }
 
-        let depth_attachment = VulkanImage::create(
-            instance,
-            ImageType::TYPE_2D,
-            swapchain_extent.width,
-            swapchain_extent.height,
-            device.depth_format,
-            ImageTiling::OPTIMAL,
-            ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-            MemoryPropertyFlags::DEVICE_LOCAL,
-            true,
-            ImageAspectFlags::DEPTH,
-            device,
-        )?;
+        let depth_texture_data = TextureData {
+            image: VulkanImage::create(
+                instance,
+                ImageType::TYPE_2D,
+                swapchain_extent.width,
+                swapchain_extent.height,
+                device.depth_format,
+                ImageTiling::OPTIMAL,
+                ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                MemoryPropertyFlags::DEVICE_LOCAL,
+                true,
+                ImageAspectFlags::DEPTH,
+                device,
+            )?,
+        };
+
+        let depth_texture = texture_system
+            .borrow_mut()
+            .wrap_internal(
+                "__internal_default_depth_texture__",
+                swapchain_extent.width,
+                swapchain_extent.height,
+                device.channel_count as u8,
+                false,
+                true,
+                false,
+                depth_texture_data,
+            )
+            .map_err(|_| VulkanBackendError::OperationFailed {
+                issue: "could not wrap depth texture",
+                file: file!(),
+                line: line!(),
+            })?;
 
         self.image_format = *format_;
         self.max_frames_in_flight = max_frames_in_flight;
         self.swapchain = swap;
 
         self.image_count = images.len() as u32;
-        self.depth_attachment = depth_attachment;
+        self.depth_texture = depth_texture;
         Ok(())
     }
 

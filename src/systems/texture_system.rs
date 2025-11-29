@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::application::{
     basic::math::consts::INVALID_ID,
-    renderer::renderer_types::{Renderer, RendererError},
+    renderer::frontend_renderer::{Renderer, RendererError},
     resources::resource_types::{ResourceData, ResourceType, Texture, TextureData, TextureFlags},
     systems::resource_system::{ResourceSysError, ResourceSystem},
 };

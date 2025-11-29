@@ -4,6 +4,5 @@ mod vulkan_command_buffer;
 mod vulkan_device;
 pub mod vulkan_image;
 mod vulkan_pipeline;
-mod vulkan_renderpass;
 mod vulkan_swapchain;
 mod vulkan_sync_objects;

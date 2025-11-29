@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, ffi::c_void, rc::Rc, u8};
 use crate::application::{
     basic::math::consts::INVALID_ID,
     renderer::{
-        renderer_types::{Renderer, RendererError},
+        frontend_renderer::{Renderer, RendererError},
         vulkan::vulkan_backend::VulkanShader,
     },
     resources::resource_types::{
@@ -273,7 +273,7 @@ impl<'a> ShaderSystem<'a> {
             if shader.borrow().id == INVALID_ID {
                 continue;
             }
-            self.shader_destroy(shader)?;
+            self.destroy_shader(shader)?;
             self.registered_shaders[i].replace(Shader::default());
         }
         Ok(())
@@ -309,17 +309,6 @@ impl<'a> ShaderSystem<'a> {
         out_shader.borrow_mut().bound_instance_id = INVALID_ID;
         out_shader.borrow_mut().push_constant_size = 0;
         out_shader.borrow_mut().attribute_stride = 0;
-
-        //temporarily moved to frontend renderer
-        let renderpass_id = self
-            .frontend_renderer
-            .borrow()
-            .get_renderpass_id(&shader_config.renderpass_name)
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
 
         out_shader.borrow_mut().attributes = shader_config
             .attributes
@@ -360,9 +349,9 @@ impl<'a> ShaderSystem<'a> {
 
         self.frontend_renderer
             .borrow_mut()
-            .shader_create(
+            .create_shader(
                 &mut out_shader.borrow_mut(),
-                renderpass_id,
+                &shader_config.renderpass_name,
                 shader_config.stages.len() as u8,
                 &shader_config.stage_filenames,
                 &shader_config.stages,
@@ -420,10 +409,10 @@ impl<'a> ShaderSystem<'a> {
         Ok(Rc::clone(&self.registered_shaders[id]))
     }
 
-    pub fn shader_destroy(&self, shader: &Rc<RefCell<Shader<'a>>>) -> Result<()> {
+    pub fn destroy_shader(&self, shader: &Rc<RefCell<Shader<'a>>>) -> Result<()> {
         self.frontend_renderer
             .borrow()
-            .shader_destroy(&mut shader.borrow_mut())
+            .destroy_shader(&mut shader.borrow_mut())
             .map_err(|e| ShaderSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -433,7 +422,7 @@ impl<'a> ShaderSystem<'a> {
         Ok(())
     }
 
-    pub fn shader_use(&mut self, name: &str) -> Result<()> {
+    pub fn use_shader(&mut self, name: &str) -> Result<()> {
         let id = self.get_shader_id(name)?;
         self.use_by_id(id)
     }
@@ -444,7 +433,7 @@ impl<'a> ShaderSystem<'a> {
             self.current_shader_id = id;
             self.frontend_renderer
                 .borrow()
-                .shader_use(&next_shader.borrow())
+                .use_shader(&next_shader.borrow())
                 .map_err(|e| ShaderSysError::RendererSysError {
                     source: e,
                     file: file!(),
@@ -745,7 +734,7 @@ impl<'a> Drop for ShaderSystem<'a> {
             if shader.borrow().id == INVALID_ID {
                 continue;
             }
-            let _ = self.shader_destroy(shader);
+            let _ = self.destroy_shader(shader);
             self.registered_shaders[i].replace(Shader::default());
         }
     }

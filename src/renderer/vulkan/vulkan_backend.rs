@@ -1,17 +1,19 @@
 use crate::application::{
     basic::{
-        math::{consts::INVALID_ID, vec3::Vector3D, vec4::Vec4},
+        math::{consts::INVALID_ID, vec3::Vector3D},
         window::Window,
     },
     renderer::{
-        renderer_types::GeometryRenderData,
+        renderer_types::{
+            GeometryRenderData, RenderTarget, RendererBackendConfig, Renderpass,
+            RenderpassClearFlags,
+        },
         vulkan::{
             vulkan_buffer::VulkanBuffer,
-            vulkan_command_buffer::VulkanCommandBuffer,
+            vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer},
             vulkan_device::VulkanDevice,
             vulkan_image::VulkanImage,
             vulkan_pipeline::VulkanPipeline,
-            vulkan_renderpass::{ClearFlag, VulkanRenderPass},
             vulkan_swapchain::VulkanSwapchain,
             vulkan_sync_objects::{InFlightFrames, SyncObjects},
         },
@@ -35,17 +37,20 @@ use ash::{
         xlib_surface,
     },
     vk::{
-        self, BorderColor, BufferUsageFlags, CommandPool, CommandPoolResetFlags, CompareOp,
-        DescriptorBufferInfo, DescriptorImageInfo, DescriptorPool, DescriptorPoolCreateFlags,
-        DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet, DescriptorSetAllocateInfo,
-        DescriptorSetLayout, DescriptorSetLayoutBinding, DescriptorSetLayoutCreateInfo,
-        DescriptorType, DeviceSize, Extent2D, Fence, Format, Framebuffer, FramebufferCreateInfo,
-        ImageAspectFlags, ImageLayout, ImageTiling, ImageType, ImageUsageFlags, ImageView,
-        IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D, PipelineBindPoint,
-        PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D, Sampler,
-        SamplerCreateInfo, SamplerMipmapMode, ShaderModule, ShaderModuleCreateInfo,
-        ShaderStageFlags, SubmitInfo, SurfaceKHR, VertexInputAttributeDescription, Viewport,
-        WriteDescriptorSet,
+        self, AccessFlags, AttachmentDescription, AttachmentDescriptionFlags, AttachmentLoadOp,
+        AttachmentReference, AttachmentStoreOp, BorderColor, BufferUsageFlags, ClearColorValue,
+        ClearDepthStencilValue, ClearValue, CommandPool, CommandPoolResetFlags, CompareOp,
+        DependencyFlags, DescriptorBufferInfo, DescriptorImageInfo, DescriptorPool,
+        DescriptorPoolCreateFlags, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
+        DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
+        DescriptorSetLayoutCreateInfo, DescriptorType, DeviceSize, Extent2D, Fence, Format,
+        Framebuffer, FramebufferCreateInfo, ImageAspectFlags, ImageLayout, ImageTiling, ImageType,
+        ImageUsageFlags, ImageView, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
+        PipelineBindPoint, PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D,
+        RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SUBPASS_EXTERNAL, SampleCountFlags,
+        Sampler, SamplerCreateInfo, SamplerMipmapMode, ShaderModule, ShaderModuleCreateInfo,
+        ShaderStageFlags, SubmitInfo, SubpassContents, SubpassDependency, SubpassDescription,
+        SurfaceKHR, VertexInputAttributeDescription, Viewport, WriteDescriptorSet,
     },
 };
 #[cfg(feature = "debug")]
@@ -94,6 +99,7 @@ pub enum VulkanBackendError {
 
 const VULKAN_MAX_GEOMETRY_COUNT: usize = 4096;
 const VULKAN_MAX_MATERIAL_COUNT: usize = 1024;
+const VULKAN_MAX_REGISTERED_RENDERPASSES: usize = 31;
 const VULKAN_SHADER_MAX_STAGES: usize = 8;
 const VULKAN_SHADER_MAX_GLOBAL_TEXTURES: usize = 31;
 const VULKAN_SHADER_MAX_INSTANCE_TEXTURES: usize = 31;
@@ -105,6 +111,34 @@ const DESC_SET_INDEX_GLOBAL: usize = 0;
 const DESC_SET_INDEX_INSTANCE: usize = 1;
 const BINDING_INDEX_UBO: usize = 0;
 const BINDING_INDEX_SAMPLER: usize = 1;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum RenderPassState {
+    Ready,
+    Recording,
+    InRenderpass,
+    RecordingEnded,
+    Submitted,
+    NotAllocated,
+}
+
+impl Default for RenderPassState {
+    fn default() -> Self {
+        Self::NotAllocated
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct VulkanRenderPass {
+    pub renderpass: RenderPass,
+    pub depth: f32,
+    pub stencil: u32,
+    state: RenderPassState,
+    has_previous_pass: bool,
+    has_next_pass: bool,
+}
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -186,7 +220,7 @@ impl Default for VulkanShaderInstanceState {
 pub struct VulkanShader<'a> {
     pub mapped_uniform_block: *mut c_void,
     vulkan_shader_config: VulkanShaderConfig<'a>,
-    renderpass: BuiltInRenderpass,
+    renderpass: Rc<RefCell<Renderpass>>,
     stages: [VulkanShaderStage<'a>; VULKAN_SHADER_MAX_STAGES],
     descriptor_pool: DescriptorPool,
     descriptor_set_layouts: [DescriptorSetLayout; 2],
@@ -224,13 +258,6 @@ impl Default for VulkanGeometryData {
     }
 }
 
-#[derive(Clone)]
-#[repr(C)]
-pub enum BuiltInRenderpass {
-    World,
-    UI,
-}
-
 #[repr(C)]
 pub struct VulkanContext {
     #[cfg(feature = "debug")]
@@ -252,10 +279,8 @@ pub struct VulkanContext {
     images_in_flight: Vec<Rc<RefCell<Option<SyncObjects>>>>,
     in_flight_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
-    swapchain_framebuffers: Vec<Framebuffer>,
-    world_framebuffers: Vec<Framebuffer>,
-    main_renderpass: VulkanRenderPass,
-    ui_renderpass: VulkanRenderPass,
+    registered_renderpasses_hashmap: HashMap<String, usize>,
+    registered_renderpasses: [Rc<RefCell<Renderpass>>; VULKAN_MAX_REGISTERED_RENDERPASSES],
     recreating_swapchain: bool,
     swapchain: VulkanSwapchain,
     frame_buffer_size_generation: u32,
@@ -270,14 +295,15 @@ pub struct VulkanContext {
 
 impl<'a> VulkanContext {
     pub fn initialize(
-        name: &str,
         window: &Window,
+        backend_config: &RendererBackendConfig,
+        window_render_target_count: &mut u32,
         resource_system: Rc<RefCell<ResourceSystem>>,
         texture_system: Rc<RefCell<TextureSystem>>,
     ) -> Result<Self> {
         let entry = unsafe { Entry::load()? };
 
-        let app_name = CString::new(name)?;
+        let app_name = CString::new(backend_config.application_name.clone())?;
 
         let app_info = vk::ApplicationInfo::default()
             .api_version(vk::make_api_version(0, 1, 3, 0))
@@ -340,106 +366,96 @@ impl<'a> VulkanContext {
             &texture_system,
         )?;
 
-        // create renderpass
-        let main_renderpass = VulkanRenderPass::create(
-            Vec4::new(0.0, 0.0, window.width as f32, window.height as f32),
-            Vec4::new(0.0, 0.0, 0.2, 1.0),
-            1.0,
-            0,
-            &dev,
-            swap.image_format.format,
-            dev.depth_format,
-            ClearFlag::ColourBuffer.value()
-                | ClearFlag::DepthBuffer.value()
-                | ClearFlag::StencilBuffer.value(),
-            false,
-            true,
-        )?;
+        *window_render_target_count = swap.image_count;
 
-        let ui_renderpass = VulkanRenderPass::create(
-            Vec4::new(0.0, 0.0, window.width as f32, window.height as f32),
-            Vec4::new(0.0, 0.0, 0.0, 0.0),
-            1.0,
-            0,
-            &dev,
-            swap.image_format.format,
-            dev.depth_format,
-            0,
-            true,
-            false,
-        )?;
+        // Initialize and create renderpasses
+        let registered_renderpasses: [Rc<RefCell<Renderpass>>; VULKAN_MAX_REGISTERED_RENDERPASSES] =
+            std::array::from_fn(|_| Rc::new(RefCell::new(Renderpass::default())));
 
-        let mut swap_framebuffers = Vec::new();
-        let mut world_framebuffers = Vec::new();
-        for i in 0..swap.render_textures.len() {
-            let mut world_attachments = Vec::new();
-            world_attachments.push(
-                swap.render_textures[i]
-                    .borrow()
-                    .internal_data
-                    .image
-                    .view
-                    .unwrap(),
-            );
-            world_attachments.push(swap.depth_attachment.view.unwrap());
-            let world_framebuffer_create_info = FramebufferCreateInfo::default()
-                .render_pass(main_renderpass.renderpass)
-                .attachments(&world_attachments)
-                .height(window.height)
-                .width(window.width)
-                .layers(1);
+        let mut renderpass_hashmap = HashMap::<String, usize>::new();
 
-            let world_framebuffer = unsafe {
-                match dev
-                    .device
-                    .create_framebuffer(&world_framebuffer_create_info, None)
-                {
-                    Ok(f) => f,
-                    Err(_) => {
-                        return Err(VulkanBackendError::OperationFailed {
-                            issue: "could not create framebuffer",
-                            file: file!(),
-                            line: line!(),
-                        });
+        for renderpass_config in backend_config.renderpass_configs.iter() {
+            let i = registered_renderpasses
+                .iter()
+                .enumerate()
+                .find_map(|(i, r)| {
+                    if r.borrow().id == INVALID_ID {
+                        Some(i)
+                    } else {
+                        None
                     }
-                }
-            };
-            world_framebuffers.push(world_framebuffer);
+                });
+            if i.is_none() {
+                return Err(VulkanBackendError::OperationFailed {
+                    issue: "registered renderpass exceeded the a maximum allowed",
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+            let index = i.unwrap();
 
-            let mut ui_attachments = Vec::new();
-            ui_attachments.push(
-                swap.render_textures[i]
-                    .borrow()
-                    .internal_data
-                    .image
-                    .view
-                    .unwrap(),
-            );
+            registered_renderpasses[index].borrow_mut().id = index;
 
-            let ui_framebuffer_create_info = FramebufferCreateInfo::default()
-                .render_pass(ui_renderpass.renderpass)
-                .attachments(&ui_attachments)
-                .height(window.height)
-                .width(window.width)
-                .layers(1);
-
-            let ui_framebuffer = unsafe {
-                match dev
-                    .device
-                    .create_framebuffer(&ui_framebuffer_create_info, None)
+            registered_renderpasses[index].borrow_mut().clear_flags = renderpass_config.clear_flags;
+            registered_renderpasses[index].borrow_mut().clear_colour =
+                renderpass_config.clear_color;
+            registered_renderpasses[index].borrow_mut().render_area = renderpass_config.render_area;
+            registered_renderpasses[index].borrow_mut().internal_data =
+                Self::create_vulkan_renderpass(
+                    1.0,
+                    0,
+                    &dev,
+                    swap.image_format.format,
+                    dev.depth_format,
+                    renderpass_config.clear_flags,
+                    !renderpass_config.prev_name.is_empty(),
+                    !renderpass_config.next_name.is_empty(),
+                )?;
+            renderpass_hashmap.insert(renderpass_config.name.clone(), index);
+            for i in 0..swap.render_textures.len() {
+                let depth_texture = Rc::clone(&swap.depth_texture);
+                let world_texture = Rc::clone(&swap.render_textures[i]);
+                let attachments = if renderpass_config
+                    .clear_flags
+                    .contains(RenderpassClearFlags::DepthBuffer)
                 {
-                    Ok(f) => f,
-                    Err(_) => {
-                        return Err(VulkanBackendError::OperationFailed {
-                            issue: "could not create framebuffer",
-                            file: file!(),
-                            line: line!(),
-                        });
-                    }
+                    vec![world_texture, depth_texture]
+                } else {
+                    vec![world_texture]
+                };
+                let mut attachment_views = vec![];
+                for i in 0..attachments.len() {
+                    attachment_views
+                        .push(attachments[i].borrow().internal_data.image.view.unwrap());
                 }
-            };
-            swap_framebuffers.push(ui_framebuffer);
+
+                let framebuffer_create_info = FramebufferCreateInfo::default()
+                    .render_pass(
+                        registered_renderpasses[index]
+                            .borrow()
+                            .internal_data
+                            .renderpass,
+                    )
+                    .attachments(&attachment_views)
+                    .width(window.width)
+                    .height(window.height)
+                    .layers(1);
+                let framebuffer = unsafe {
+                    dev.device
+                        .create_framebuffer(&framebuffer_create_info, None)?
+                };
+                let render_target = RenderTarget {
+                    sync_to_window: 0,
+                    attachments: attachments,
+                    internal_framebuffer: framebuffer,
+                };
+                registered_renderpasses[index]
+                    .borrow_mut()
+                    .targets
+                    .push(render_target);
+            }
         }
+
         // creating command buffer
         let graph_cmd_buf = Self::create_command_buffer(&dev, swap.max_frames_in_flight as usize)?;
 
@@ -501,14 +517,12 @@ impl<'a> VulkanContext {
                 surface: surface,
                 instance: instance,
                 swapchain: swap,
-                main_renderpass: main_renderpass,
-                ui_renderpass: ui_renderpass,
+                registered_renderpasses: registered_renderpasses,
+                registered_renderpasses_hashmap: renderpass_hashmap,
                 framebuffer_height: window.height,
                 framebuffer_width: window.width,
                 frame_buffer_size_generation: 0,
                 frame_buffer_last_generation: 0,
-                swapchain_framebuffers: swap_framebuffers,
-                world_framebuffers: world_framebuffers,
                 resource_system: resource_system,
                 texture_system: texture_system,
                 default_texture: Rc::new(RefCell::new(Texture::default())),
@@ -538,15 +552,13 @@ impl<'a> VulkanContext {
                 instance,
                 surface,
                 surface_loader,
+                registered_renderpasses: registered_renderpasses,
+                registered_renderpasses_hashmap: renderpass_hashmap,
                 swapchain: swap,
-                main_renderpass,
-                ui_renderpass,
                 framebuffer_height: window.height,
                 framebuffer_width: window.width,
                 frame_buffer_size_generation: 0,
                 frame_buffer_last_generation: 0,
-                swapchain_framebuffers: swap_framebuffers,
-                world_framebuffers,
                 resource_system,
                 texture_system,
             })
@@ -665,19 +677,6 @@ impl<'a> VulkanContext {
             )
         };
 
-        self.main_renderpass
-            .render_area
-            .set_w(self.framebuffer_width as f32);
-        self.main_renderpass
-            .render_area
-            .set_h(self.framebuffer_height as f32);
-        self.ui_renderpass
-            .render_area
-            .set_w(self.framebuffer_width as f32);
-        self.ui_renderpass
-            .render_area
-            .set_h(self.framebuffer_height as f32);
-
         Ok(true)
     }
 
@@ -744,37 +743,255 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn begin_renderpass(&mut self, renderpass_type: BuiltInRenderpass) -> Result<()> {
-        let (renderpass, framebuffer) = match renderpass_type {
-            BuiltInRenderpass::World => (
-                &self.main_renderpass,
-                self.world_framebuffers[self.image_index as usize],
-            ),
-            BuiltInRenderpass::UI => (
-                &self.ui_renderpass,
-                self.swapchain_framebuffers[self.image_index as usize],
-            ),
-        };
-        renderpass.begin(
-            &self.device,
-            &mut self.graphics_cmd_bufs,
-            self.in_flight_frames.current_frame,
-            framebuffer,
-        );
+    pub fn create_vulkan_renderpass(
+        depth: f32,
+        stencil: u32,
+        device: &VulkanDevice,
+        format: Format,
+        depth_format: Format,
+        clear_flag: RenderpassClearFlags,
+        has_previous_pass: bool,
+        has_next_pass: bool,
+    ) -> Result<VulkanRenderPass> {
+        let mut subpass =
+            SubpassDescription::default().pipeline_bind_point(PipelineBindPoint::GRAPHICS);
 
+        let mut attachment_description_ct: usize = 0;
+        let mut attachment_descriptions = [AttachmentDescription::default(); 2];
+
+        let load_op = if clear_flag.contains(RenderpassClearFlags::ColourBuffer) {
+            AttachmentLoadOp::CLEAR
+        } else {
+            AttachmentLoadOp::LOAD
+        };
+
+        let initial_layout = if load_op == AttachmentLoadOp::CLEAR {
+            ImageLayout::UNDEFINED
+        } else if has_previous_pass {
+            ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        } else {
+            ImageLayout::UNDEFINED
+        };
+
+        let color_attachment = AttachmentDescription::default()
+            .format(format)
+            .samples(SampleCountFlags::TYPE_1)
+            .load_op(load_op)
+            .store_op(AttachmentStoreOp::STORE)
+            .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+            .initial_layout(initial_layout)
+            .final_layout(if has_next_pass {
+                ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+            } else {
+                ImageLayout::PRESENT_SRC_KHR
+            })
+            .flags(AttachmentDescriptionFlags::empty());
+
+        attachment_descriptions[attachment_description_ct] = color_attachment;
+        attachment_description_ct += 1;
+
+        let color_attachment_ref = AttachmentReference::default()
+            .attachment(0)
+            .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        subpass.p_color_attachments = &color_attachment_ref;
+        subpass.color_attachment_count = 1;
+        let mut depth_attachment_ref = AttachmentReference::default();
+        let mut depth_attachment = AttachmentDescription::default();
+        if clear_flag.contains(RenderpassClearFlags::DepthBuffer) {
+            depth_attachment = AttachmentDescription::default()
+                .format(depth_format)
+                .samples(SampleCountFlags::TYPE_1)
+                .load_op(AttachmentLoadOp::CLEAR)
+                .store_op(AttachmentStoreOp::DONT_CARE)
+                .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+                .initial_layout(ImageLayout::UNDEFINED)
+                .final_layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+            depth_attachment_ref = AttachmentReference::default()
+                .attachment(1)
+                .layout(ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+            attachment_descriptions[attachment_description_ct] = depth_attachment;
+
+            subpass.p_depth_stencil_attachment = &depth_attachment_ref;
+            attachment_description_ct += 1;
+        } else {
+            unsafe { attachment_descriptions[attachment_description_ct] = std::mem::zeroed() }
+        }
+
+        let dependency = SubpassDependency::default()
+            .src_subpass(SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(AccessFlags::empty())
+            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(
+                AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE,
+            )
+            .dependency_flags(DependencyFlags::empty());
+
+        let renderpass_create_info = RenderPassCreateInfo::default()
+            .attachments(&attachment_descriptions[0..attachment_description_ct])
+            .dependencies(std::slice::from_ref(&dependency))
+            .subpasses(std::slice::from_ref(&subpass));
+
+        let renderpass = unsafe {
+            match device
+                .device
+                .create_render_pass(&renderpass_create_info, None)
+            {
+                Ok(r) => r,
+                Err(_) => {
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "could not create renderpass",
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+            }
+        };
+        Ok(VulkanRenderPass {
+            renderpass,
+            depth,
+            stencil,
+            state: RenderPassState::Ready,
+            has_next_pass,
+            has_previous_pass,
+        })
+    }
+
+    pub fn begin_renderpass(&mut self, renderpass_name: &str) -> Result<()> {
+        let index = if let Some(renderpass_index) =
+            self.registered_renderpasses_hashmap.get(renderpass_name)
+        {
+            renderpass_index
+        } else {
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "renderpass does not exist",
+                file: file!(),
+                line: line!(),
+            });
+        };
+        let renderpass = if let Some(renderpass) = self.registered_renderpasses.get(*index) {
+            renderpass
+        } else {
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "renderpass does not exist",
+                file: file!(),
+                line: line!(),
+            });
+        };
+
+        let mut begin_info = RenderPassBeginInfo::default()
+            .render_pass(renderpass.borrow().internal_data.renderpass)
+            .framebuffer(
+                renderpass.borrow().targets[self.image_index as usize].internal_framebuffer,
+            )
+            .render_area(
+                Rect2D::default()
+                    .extent(
+                        Extent2D::default()
+                            .height(renderpass.borrow().render_area.get_h() as u32)
+                            .width(renderpass.borrow().render_area.get_w() as u32),
+                    )
+                    .offset(
+                        Offset2D::default()
+                            .x(renderpass.borrow().render_area.get_x() as i32)
+                            .y(renderpass.borrow().render_area.get_y() as i32),
+                    ),
+            );
+
+        let mut clear_value_count = 0;
+
+        let mut clear_values: [ClearValue; 2];
+        clear_values = [ClearValue::default(), ClearValue::default()];
+        if renderpass
+            .borrow()
+            .clear_flags
+            .contains(RenderpassClearFlags::ColourBuffer)
+        {
+            clear_values[clear_value_count] = ClearValue {
+                color: ClearColorValue {
+                    float32: renderpass.borrow().clear_colour.data,
+                },
+            };
+            clear_value_count += 1;
+        }
+        if renderpass
+            .borrow()
+            .clear_flags
+            .contains(RenderpassClearFlags::DepthBuffer)
+        {
+            clear_values[clear_value_count] = ClearValue {
+                depth_stencil: ClearDepthStencilValue::default()
+                    .depth(renderpass.borrow().internal_data.depth)
+                    .stencil(
+                        if renderpass
+                            .borrow()
+                            .clear_flags
+                            .contains(RenderpassClearFlags::StencilBuffer)
+                        {
+                            renderpass.borrow().internal_data.stencil
+                        } else {
+                            0
+                        },
+                    ),
+            };
+            clear_value_count += 1;
+        }
+        if clear_value_count > 0 {
+            begin_info.p_clear_values = clear_values.as_ptr();
+            begin_info.clear_value_count = clear_value_count as u32;
+        }
+        unsafe {
+            self.device.device.cmd_begin_render_pass(
+                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame as usize],
+                &begin_info,
+                SubpassContents::INLINE,
+            )
+        };
+        self.graphics_cmd_bufs.state = CommandBufferState::InRenderPass;
         Ok(())
     }
 
-    pub fn end_renderpass(&mut self, renderpass_type: BuiltInRenderpass) -> Result<()> {
-        let renderpass = match renderpass_type {
-            BuiltInRenderpass::World => &self.main_renderpass,
-            BuiltInRenderpass::UI => &self.ui_renderpass,
-        };
-        renderpass.end(
-            &self.device,
-            &mut self.graphics_cmd_bufs,
-            self.in_flight_frames.current_frame,
-        );
+    pub fn destroy_renderpass(&self, renderpass: &Renderpass) {
+        unsafe {
+            self.device
+                .device
+                .destroy_render_pass(renderpass.internal_data.renderpass, None);
+        }
+    }
+
+    pub fn get_renderpass(&self, name: &str) -> Result<Rc<RefCell<Renderpass>>> {
+        let index = self.registered_renderpasses_hashmap.get(name);
+        if index.is_none() {
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "renderpass was not registered",
+                file: file!(),
+                line: line!(),
+            });
+        }
+        if let Some(renderpass) = self.registered_renderpasses.get(*index.unwrap()) {
+            Ok(Rc::clone(&renderpass))
+        } else {
+            return Err(VulkanBackendError::OperationFailed {
+                issue: "renderpass index was not valid",
+                file: file!(),
+                line: line!(),
+            });
+        }
+    }
+
+    pub fn end_renderpass(&mut self) -> Result<()> {
+        unsafe {
+            self.device.device.cmd_end_render_pass(
+                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame as usize],
+            );
+        }
+        self.graphics_cmd_bufs.state = CommandBufferState::Recording;
         Ok(())
     }
 
@@ -823,21 +1040,9 @@ impl<'a> VulkanContext {
             &self.texture_system,
         )?;
 
-        self.main_renderpass
-            .render_area
-            .set_w(self.framebuffer_width as f32);
-        self.main_renderpass
-            .render_area
-            .set_h(self.framebuffer_height as f32);
-
-        self.ui_renderpass
-            .render_area
-            .set_w(self.framebuffer_width as f32);
-        self.ui_renderpass
-            .render_area
-            .set_h(self.framebuffer_height as f32);
-
         self.frame_buffer_last_generation = self.frame_buffer_size_generation;
+
+        self.refresh_render_targets()?;
 
         // I think you can clear all command buffers without having to destroy and recreate
         unsafe {
@@ -846,19 +1051,6 @@ impl<'a> VulkanContext {
                 CommandPoolResetFlags::empty(),
             )?
         }
-
-        for i in 0..self.swapchain.image_count as usize {
-            unsafe {
-                self.device
-                    .device
-                    .destroy_framebuffer(self.swapchain_framebuffers[i], None);
-                self.device
-                    .device
-                    .destroy_framebuffer(self.world_framebuffers[i], None);
-            }
-        }
-
-        self.regenerate_framebuffers()?;
 
         self.recreating_swapchain = false;
 
@@ -869,83 +1061,94 @@ impl<'a> VulkanContext {
         VulkanCommandBuffer::allocate(device, true, device.graphics_command_pool, frames as u32)
     }
 
-    fn regenerate_framebuffers(&mut self) -> Result<()> {
-        let mut world_framebuffers = Vec::new();
-        let mut swap_framebuffers = Vec::new();
-        for i in 0..self.swapchain.render_textures.len() {
-            let mut world_attachments = Vec::new();
-            world_attachments.push(
-                self.swapchain.render_textures[i]
-                    .borrow()
-                    .internal_data
-                    .image
-                    .view
-                    .unwrap(),
-            );
-            world_attachments.push(self.swapchain.depth_attachment.view.unwrap());
-            let framebuffer_create_info = FramebufferCreateInfo::default()
-                .render_pass(self.main_renderpass.renderpass)
-                .attachments(&world_attachments)
-                .height(self.framebuffer_height)
-                .width(self.framebuffer_width)
-                .layers(1);
-
-            let framebuffer = unsafe {
-                match self
-                    .device
-                    .device
-                    .create_framebuffer(&framebuffer_create_info, None)
-                {
-                    Ok(f) => f,
-                    Err(_) => {
-                        return Err(VulkanBackendError::OperationFailed {
-                            issue: "could not create framebuffer",
-                            file: file!(),
-                            line: line!(),
-                        });
-                    }
+    fn refresh_render_targets(&mut self) -> Result<()> {
+        // regenerate targets for all registered renderpass
+        for (_, index) in self.registered_renderpasses_hashmap.iter() {
+            for i in 0..self.swapchain.image_count as usize {
+                unsafe {
+                    self.device.device.destroy_framebuffer(
+                        self.registered_renderpasses[*index].borrow().targets[i]
+                            .internal_framebuffer,
+                        None,
+                    );
                 }
-            };
-            world_framebuffers.push(framebuffer);
+                self.registered_renderpasses[*index].borrow_mut().targets[i].internal_framebuffer =
+                    Framebuffer::null();
+                let window_target_texture = self.get_window_attachment(i);
+                let depth_target_texture = self.get_depth_attachment();
 
-            let mut ui_attachments = Vec::new();
-            ui_attachments.push(
-                self.swapchain.render_textures[i]
+                let attachments = if self.registered_renderpasses[*index]
                     .borrow()
-                    .internal_data
-                    .image
-                    .view
-                    .unwrap(),
-            );
-
-            let ui_framebuffer_create_info = FramebufferCreateInfo::default()
-                .render_pass(self.ui_renderpass.renderpass)
-                .attachments(&ui_attachments)
-                .height(self.framebuffer_height)
-                .width(self.framebuffer_width)
-                .layers(1);
-
-            let ui_framebuffer = unsafe {
-                match self
-                    .device
-                    .device
-                    .create_framebuffer(&ui_framebuffer_create_info, None)
+                    .clear_flags
+                    .contains(RenderpassClearFlags::DepthBuffer)
                 {
-                    Ok(f) => f,
-                    Err(_) => {
-                        return Err(VulkanBackendError::OperationFailed {
-                            issue: "could not create framebuffer",
-                            file: file!(),
-                            line: line!(),
-                        });
-                    }
-                }
-            };
-            swap_framebuffers.push(ui_framebuffer);
+                    vec![window_target_texture, depth_target_texture]
+                } else {
+                    vec![window_target_texture]
+                };
+                let render_target = self.create_render_target(*index, attachments.clone())?;
+                self.registered_renderpasses[*index].borrow_mut().targets[i] = render_target;
+            }
         }
-        self.world_framebuffers = world_framebuffers;
-        self.swapchain_framebuffers = swap_framebuffers;
         Ok(())
+    }
+
+    pub fn create_render_target(
+        &self,
+        renderpass_index: usize,
+        attachments: Vec<Rc<RefCell<Texture>>>,
+    ) -> Result<RenderTarget> {
+        let renderpass = &self.registered_renderpasses[renderpass_index];
+        let mut attachment_views = vec![];
+        for i in 0..attachments.len() {
+            attachment_views.push(attachments[i].borrow().internal_data.image.view.unwrap());
+        }
+
+        let framebuffer_create_info = FramebufferCreateInfo::default()
+            .render_pass(renderpass.borrow().internal_data.renderpass)
+            .attachments(&attachment_views)
+            .width(self.framebuffer_width)
+            .height(self.framebuffer_height)
+            .layers(1);
+        let framebuffer = unsafe {
+            self.device
+                .device
+                .create_framebuffer(&framebuffer_create_info, None)?
+        };
+        Ok(RenderTarget {
+            sync_to_window: 0,
+            attachments: attachments,
+            internal_framebuffer: framebuffer,
+        })
+    }
+
+    pub fn destroy_render_target(
+        &mut self,
+        render_target: &mut RenderTarget,
+        free_internal_memory: bool,
+    ) -> Result<()> {
+        unsafe {
+            self.device
+                .device
+                .destroy_framebuffer(render_target.internal_framebuffer, None);
+        }
+        render_target.internal_framebuffer = Framebuffer::null();
+        if free_internal_memory {
+            render_target.attachments.clear();
+        }
+        Ok(())
+    }
+
+    pub fn get_depth_attachment(&self) -> Rc<RefCell<Texture>> {
+        Rc::clone(&self.swapchain.depth_texture)
+    }
+
+    pub fn get_window_attachment_index(&self) -> u32 {
+        self.image_index
+    }
+
+    pub fn get_window_attachment(&self, index: usize) -> Rc<RefCell<Texture>> {
+        Rc::clone(&self.swapchain.render_textures[index])
     }
 
     fn create_buffers(
@@ -1307,10 +1510,10 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn shader_create(
+    pub fn create_shader(
         &self,
         shader: &mut Shader<'a>,
-        renderpass_id: BuiltInRenderpass,
+        renderpass_name: &str,
         stage_count: u8,
         stage_filenames: &Vec<String>,
         stages: &Vec<ShaderStage>,
@@ -1402,22 +1605,17 @@ impl<'a> VulkanContext {
             attributes: [(); VULKAN_SHADER_MAX_ATTRIBUTES]
                 .map(|_| VertexInputAttributeDescription::default()),
         };
-        let vk_shader = self.shader_initialize(shader, vulkan_shader_config, renderpass_id)?;
+        let vk_shader = self.shader_initialize(shader, vulkan_shader_config, renderpass_name)?;
         shader.internal_data = ShaderInternalData::Vulkan(vk_shader);
         Ok(())
     }
 
     pub fn shader_initialize(
         &self,
-        shader: &mut Shader,
+        shader: &mut Shader<'a>,
         mut vulkan_shader_config: VulkanShaderConfig<'a>,
-        renderpass_id: BuiltInRenderpass,
+        renderpass_name: &str,
     ) -> Result<VulkanShader<'a>> {
-        let renderpass = match renderpass_id {
-            BuiltInRenderpass::World => &self.main_renderpass,
-            BuiltInRenderpass::UI => &self.ui_renderpass,
-        };
-
         let mut vulkan_shader_stages = [VulkanShaderStage {
             shader_mod: ShaderModule::null(),
             shader_stage_create_info: PipelineShaderStageCreateInfo::default(),
@@ -1535,9 +1733,10 @@ impl<'a> VulkanContext {
             pipeline_create_infos[i] = vulkan_shader_stages[i].shader_stage_create_info;
         }
 
+        let renderpass = self.get_renderpass(renderpass_name)?;
         let pipeline = VulkanPipeline::create(
             &self.device,
-            renderpass,
+            &renderpass.borrow().internal_data,
             shader.attribute_stride as u32,
             attribute_count as u32,
             &vulkan_shader_config.attributes,
@@ -1594,7 +1793,7 @@ impl<'a> VulkanContext {
         let vulkan_shader = VulkanShader {
             mapped_uniform_block: mapped_memory,
             vulkan_shader_config,
-            renderpass: renderpass_id,
+            renderpass: renderpass,
             stages: vulkan_shader_stages,
             descriptor_pool,
             descriptor_set_layouts: descriptor_set_layout,
@@ -1687,7 +1886,7 @@ impl<'a> VulkanContext {
         })
     }
 
-    pub fn shader_destroy(&self, shader: &mut Shader) -> Result<()> {
+    pub fn destroy_shader(&self, shader: &mut Shader) -> Result<()> {
         let s = match shader.internal_data {
             ShaderInternalData::Vulkan(ref mut vulkan_shader) => vulkan_shader,
             ShaderInternalData::Unknown => {
@@ -1744,7 +1943,7 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn shader_use(&self, shader: &Shader) -> Result<()> {
+    pub fn use_shader(&self, shader: &Shader) -> Result<()> {
         let s = match shader.internal_data {
             ShaderInternalData::Vulkan(ref vulkan_shader) => vulkan_shader,
             ShaderInternalData::Unknown => {
@@ -1899,6 +2098,7 @@ impl<'a> VulkanContext {
                     .view
                     .is_none()
                 {
+                    // this should cause a validation error if this branch is reached
                     ImageView::null()
                 } else {
                     internal_data.instance_states[shader.bound_instance_id].instance_texture_maps
@@ -2249,18 +2449,10 @@ impl Drop for VulkanContext {
                 let _ = self.device.device.device_wait_idle();
                 self.object_index_buffer.destroy(&self.device);
                 self.object_vertex_buffer.destroy(&self.device);
-                for frame in &self.swapchain_framebuffers {
-                    self.device.device.destroy_framebuffer(*frame, None);
-                }
-                for frame in &self.world_framebuffers {
-                    self.device.device.destroy_framebuffer(*frame, None);
-                }
                 self.in_flight_frames.destroy(&self.device);
                 self.device
                     .device
                     .destroy_command_pool(self.device.graphics_command_pool, None);
-                self.ui_renderpass.destroy(&self.device);
-                self.main_renderpass.destroy(&self.device);
                 self.swapchain.destroy(&self.device);
                 self.device.device.destroy_device(None);
                 self.surface_loader.destroy_surface(self.surface, None);
@@ -2275,18 +2467,10 @@ impl Drop for VulkanContext {
                 let _ = self.device.device.device_wait_idle();
                 self.object_index_buffer.destroy(&self.device);
                 self.object_vertex_buffer.destroy(&self.device);
-                for frame in &self.swapchain_framebuffers {
-                    self.device.device.destroy_framebuffer(*frame, None);
-                }
-                for frame in &self.world_framebuffers {
-                    self.device.device.destroy_framebuffer(*frame, None);
-                }
                 self.in_flight_frames.destroy(&self.device);
                 self.device
                     .device
                     .destroy_command_pool(self.device.graphics_command_pool, None);
-                self.ui_renderpass.destroy(&self.device);
-                self.main_renderpass.destroy(&self.device);
                 self.swapchain.destroy(&self.device);
                 self.device.device.destroy_device(None);
                 self.surface_loader.destroy_surface(self.surface, None);

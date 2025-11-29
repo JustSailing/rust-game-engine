@@ -19,7 +19,6 @@ use crate::application::basic::math::transform::Transform;
 use crate::application::basic::math::vec2::Vec2;
 use crate::application::basic::math::vec3::{Vec3, Vector2D};
 use crate::application::basic::math::vec4::{Quat, Vec4};
-use crate::application::renderer::vulkan::vulkan_backend::BuiltInRenderpass;
 use crate::application::resources::resource_types::{
     GeometryConfig, Mesh, ResourceData, ResourceType,
 };
@@ -33,7 +32,8 @@ use basic::event::{EventCallback, EventCodes, EventSysError, EventSystem};
 use basic::input::{InputState, InputSysError};
 use basic::math::matrix4::Matrix4;
 use basic::window::{Window, WindowError};
-use renderer::renderer_types::{GeometryRenderData, Renderer, RendererError, RendererPacket};
+use renderer::frontend_renderer::{Renderer, RendererError};
+use renderer::renderer_types::{GeometryRenderData, RendererPacket};
 use resources::resource_types::Geometry;
 use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
 use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
@@ -720,6 +720,9 @@ impl<'a> ApplicationState<'a> {
         const FPS: f32 = 60.0;
         let frame_duration: Duration = Duration::from_secs_f32(1.0 / FPS);
         let mut last_frame_time = Instant::now();
+
+        let world_renderpass_name = String::from("Renderpass.Builtin.World");
+        let ui_renderpass_name = String::from("Renderpass.Builtin.UI");
         loop {
             if self.window.get_event().map_err(|e| AppError::WindowError {
                 source: e,
@@ -786,7 +789,7 @@ impl<'a> ApplicationState<'a> {
 
                 self.renderer_system
                     .borrow_mut()
-                    .begin_renderpass(BuiltInRenderpass::World)
+                    .begin_renderpass(&world_renderpass_name)
                     .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),
@@ -869,7 +872,7 @@ impl<'a> ApplicationState<'a> {
 
                 self.renderer_system
                     .borrow_mut()
-                    .end_renderpass(BuiltInRenderpass::World)
+                    .end_renderpass()
                     .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),
@@ -878,7 +881,7 @@ impl<'a> ApplicationState<'a> {
 
                 self.renderer_system
                     .borrow_mut()
-                    .begin_renderpass(BuiltInRenderpass::UI)
+                    .begin_renderpass(&ui_renderpass_name)
                     .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),
@@ -934,7 +937,7 @@ impl<'a> ApplicationState<'a> {
 
                 self.renderer_system
                     .borrow_mut()
-                    .end_renderpass(BuiltInRenderpass::UI)
+                    .end_renderpass()
                     .map_err(|e| AppError::RendererSysError {
                         source: e,
                         file: file!(),

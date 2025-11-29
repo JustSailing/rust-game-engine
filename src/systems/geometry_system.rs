@@ -5,7 +5,7 @@ use crate::application::{
         vec3::{Vec3, Vector2D, Vector3D, VectorKey},
         vec4::Vec4,
     },
-    renderer::renderer_types::{Renderer, RendererError},
+    renderer::frontend_renderer::{Renderer, RendererError},
     resources::resource_types::{Geometry, GeometryConfig, MaterialConfig},
     systems::material_system::{MaterialSysError, MaterialSystem},
     systems::shader_system::{ShaderSysError, ShaderSystem},

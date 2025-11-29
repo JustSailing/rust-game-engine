@@ -10,7 +10,8 @@ use crate::application::basic::event::{EventCallback, EventCodes, EventCtx};
 use crate::application::basic::input::InputState;
 use crate::application::basic::math::consts::INVALID_ID;
 use crate::application::basic::window::Key;
-use crate::application::renderer::renderer_types::{Renderer, RendererDebugViewMode};
+use crate::application::renderer::frontend_renderer::Renderer;
+use crate::application::renderer::renderer_types::RendererDebugViewMode;
 use crate::application::resources::resource_types::{MaterialConfig, Mesh};
 use crate::application::systems::material_system::MaterialSystem;
 use crate::application::systems::texture_system::TextureSystem;
@@ -47,7 +48,7 @@ pub struct Game<'a> {
 impl<'a> Game<'a> {
     // temporary
     pub fn initialize(&mut self) -> bool {
-        self.state.camera_position = Vec3::new(0.0, 0.0, 30.0);
+        self.state.camera_position = Vec3::new(10.5, 5.0, 9.5);
         self.state.camera_euler = Vec3::new_zeroes();
         self.state.view = Matrix4::translation(&self.state.camera_position);
         self.state.view = Matrix4::inverse(&self.state.view);

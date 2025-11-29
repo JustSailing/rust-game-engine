@@ -47,6 +47,7 @@ pub struct VulkanDevice {
 
     pub swapchain_support: SwapchainSupportInfo,
     pub depth_format: Format,
+    pub channel_count: u32,
     pub graphics_command_pool: CommandPool,
     pub graphics_queue_index: i32,
     pub present_queue_index: i32,
@@ -199,6 +200,7 @@ impl VulkanDevice {
                 properties,
                 features,
                 memory,
+                channel_count: 0, // should be assigned in detect_depth_format
                 swapchain_support: swap_info,
                 graphics_command_pool: graph_pool,
                 graphics_queue_index: queue_info.graphics_family_index,
@@ -418,15 +420,19 @@ impl VulkanDevice {
             Format::D32_SFLOAT_S8_UINT,
             Format::D24_UNORM_S8_UINT,
         ];
+
+        let sizes = [4, 4, 3];
         let flags = FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT;
-        for f in &candidates {
+        for (i, f) in candidates.iter().enumerate() {
             let properties =
                 unsafe { instance.get_physical_device_format_properties(self.physical_device, *f) };
             if (properties.linear_tiling_features & flags) == flags {
                 self.depth_format = *f;
+                self.channel_count = sizes[i];
                 return true;
             } else if (properties.optimal_tiling_features & flags) == flags {
                 self.depth_format = *f;
+                self.channel_count = sizes[i];
                 return true;
             }
         }

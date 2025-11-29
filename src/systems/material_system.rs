@@ -5,7 +5,7 @@ use crate::application::{
         filesystem::FileHandleError,
         math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3, vec4::Vec4},
     },
-    renderer::renderer_types::{Renderer, RendererError},
+    renderer::frontend_renderer::{Renderer, RendererError},
     resources::resource_types::{
         Material, MaterialConfig, ResourceData, ResourceType, TextureFilter, TextureRepeat,
         TextureUse,
