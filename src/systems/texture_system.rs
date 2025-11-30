@@ -3,7 +3,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::application::{
     basic::math::consts::INVALID_ID,
     renderer::frontend_renderer::{Renderer, RendererError},
-    resources::resource_types::{ResourceData, ResourceType, Texture, TextureData, TextureFlags},
+    resources::resource_types::{
+        ResourceData, ResourceType, Texture, TextureData, TextureFlags, TextureHandle,
+    },
     systems::resource_system::{ResourceSysError, ResourceSystem},
 };
 
@@ -97,10 +99,10 @@ pub const DEFAULT_TEXTURE_NORMAL_NAME: &'static str = "default_normal";
 
 pub struct TextureSystem {
     config: TextureSysConfig,
-    default_texture: Rc<RefCell<Texture>>,
-    default_specular_texture: Rc<RefCell<Texture>>,
-    default_normal_texture: Rc<RefCell<Texture>>,
-    registered_textures: Vec<Rc<RefCell<Texture>>>,
+    default_texture: TextureHandle,
+    default_specular_texture: TextureHandle,
+    default_normal_texture: TextureHandle,
+    registered_textures: Vec<Texture>,
     registered_textures_hashmap: HashMap<String, TextureRef>,
     frontend_renderer: Option<Rc<RefCell<Renderer>>>,
     resource_system: Rc<RefCell<ResourceSystem>>,
@@ -119,17 +121,62 @@ impl TextureSystem {
             });
         }
 
-        let mut registered_array = Vec::<Rc<RefCell<Texture>>>::with_capacity(config.max_count);
-        let registered_hash_map = HashMap::<String, TextureRef>::with_capacity(config.max_count);
+        let mut registered_array = Vec::<Texture>::with_capacity(config.max_count);
+        let mut registered_hash_map =
+            HashMap::<String, TextureRef>::with_capacity(config.max_count);
         for _ in 0..config.max_count {
-            registered_array.push(Rc::new(RefCell::new(Texture::default())));
+            registered_array.push(Texture::default());
         }
 
+        let default_texture_id = registered_array
+            .iter()
+            .enumerate()
+            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
+        registered_array[default_texture_id.unwrap()].id = default_texture_id.unwrap();
+        registered_hash_map.insert(
+            DEFAULT_TEXTURE_NAME.to_string(),
+            TextureRef {
+                reference_count: 0,
+                handle: default_texture_id.unwrap(),
+                auto_release: true,
+            },
+        );
+
+        let default_specular_texture_id = registered_array
+            .iter()
+            .enumerate()
+            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
+        registered_array[default_specular_texture_id.unwrap()].id =
+            default_specular_texture_id.unwrap();
+        registered_hash_map.insert(
+            DEFAULT_TEXTURE_SPECULAR_NAME.to_string(),
+            TextureRef {
+                reference_count: 0,
+                handle: default_specular_texture_id.unwrap(),
+                auto_release: true,
+            },
+        );
+
+        let default_normal_texture_id = registered_array
+            .iter()
+            .enumerate()
+            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
+
+        registered_array[default_normal_texture_id.unwrap()].id =
+            default_normal_texture_id.unwrap();
+        registered_hash_map.insert(
+            DEFAULT_TEXTURE_NORMAL_NAME.to_string(),
+            TextureRef {
+                reference_count: 0,
+                handle: default_normal_texture_id.unwrap(),
+                auto_release: true,
+            },
+        );
         Ok(Self {
             config,
-            default_texture: Rc::new(RefCell::new(Texture::default())),
-            default_specular_texture: Rc::new(RefCell::new(Texture::default())),
-            default_normal_texture: Rc::new(RefCell::new(Texture::default())),
+            default_texture: default_texture_id.unwrap(),
+            default_specular_texture: default_specular_texture_id.unwrap(),
+            default_normal_texture: default_normal_texture_id.unwrap(),
             registered_textures: registered_array,
             registered_textures_hashmap: registered_hash_map,
             frontend_renderer: None,
@@ -157,6 +204,7 @@ impl TextureSystem {
             }
         }
         let mut texture = Texture::default()
+            .id(self.default_texture)
             .width(TEX_DIMENSION as u32)
             .height(TEX_DIMENSION as u32)
             .channel_count(CHANNELS)
@@ -181,10 +229,11 @@ impl TextureSystem {
                 line: line!(),
             })?;
 
-        self.default_texture.replace(texture);
+        self.registered_textures[self.default_texture] = texture;
 
         let spec_pixels = [0u8; 16 * 16 * 4];
         let mut specular_texture = Texture::default()
+            .id(self.default_specular_texture)
             .width(16)
             .height(16)
             .channel_count(4)
@@ -199,7 +248,7 @@ impl TextureSystem {
                 file: file!(),
                 line: line!(),
             })?;
-        self.default_specular_texture.replace(specular_texture);
+        self.registered_textures[self.default_specular_texture] = specular_texture;
 
         let mut normal_pixels = [0u8; 16 * 16 * 4];
         for i in (0..16 * 16).step_by(4) {
@@ -210,6 +259,7 @@ impl TextureSystem {
         }
 
         let mut normal_texture = Texture::default()
+            .id(self.default_normal_texture)
             .width(16)
             .height(16)
             .channel_count(4)
@@ -225,7 +275,7 @@ impl TextureSystem {
                 line: line!(),
             })?;
 
-        self.default_normal_texture.replace(normal_texture);
+        self.registered_textures[self.default_normal_texture] = normal_texture;
 
         Ok(())
     }
@@ -241,7 +291,7 @@ impl TextureSystem {
         };
         renderer
             .borrow()
-            .destroy_texture(&self.default_texture.borrow())
+            .destroy_texture(&self.registered_textures[self.default_texture])
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -249,7 +299,7 @@ impl TextureSystem {
             })?;
         renderer
             .borrow()
-            .destroy_texture(&self.default_specular_texture.borrow())
+            .destroy_texture(&self.registered_textures[self.default_specular_texture])
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -257,7 +307,7 @@ impl TextureSystem {
             })?;
         renderer
             .borrow()
-            .destroy_texture(&self.default_normal_texture.borrow())
+            .destroy_texture(&self.registered_textures[self.default_normal_texture])
             .map_err(|e| TextureSysError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -350,19 +400,28 @@ impl TextureSystem {
         Ok(texture)
     }
 
-    pub fn acquire(&mut self, name: &String, auto_release: bool) -> Result<Rc<RefCell<Texture>>> {
+    pub fn get_texture(&self, texture_handle: TextureHandle) -> Result<&Texture> {
+        Ok(&self.registered_textures[texture_handle])
+    }
+
+    pub fn get_mut_texture(&mut self, texture_handle: TextureHandle) -> Result<&mut Texture> {
+        Ok(&mut self.registered_textures[texture_handle])
+    }
+
+    pub fn acquire(&mut self, name: &str, auto_release: bool) -> Result<TextureHandle> {
+        // println!("texture acquire name {}", name);
         if name == DEFAULT_TEXTURE_NAME {
             // NOTE: probably worry about normal and specular texuters here as well
-            return Ok(Rc::clone(&self.default_texture));
+            return Ok(self.default_texture);
         } else if name == DEFAULT_TEXTURE_SPECULAR_NAME {
-            return Ok(Rc::clone(&self.default_specular_texture));
+            return Ok(self.default_specular_texture);
         } else if name == DEFAULT_TEXTURE_NORMAL_NAME {
-            return Ok(Rc::clone(&self.default_normal_texture));
+            return Ok(self.default_normal_texture);
         }
 
         let mut id = INVALID_ID as u32;
         self.process_texture_reference(name, 1, auto_release, false, &mut id)?;
-        Ok(Rc::clone(&self.registered_textures[id as usize]))
+        Ok(id as usize)
     }
 
     pub fn acquire_writable(
@@ -372,35 +431,33 @@ impl TextureSystem {
         height: u32,
         channel_count: u8,
         has_transparency: bool,
-    ) -> Result<Rc<RefCell<Texture>>> {
+    ) -> Result<TextureHandle> {
         let mut id = INVALID_ID as u32;
 
         self.process_texture_reference(name, 1, false, true, &mut id)?;
+        // println!("texture name writable: {}, id {}", name, id);
 
-        let texture = Rc::clone(&self.registered_textures[id as usize]);
-        texture.borrow_mut().width = width;
-        texture.borrow_mut().height = height;
-        texture.borrow_mut().channel_count = channel_count;
-        texture.borrow_mut().generation = INVALID_ID;
+        let texture = &mut self.registered_textures[id as usize];
+        texture.width = width;
+        texture.height = height;
+        texture.channel_count = channel_count;
+        texture.generation = INVALID_ID;
         if has_transparency {
-            texture
-                .borrow_mut()
-                .flags
-                .insert(TextureFlags::Transparency)
+            texture.flags.insert(TextureFlags::Transparency)
         }
-        texture.borrow_mut().flags.insert(TextureFlags::Writable);
-        texture.borrow_mut().internal_data = TextureData::default();
+        texture.flags.insert(TextureFlags::Writable);
+        texture.internal_data = TextureData::default();
         if let Some(ref renderer) = self.frontend_renderer {
             renderer
                 .borrow()
-                .create_writable_texture(&mut texture.borrow_mut())
+                .create_writable_texture(texture)
                 .map_err(|e| TextureSysError::RendererSysError {
                     source: e,
                     file: file!(),
                     line: line!(),
                 })?;
         }
-        Ok(texture)
+        Ok(id as usize)
     }
 
     pub fn wrap_internal(
@@ -413,32 +470,31 @@ impl TextureSystem {
         is_writable: bool,
         register_texture: bool,
         internal_data: TextureData,
-    ) -> Result<Rc<RefCell<Texture>>> {
+    ) -> Result<TextureHandle> {
         let mut id = INVALID_ID as u32;
-        let texture = if register_texture {
+        if register_texture {
             self.process_texture_reference(name, 1, false, true, &mut id)?;
-            Rc::clone(&self.registered_textures[id as usize])
-        } else {
-            Rc::new(RefCell::new(Texture::default()))
         };
+        let mut texture = Texture::default();
 
-        texture.borrow_mut().id = id as usize;
-        texture.borrow_mut().width = width;
-        texture.borrow_mut().height = height;
-        texture.borrow_mut().channel_count = channel_count;
-        texture.borrow_mut().generation = INVALID_ID;
+        texture.id = id as usize;
+        texture.width = width;
+        texture.height = height;
+        texture.channel_count = channel_count;
+        texture.generation = INVALID_ID;
         if has_transparency {
-            texture
-                .borrow_mut()
-                .flags
-                .insert(TextureFlags::Transparency)
+            texture.flags.insert(TextureFlags::Transparency)
         }
         if is_writable {
-            texture.borrow_mut().flags.insert(TextureFlags::Writable)
+            texture.flags.insert(TextureFlags::Writable)
         }
-        texture.borrow_mut().flags.insert(TextureFlags::Wrapped);
-        texture.borrow_mut().internal_data = internal_data;
-        Ok(texture)
+        texture.flags.insert(TextureFlags::Wrapped);
+        texture.internal_data = internal_data;
+        // println!("texture name = {} texture id = {}", name, id);
+        if id != INVALID_ID as u32 {
+            self.registered_textures[id as usize] = texture;
+        }
+        Ok(id as usize)
     }
 
     pub fn set_internal(texture: &mut Texture, internal_data: TextureData) -> Result<()> {
@@ -448,12 +504,13 @@ impl TextureSystem {
     }
 
     pub fn resize(
-        &self,
-        texture: &mut Texture,
+        &mut self,
+        texture_handle: TextureHandle,
         width: u32,
         height: u32,
         regenerate_internal_data: bool,
     ) -> Result<()> {
+        let texture = &mut self.registered_textures[texture_handle];
         if !texture.flags.contains(TextureFlags::Writable) {
             println!(
                 "[WARN] texture system error: resize should not be called on textures that are not writable"
@@ -477,16 +534,9 @@ impl TextureSystem {
         Ok(())
     }
 
-    pub fn release(&mut self, name: &str) -> Result<()> {
-        if name == DEFAULT_TEXTURE_NAME
-            || name == DEFAULT_TEXTURE_SPECULAR_NAME
-            || name == DEFAULT_TEXTURE_NORMAL_NAME
-        {
-            return Ok(());
-        }
-
+    pub fn release(&mut self, texture_name: &str) -> Result<()> {
         let mut id = INVALID_ID as u32;
-        self.process_texture_reference(name, -1, false, false, &mut id)?;
+        self.process_texture_reference(texture_name, -1, false, false, &mut id)?;
         Ok(())
     }
 
@@ -503,7 +553,7 @@ impl TextureSystem {
             .iter()
             .enumerate()
             .find_map(|(i, texture_rc)| {
-                if texture_rc.borrow().id == INVALID_ID {
+                if texture_rc.id == INVALID_ID {
                     Some(i)
                 } else {
                     None
@@ -560,7 +610,7 @@ impl TextureSystem {
         // release
         if loadable < 0 {
             if tex_ref.reference_count == 0 && tex_ref.auto_release {
-                let texture = self.registered_textures[tex_ref.handle].borrow_mut();
+                let texture = &mut self.registered_textures[tex_ref.handle];
                 let renderer = if let Some(ref renderer) = self.frontend_renderer {
                     renderer
                 } else {
@@ -580,8 +630,8 @@ impl TextureSystem {
                 // nothing happens here
             } else {
                 if load_needed {
-                    self.registered_textures[tex_ref.handle].replace(self.load_texture(name)?);
-                    self.registered_textures[tex_ref.handle].borrow_mut().id = tex_ref.handle;
+                    self.registered_textures[tex_ref.handle] = self.load_texture(name)?;
+                    self.registered_textures[tex_ref.handle].id = tex_ref.handle;
                 }
             }
         }
@@ -592,16 +642,16 @@ impl TextureSystem {
         Ok(())
     }
 
-    pub fn get_default_texture(&self) -> Result<Rc<RefCell<Texture>>> {
-        Ok(Rc::clone(&self.default_texture))
+    pub fn get_default_texture(&self) -> Result<&Texture> {
+        Ok(&self.registered_textures[self.default_texture])
     }
 
-    pub fn get_default_specular_texture(&self) -> Result<Rc<RefCell<Texture>>> {
-        Ok(Rc::clone(&self.default_specular_texture))
+    pub fn get_default_specular_texture(&self) -> Result<&Texture> {
+        Ok(&self.registered_textures[self.default_specular_texture])
     }
 
-    pub fn get_default_normal_texture(&self) -> Result<Rc<RefCell<Texture>>> {
-        Ok(Rc::clone(&self.default_normal_texture))
+    pub fn get_default_normal_texture(&self) -> Result<&Texture> {
+        Ok(&self.registered_textures[self.default_normal_texture])
     }
 }
 
@@ -609,11 +659,11 @@ impl Drop for TextureSystem {
     fn drop(&mut self) {
         let _ = self.destroy_default_textures();
         for texture in self.registered_textures.iter_mut() {
-            if texture.borrow().id != INVALID_ID {
+            if texture.id != INVALID_ID {
                 self.registered_textures_hashmap
                     .iter()
                     .find_map(|(key, value)| {
-                        if value.handle == texture.borrow().id && !value.auto_release {
+                        if value.handle == texture.id && !value.auto_release {
                             println!("WARN: did not free texture name: {}", key);
                             Some(())
                         } else {
@@ -622,7 +672,7 @@ impl Drop for TextureSystem {
                     });
 
                 let _ = if let Some(ref renderer) = self.frontend_renderer {
-                    let _ = renderer.borrow().destroy_texture(&texture.borrow());
+                    let _ = renderer.borrow().destroy_texture(&texture);
                 };
             }
         }

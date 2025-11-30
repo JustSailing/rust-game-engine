@@ -30,6 +30,10 @@ impl Texture {
         }
         self
     }
+    pub fn id(mut self, id: usize) -> Self {
+        self.id = id;
+        self
+    }
     pub fn writeable_flag(mut self, is_writeable: bool) -> Self {
         if is_writeable {
             self.flags.insert(TextureFlags::Writable);
@@ -136,10 +140,13 @@ impl Into<SamplerAddressMode> for TextureRepeat {
     }
 }
 
+pub type TextureHandle = usize;
+
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct TextureMap {
-    pub texture: Rc<RefCell<Texture>>,
+    pub texture_handle: TextureHandle,
+    pub texture_name: String,
     pub use_type: TextureUse,
     pub filter_minify: TextureFilter,
     pub filter_magnify: TextureFilter,
@@ -152,7 +159,8 @@ pub struct TextureMap {
 impl Default for TextureMap {
     fn default() -> Self {
         Self {
-            texture: Default::default(),
+            texture_handle: INVALID_ID,
+            texture_name: Default::default(),
             use_type: TextureUse::Unknown,
             filter_minify: TextureFilter::Linear,
             filter_magnify: TextureFilter::Linear,
@@ -231,7 +239,8 @@ impl Default for Material {
             // for texture repeat and filter
             // it would probably be a good idea to have an Unknown variant
             diffuse_map: TextureMap {
-                texture: Rc::new(RefCell::new(Texture::default())),
+                texture_handle: INVALID_ID,
+                texture_name: Default::default(),
                 use_type: TextureUse::Unknown,
                 filter_minify: TextureFilter::Nearest,
                 filter_magnify: TextureFilter::Nearest,
@@ -241,7 +250,8 @@ impl Default for Material {
                 internal_data: Sampler::null(),
             },
             specular_map: TextureMap {
-                texture: Rc::new(RefCell::new(Texture::default())),
+                texture_handle: INVALID_ID,
+                texture_name: Default::default(),
                 use_type: TextureUse::Unknown,
                 filter_minify: TextureFilter::Nearest,
                 filter_magnify: TextureFilter::Nearest,
@@ -251,7 +261,8 @@ impl Default for Material {
                 internal_data: Sampler::null(),
             },
             normal_map: TextureMap {
-                texture: Rc::new(RefCell::new(Texture::default())),
+                texture_handle: INVALID_ID,
+                texture_name: Default::default(),
                 use_type: TextureUse::Unknown,
                 filter_minify: TextureFilter::Nearest,
                 filter_magnify: TextureFilter::Nearest,
@@ -292,6 +303,9 @@ impl Default for GeometryConfig<Vector3D, u32> {
     }
 }
 
+pub type MaterialHandle = usize;
+pub type GeometryHandle = usize;
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct Geometry {
@@ -300,7 +314,8 @@ pub struct Geometry {
     pub material_instance_id: usize,
     pub generation: usize,
     pub name: String,
-    pub material: Rc<RefCell<Material>>,
+    pub material_handle: MaterialHandle,
+    pub material_name: String,
 }
 
 impl Default for Geometry {
@@ -310,7 +325,8 @@ impl Default for Geometry {
             internal_id: INVALID_ID,
             generation: INVALID_ID,
             name: Default::default(),
-            material: Default::default(),
+            material_handle: INVALID_ID,
+            material_name: Default::default(),
             material_instance_id: INVALID_ID,
         }
     }
@@ -319,7 +335,7 @@ impl Default for Geometry {
 #[derive(Debug)]
 #[repr(C)]
 pub struct Mesh {
-    pub geometries: Vec<Rc<RefCell<Geometry>>>,
+    pub geometries: Vec<GeometryHandle>,
     pub transform: Rc<RefCell<Transform>>,
     //pub model: Matrix4,
 }

@@ -3,7 +3,7 @@ use crate::application::renderer::vulkan::{
 };
 
 //use crate::application::renderer::renderer_types::RenderTarget;
-use crate::application::resources::resource_types::{Texture, TextureData};
+use crate::application::resources::resource_types::{TextureData, TextureHandle};
 use crate::application::systems::texture_system::TextureSystem;
 use ash::{
     Instance,
@@ -26,8 +26,8 @@ pub struct VulkanSwapchain {
     pub swapchain: SwapchainKHR,
     swapchain_loader: swapchain::Device,
     pub image_count: u32,
-    pub render_textures: Vec<Rc<RefCell<Texture>>>,
-    pub depth_texture: Rc<RefCell<Texture>>,
+    pub render_textures: Vec<TextureHandle>,
+    pub depth_texture: TextureHandle,
     //pub render_targets: Vec<RenderTarget>,
 }
 
@@ -216,7 +216,7 @@ impl VulkanSwapchain {
                     4,
                     false,
                     true,
-                    false,
+                    true,
                     internal_data,
                 )
                 .map_err(|_| VulkanBackendError::OperationFailed {
@@ -228,6 +228,14 @@ impl VulkanSwapchain {
         }
 
         for i in 0..images.len() {
+            let mut tex_sys = texture_system.borrow_mut();
+            let texture = tex_sys.get_mut_texture(render_textures[i]).map_err(|_| {
+                VulkanBackendError::OperationFailed {
+                    issue: "could not get texture",
+                    file: file!(),
+                    line: line!(),
+                }
+            })?;
             let sub = ImageSubresourceRange::default()
                 .aspect_mask(ImageAspectFlags::COLOR)
                 .base_mip_level(0)
@@ -235,11 +243,12 @@ impl VulkanSwapchain {
                 .base_array_layer(0)
                 .layer_count(1);
             let view_create_info = ImageViewCreateInfo::default()
-                .image(render_textures[i].borrow().internal_data.image.image)
+                .image(texture.internal_data.image.image)
                 .format(format_.format)
                 .view_type(ImageViewType::TYPE_2D)
                 .subresource_range(sub);
-            render_textures[i].borrow_mut().internal_data.image.view = Some(unsafe {
+
+            texture.internal_data.image.view = Some(unsafe {
                 match device.device.create_image_view(&view_create_info, None) {
                     Ok(v) => v,
                     Err(_) => {
@@ -278,7 +287,7 @@ impl VulkanSwapchain {
                 device.channel_count as u8,
                 false,
                 true,
-                false,
+                true,
                 depth_texture_data,
             )
             .map_err(|_| VulkanBackendError::OperationFailed {
@@ -299,21 +308,34 @@ impl VulkanSwapchain {
         })
     }
 
-    pub fn destroy(&self, device: &VulkanDevice) {
-        self.depth_texture
+    pub fn destroy(&self, device: &VulkanDevice, texture_system: &Rc<RefCell<TextureSystem>>) {
+        match texture_system
             .borrow_mut()
-            .internal_data
-            .image
-            .destroy(device);
+            .get_mut_texture(self.depth_texture)
+            .map_err(|_| VulkanBackendError::OperationFailed {
+                issue: "could not get depth texture",
+                file: file!(),
+                line: line!(),
+            }) {
+            Ok(t) => t.internal_data.image.destroy(device),
+            Err(_) => println!("could not destroy depth texture image"),
+        }
 
         for i in 0..self.render_textures.len() {
-            if let Some(view) = self.render_textures[i]
+            match texture_system
                 .borrow_mut()
-                .internal_data
-                .image
-                .view
-            {
-                unsafe { device.device.destroy_image_view(view, None) };
+                .get_mut_texture(self.render_textures[i])
+                .map_err(|_| VulkanBackendError::OperationFailed {
+                    issue: "could not get depth texture",
+                    file: file!(),
+                    line: line!(),
+                }) {
+                Ok(t) => {
+                    if let Some(view) = t.internal_data.image.view {
+                        unsafe { device.device.destroy_image_view(view, None) };
+                    }
+                }
+                Err(_) => println!("could not destroy depth texture image"),
             }
         }
         unsafe {
@@ -483,7 +505,7 @@ impl VulkanSwapchain {
             texture_system
                 .borrow_mut()
                 .resize(
-                    &mut self.render_textures[i].borrow_mut(),
+                    self.render_textures[i],
                     swapchain_extent.width,
                     swapchain_extent.height,
                     false,
@@ -495,25 +517,27 @@ impl VulkanSwapchain {
                 })?;
         }
 
-        self.depth_texture
-            .borrow_mut()
-            .internal_data
-            .image
-            .destroy(device);
-        for i in 0..self.render_textures.len() {
-            if let Some(view) = self.render_textures[i]
-                .borrow_mut()
-                .internal_data
-                .image
-                .view
-            {
-                unsafe { device.device.destroy_image_view(view, None) };
-            }
-        }
-        unsafe {
-            self.swapchain_loader
-                .destroy_swapchain(self.swapchain, None)
-        };
+        self.destroy(&device, texture_system);
+
+        // self.depth_texture
+        //     .borrow_mut()
+        //     .internal_data
+        //     .image
+        //     .destroy(device);
+        // for i in 0..self.render_textures.len() {
+        //     if let Some(view) = self.render_textures[i]
+        //         .borrow_mut()
+        //         .internal_data
+        //         .image
+        //         .view
+        //     {
+        //         unsafe { device.device.destroy_image_view(view, None) };
+        //     }
+        // }
+        // unsafe {
+        //     self.swapchain_loader
+        //         .destroy_swapchain(self.swapchain, None)
+        // };
 
         let images = unsafe {
             match swapchain_loader.get_swapchain_images(swap) {
@@ -528,14 +552,28 @@ impl VulkanSwapchain {
             }
         };
         for i in 0..images.len() {
-            self.render_textures[i]
+            texture_system
                 .borrow_mut()
+                .get_mut_texture(self.render_textures[i])
+                .map_err(|_| VulkanBackendError::OperationFailed {
+                    issue: "could not get mutable texture",
+                    file: file!(),
+                    line: line!(),
+                })?
                 .internal_data
                 .image
                 .image = images[i];
         }
 
         for i in 0..images.len() {
+            let mut tex_sys = texture_system.borrow_mut();
+            let texture = tex_sys
+                .get_mut_texture(self.render_textures[i])
+                .map_err(|_| VulkanBackendError::OperationFailed {
+                    issue: "could not get mutable texture",
+                    file: file!(),
+                    line: line!(),
+                })?;
             let sub = ImageSubresourceRange::default()
                 .aspect_mask(ImageAspectFlags::COLOR)
                 .base_mip_level(0)
@@ -543,21 +581,11 @@ impl VulkanSwapchain {
                 .base_array_layer(0)
                 .layer_count(1);
             let view_create_info = ImageViewCreateInfo::default()
-                .image(
-                    self.render_textures[i]
-                        .borrow_mut()
-                        .internal_data
-                        .image
-                        .image,
-                )
+                .image(texture.internal_data.image.image)
                 .format(format_.format)
                 .view_type(ImageViewType::TYPE_2D)
                 .subresource_range(sub);
-            self.render_textures[i]
-                .borrow_mut()
-                .internal_data
-                .image
-                .view = Some(unsafe {
+            texture.internal_data.image.view = Some(unsafe {
                 match device.device.create_image_view(&view_create_info, None) {
                     Ok(v) => v,
                     Err(_) => {
@@ -596,7 +624,7 @@ impl VulkanSwapchain {
                 device.channel_count as u8,
                 false,
                 true,
-                false,
+                true,
                 depth_texture_data,
             )
             .map_err(|_| VulkanBackendError::OperationFailed {

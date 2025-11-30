@@ -27,6 +27,7 @@ use crate::application::systems::material_system::{
     BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI,
 };
 use crate::application::systems::shader_system::{ShaderSysConfig, ShaderSysError, ShaderSystem};
+use crate::application::systems::texture_system::DEFAULT_TEXTURE_NAME;
 use crate::{Game, GameState};
 use basic::event::{EventCallback, EventCodes, EventSysError, EventSystem};
 use basic::input::{InputState, InputSysError};
@@ -34,7 +35,7 @@ use basic::math::matrix4::Matrix4;
 use basic::window::{Window, WindowError};
 use renderer::frontend_renderer::{Renderer, RendererError};
 use renderer::renderer_types::{GeometryRenderData, RendererPacket};
-use resources::resource_types::Geometry;
+use resources::resource_types::GeometryHandle;
 use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
 use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
 use systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
@@ -138,7 +139,7 @@ pub struct ApplicationState<'a> {
     pos_y: i32,
     width: i32,
     height: i32,
-    test_ui_geometry: Rc<RefCell<Geometry>>,
+    test_ui_geometry: GeometryHandle,
     meshes: Vec<Mesh>,
     resource_system: Rc<RefCell<ResourceSystem>>,
     renderer_system: Rc<RefCell<Renderer>>,
@@ -249,13 +250,16 @@ impl<'a> ApplicationState<'a> {
 
         renderer_system
             .borrow_mut()
-            .set_default_texture(texture_system.borrow().get_default_texture().map_err(|e| {
-                AppError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                }
-            })?)
+            .set_default_texture(
+                texture_system
+                    .borrow_mut()
+                    .acquire(DEFAULT_TEXTURE_NAME, true)
+                    .map_err(|e| AppError::TextureSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?,
+            )
             .map_err(|e| AppError::RendererSysError {
                 source: e,
                 file: file!(),
@@ -757,9 +761,17 @@ impl<'a> ApplicationState<'a> {
                     });
                 }
 
+                let geo_sys = self.geometry_system.borrow_mut();
+
                 let mut test_ui_render = GeometryRenderData {
                     model: Matrix4::translation(&Vec3::new(0.0, 0.0, 0.0)),
-                    geometry: Rc::clone(&self.test_ui_geometry),
+                    geometry: geo_sys.get_geometry(self.test_ui_geometry).map_err(|e| {
+                        AppError::GeometrySysError {
+                            source: e,
+                            file: file!(),
+                            line: line!(),
+                        }
+                    })?,
                 };
 
                 // shouldn't be creating a new vec each iteration
@@ -805,20 +817,45 @@ impl<'a> ApplicationState<'a> {
                 for mesh in self.meshes.iter() {
                     for g in mesh.geometries.iter() {
                         //let g_ref = g.borrow_mut();
+                        let g_ref =
+                            geo_sys
+                                .get_geometry(*g)
+                                .map_err(|e| AppError::GeometrySysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                        {
+                            let mut material_sys = self.material_system.borrow_mut();
+                            let material_ref = material_sys
+                                .get_mut_material(g_ref.material_handle)
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
 
-                        self.shader_system
-                            .borrow_mut()
-                            .use_by_id(g.borrow().material.borrow().shader_id)
-                            .map_err(|e| AppError::ShaderSysError {
-                                source: e,
-                                file: file!(),
-                                line: line!(),
-                            })?;
-                        if !global_updated {
-                            self.material_system
+                            self.shader_system
                                 .borrow_mut()
+                                .use_by_id(material_ref.shader_id)
+                                .map_err(|e| AppError::ShaderSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                        }
+                        if !global_updated {
+                            let material_sys = self.material_system.borrow();
+                            let material_ref = material_sys
+                                .get_material(g_ref.material_handle)
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                            material_sys
                                 .apply_global(
-                                    g.borrow().material.borrow().shader_id as u32,
+                                    material_ref.shader_id as u32,
                                     &self.renderer_system.borrow().projection,
                                     &self.renderer_system.borrow().view,
                                     &self.renderer_system.borrow().view_position,
@@ -832,30 +869,53 @@ impl<'a> ApplicationState<'a> {
                                 })?;
                             global_updated = true;
                         }
+
+                        let mut material_render_frame_number_equal_render_system = false;
                         let w = mesh.transform.borrow_mut().get_world();
-                        if g.borrow().material.borrow().render_frame_number
-                            != self.renderer_system.borrow().frame_number
                         {
-                            self.material_system
-                                .borrow()
-                                .apply_instance(
-                                    &g.borrow().material.borrow(),
-                                    g.borrow().material_instance_id,
-                                    &w,
-                                )
+                            let mut material_sys = self.material_system.borrow_mut();
+                            material_render_frame_number_equal_render_system = material_sys
+                                .get_mut_material(g_ref.material_handle)
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?
+                                .render_frame_number
+                                != self.renderer_system.borrow().frame_number;
+                        }
+                        if material_render_frame_number_equal_render_system {
+                            let material_sys = self.material_system.borrow();
+                            let material_ref = material_sys
+                                .get_material(g_ref.material_handle)
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                            material_sys
+                                .apply_instance(material_ref, g_ref.material_instance_id, &w)
                                 .map_err(|e| AppError::MaterialSysError {
                                     source: e,
                                     file: file!(),
                                     line: line!(),
                                 })?;
                         } else {
-                            g.borrow_mut().material.borrow_mut().render_frame_number =
+                            let mut material_sys = self.material_system.borrow_mut();
+                            let material_ref = material_sys
+                                .get_mut_material(g_ref.material_handle)
+                                .map_err(|e| AppError::MaterialSysError {
+                                    source: e,
+                                    file: file!(),
+                                    line: line!(),
+                                })?;
+                            material_ref.render_frame_number =
                                 self.renderer_system.borrow().frame_number;
                         }
 
                         let mut geo_render_data = GeometryRenderData {
                             model: w, //mesh.transform.borrow_mut().get_world(),
-                            geometry: Rc::clone(&g),
+                            geometry: g_ref,
                         };
 
                         self.renderer_system
@@ -887,19 +947,26 @@ impl<'a> ApplicationState<'a> {
                         file: file!(),
                         line: line!(),
                     })?;
-                self.shader_system
-                    .borrow_mut()
-                    .use_by_id(test_ui_render.geometry.borrow().material.borrow().shader_id)
-                    .map_err(|e| AppError::ShaderSysError {
+                let material_sys = self.material_system.borrow();
+                let material_ref = material_sys
+                    .get_material(test_ui_render.geometry.material_handle)
+                    .map_err(|e| AppError::MaterialSysError {
                         source: e,
                         file: file!(),
                         line: line!(),
                     })?;
 
-                self.material_system
+                self.shader_system
                     .borrow_mut()
+                    .use_by_id(material_ref.shader_id)
+                    .map_err(|e| AppError::ShaderSysError {
+                        source: e,
+                        file: file!(),
+                        line: line!(),
+                    })?;
+                material_sys
                     .apply_global(
-                        test_ui_render.geometry.borrow().material.borrow().shader_id as u32,
+                        material_ref.shader_id as u32,
                         &self.renderer_system.borrow().ui_projection,
                         &self.renderer_system.borrow().ui_view,
                         &Vec3::new(1.0, 1.0, 1.0),
@@ -912,12 +979,10 @@ impl<'a> ApplicationState<'a> {
                         line: line!(),
                     })?;
                 {
-                    let t_ui_geo = test_ui_render.geometry.borrow_mut();
-                    self.material_system
-                        .borrow()
+                    material_sys
                         .apply_instance(
-                            &t_ui_geo.material.borrow(),
-                            t_ui_geo.material_instance_id,
+                            material_ref,
+                            test_ui_render.geometry.material_instance_id,
                             &test_ui_render.model,
                         )
                         .map_err(|e| AppError::MaterialSysError {
