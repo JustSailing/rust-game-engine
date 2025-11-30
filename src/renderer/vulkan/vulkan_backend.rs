@@ -20,13 +20,13 @@ use crate::application::{
     },
     resources::resource_types::{
         Geometry, ResourceData, ResourceType, ShaderAttributeType, ShaderScope, ShaderStage,
-        ShaderUniformType, Texture, TextureMap,
+        ShaderUniformType, Texture, TextureHandle, TextureMap,
     },
     systems::{
         geometry_system::DEFAULT_GEOMETRY_NAME,
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{Shader, ShaderInternalData},
-        texture_system::TextureSystem,
+        texture_system::{DEFAULT_TEXTURE_NAME, TextureSystem},
     },
 };
 
@@ -45,7 +45,7 @@ use ash::{
         DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceSize, Extent2D, Fence, Format,
         Framebuffer, FramebufferCreateInfo, ImageAspectFlags, ImageLayout, ImageTiling, ImageType,
-        ImageUsageFlags, ImageView, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
+        ImageUsageFlags, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
         PipelineBindPoint, PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D,
         RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SUBPASS_EXTERNAL, SampleCountFlags,
         Sampler, SamplerCreateInfo, SamplerMipmapMode, ShaderModule, ShaderModuleCreateInfo,
@@ -201,7 +201,7 @@ pub struct VulkanShaderInstanceState {
     id: u32,
     offset: u64,
     descriptor_set_state: VulkanShaderDescriptorSetState,
-    instance_texture_maps: Vec<Rc<RefCell<TextureMap>>>,
+    instance_texture_maps: Vec<TextureMap>,
 }
 
 impl Default for VulkanShaderInstanceState {
@@ -266,7 +266,7 @@ pub struct VulkanContext {
     dbg_instance_loader: debug_utils::Instance,
     #[cfg(feature = "debug")]
     debug_utils_loader: debug_utils::Device,
-    default_texture: Rc<RefCell<Texture>>,
+    default_texture: TextureHandle,
     image_index: u32,
     resource_system: Rc<RefCell<ResourceSystem>>,
     texture_system: Rc<RefCell<TextureSystem>>,
@@ -413,20 +413,33 @@ impl<'a> VulkanContext {
                 )?;
             renderpass_hashmap.insert(renderpass_config.name.clone(), index);
             for i in 0..swap.render_textures.len() {
-                let depth_texture = Rc::clone(&swap.depth_texture);
-                let world_texture = Rc::clone(&swap.render_textures[i]);
+                // let tex_sys = texture_system.borrow_mut();
+                // let depth_texture = tex_sys.get_texture(swap.depth_texture).map_err(|_| {
+                //     VulkanBackendError::OperationFailed { issue: "could not get depth texture", file: file!(), line: line!() }
+                // })?;
+                // let world_texture = tex_sys.get_texture(swap.render_textures[i]).map_err(|_| {
+                //     VulkanBackendError::OperationFailed { issue: "could not get depth texture", file: file!(), line: line!() }
+                // })?;
+
                 let attachments = if renderpass_config
                     .clear_flags
                     .contains(RenderpassClearFlags::DepthBuffer)
                 {
-                    vec![world_texture, depth_texture]
+                    vec![swap.render_textures[i], swap.depth_texture]
                 } else {
-                    vec![world_texture]
+                    vec![swap.render_textures[i]]
                 };
                 let mut attachment_views = vec![];
                 for i in 0..attachments.len() {
-                    attachment_views
-                        .push(attachments[i].borrow().internal_data.image.view.unwrap());
+                    let tex_sys = texture_system.borrow_mut();
+                    let texture = tex_sys.get_texture(attachments[i]).map_err(|_| {
+                        VulkanBackendError::OperationFailed {
+                            issue: "could not get depth texture",
+                            file: file!(),
+                            line: line!(),
+                        }
+                    })?;
+                    attachment_views.push(texture.internal_data.image.view.unwrap());
                 }
 
                 let framebuffer_create_info = FramebufferCreateInfo::default()
@@ -525,7 +538,7 @@ impl<'a> VulkanContext {
                 frame_buffer_last_generation: 0,
                 resource_system: resource_system,
                 texture_system: texture_system,
-                default_texture: Rc::new(RefCell::new(Texture::default())),
+                default_texture: INVALID_ID,
                 dbg_messenger: debug_messenger,
                 dbg_instance_loader: debug_instance_loader,
                 debug_utils_loader: debug_utils_loader,
@@ -536,7 +549,7 @@ impl<'a> VulkanContext {
         {
             println!("Vulkan Instance created");
             Ok(Self {
-                default_texture: Rc::new(RefCell::new(Texture::default())),
+                default_texture: INVALID_ID,
                 frame_delta_time: 0.0,
                 geometry_vertex_offset: 0,
                 geometry_index_offset: 0,
@@ -1096,12 +1109,28 @@ impl<'a> VulkanContext {
     pub fn create_render_target(
         &self,
         renderpass_index: usize,
-        attachments: Vec<Rc<RefCell<Texture>>>,
+        attachments: Vec<TextureHandle>,
     ) -> Result<RenderTarget> {
         let renderpass = &self.registered_renderpasses[renderpass_index];
+        renderpass
+            .borrow_mut()
+            .render_area
+            .set_w(self.framebuffer_width as f32);
+        renderpass
+            .borrow_mut()
+            .render_area
+            .set_h(self.framebuffer_height as f32);
         let mut attachment_views = vec![];
         for i in 0..attachments.len() {
-            attachment_views.push(attachments[i].borrow().internal_data.image.view.unwrap());
+            let tex_sys = self.texture_system.borrow_mut();
+            let texture = tex_sys.get_texture(attachments[i]).map_err(|_| {
+                VulkanBackendError::OperationFailed {
+                    issue: "could not get depth texture",
+                    file: file!(),
+                    line: line!(),
+                }
+            })?;
+            attachment_views.push(texture.internal_data.image.view.unwrap());
         }
 
         let framebuffer_create_info = FramebufferCreateInfo::default()
@@ -1139,16 +1168,16 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn get_depth_attachment(&self) -> Rc<RefCell<Texture>> {
-        Rc::clone(&self.swapchain.depth_texture)
+    pub fn get_depth_attachment(&self) -> TextureHandle {
+        self.swapchain.depth_texture
     }
 
     pub fn get_window_attachment_index(&self) -> u32 {
         self.image_index
     }
 
-    pub fn get_window_attachment(&self, index: usize) -> Rc<RefCell<Texture>> {
-        Rc::clone(&self.swapchain.render_textures[index])
+    pub fn get_window_attachment(&self, index: usize) -> TextureHandle {
+        self.swapchain.render_textures[index]
     }
 
     fn create_buffers(
@@ -1473,7 +1502,7 @@ impl<'a> VulkanContext {
 
     pub fn draw_geometry(&mut self, data: &mut GeometryRenderData) -> Result<()> {
         //let geo = data.geometry.borrow_mut();
-        let buffer_data = &self.geometries[data.geometry.borrow().internal_id];
+        let buffer_data = &self.geometries[data.geometry.internal_id];
         let command_buffer =
             self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame];
 
@@ -2087,35 +2116,30 @@ impl<'a> VulkanContext {
             let mut image_infos =
                 [DescriptorImageInfo::default(); VULKAN_SHADER_MAX_GLOBAL_TEXTURES];
             for i in 0..total_sampler_count {
-                image_infos[i as usize].image_view = if internal_data.instance_states
-                    [shader.bound_instance_id]
+                let tex_id = internal_data.instance_states[shader.bound_instance_id]
                     .instance_texture_maps[i as usize]
+                    .texture_handle;
+                if tex_id == INVALID_ID {
+                    println!("INVALID id should not happen");
+                    continue;
+                }
+                image_infos[i as usize].image_view = self
+                    .texture_system
                     .borrow()
-                    .texture
-                    .borrow()
+                    .get_texture(tex_id)
+                    .map_err(|_| VulkanBackendError::OperationFailed {
+                        issue: "could not get image view",
+                        file: file!(),
+                        line: line!(),
+                    })?
                     .internal_data
                     .image
                     .view
-                    .is_none()
-                {
-                    // this should cause a validation error if this branch is reached
-                    ImageView::null()
-                } else {
-                    internal_data.instance_states[shader.bound_instance_id].instance_texture_maps
-                        [i as usize]
-                        .borrow()
-                        .texture
-                        .borrow()
-                        .internal_data
-                        .image
-                        .view
-                        .unwrap()
-                };
+                    .unwrap();
                 image_infos[i as usize].image_layout = ImageLayout::SHADER_READ_ONLY_OPTIMAL;
                 image_infos[i as usize].sampler = internal_data.instance_states
                     [shader.bound_instance_id]
                     .instance_texture_maps[i as usize]
-                    .borrow()
                     .internal_data;
 
                 update_sampler_count += 1;
@@ -2160,7 +2184,7 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn set_default_texture(&mut self, default_texture: Rc<RefCell<Texture>>) -> Result<()> {
+    pub fn set_default_texture(&mut self, default_texture: TextureHandle) -> Result<()> {
         self.default_texture = default_texture;
         Ok(())
     }
@@ -2249,10 +2273,16 @@ impl<'a> VulkanContext {
         for i in 0..instance_texture_map_count {
             instance_state
                 .instance_texture_maps
-                .push(Rc::new(RefCell::new((*maps[i as usize]).clone())));
-            instance_state.instance_texture_maps[i as usize]
+                .push((*maps[i as usize]).clone());
+            instance_state.instance_texture_maps[i as usize].texture_handle = self
+                .texture_system
                 .borrow_mut()
-                .texture = Rc::clone(&self.default_texture);
+                .acquire(DEFAULT_TEXTURE_NAME, true)
+                .map_err(|_| VulkanBackendError::OperationFailed {
+                    issue: "could not aquire default texture",
+                    file: file!(),
+                    line: line!(),
+                })?;
         }
 
         let set_state = &mut instance_state.descriptor_set_state;
@@ -2357,13 +2387,12 @@ impl<'a> VulkanContext {
             if uniform.shader_scope == ShaderScope::Global {
                 let tex_map_ptr = value as *const TextureMap;
                 let tex_map: TextureMap = unsafe { (*tex_map_ptr).clone() };
-                shader.global_texture_maps[uniform.location as usize] =
-                    Rc::new(RefCell::new(tex_map));
+                shader.global_texture_maps[uniform.location as usize] = tex_map;
             } else {
                 let tex_map_ptr = value as *const TextureMap;
                 let tex_map: TextureMap = unsafe { (*tex_map_ptr).clone() };
                 internal_data.instance_states[shader.bound_instance_id].instance_texture_maps
-                    [uniform.location as usize] = Rc::new(RefCell::new(tex_map));
+                    [uniform.location as usize] = tex_map;
             }
         } else {
             if uniform.shader_scope == ShaderScope::Local {
@@ -2453,7 +2482,7 @@ impl Drop for VulkanContext {
                 self.device
                     .device
                     .destroy_command_pool(self.device.graphics_command_pool, None);
-                self.swapchain.destroy(&self.device);
+                self.swapchain.destroy(&self.device, &self.texture_system);
                 self.device.device.destroy_device(None);
                 self.surface_loader.destroy_surface(self.surface, None);
                 self.dbg_instance_loader
@@ -2471,7 +2500,7 @@ impl Drop for VulkanContext {
                 self.device
                     .device
                     .destroy_command_pool(self.device.graphics_command_pool, None);
-                self.swapchain.destroy(&self.device);
+                self.swapchain.destroy(&self.device, &self.texture_system);
                 self.device.device.destroy_device(None);
                 self.surface_loader.destroy_surface(self.surface, None);
                 self.instance.destroy_instance(None);

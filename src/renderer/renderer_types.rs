@@ -2,13 +2,10 @@ use crate::application::{
     basic::math::consts::INVALID_ID,
     basic::math::{matrix4::Matrix4, vec4::Vec4},
     renderer::vulkan::vulkan_backend::VulkanRenderPass,
-    resources::resource_types::{Geometry, Texture},
+    resources::resource_types::{Geometry, TextureHandle},
 };
 // this can be temporary
 use ash::vk::Framebuffer;
-
-use std::{cell::RefCell, rc::Rc};
-
 use bitflags::bitflags;
 
 pub enum RendererBackendType {
@@ -18,16 +15,16 @@ pub enum RendererBackendType {
 }
 
 #[derive(Clone)]
-pub struct GeometryRenderData {
+pub struct GeometryRenderData<'a> {
     pub model: Matrix4,
-    pub geometry: Rc<RefCell<Geometry>>,
+    pub geometry: &'a Geometry,
 }
 
 #[repr(C)]
-pub struct RendererPacket {
+pub struct RendererPacket<'a> {
     pub delta_time: f32,
-    pub geometries: Vec<GeometryRenderData>,
-    pub ui_geometries: Vec<GeometryRenderData>,
+    pub geometries: Vec<GeometryRenderData<'a>>,
+    pub ui_geometries: Vec<GeometryRenderData<'a>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -84,7 +81,7 @@ impl Default for Renderpass {
 #[derive(Debug, Default, Clone)]
 pub struct RenderTarget {
     pub sync_to_window: u32,
-    pub attachments: Vec<Rc<RefCell<Texture>>>,
+    pub attachments: Vec<TextureHandle>,
     pub internal_framebuffer: Framebuffer,
 }
 

@@ -16,7 +16,8 @@ use crate::application::{
         vulkan::vulkan_backend::{VulkanBackendError, VulkanContext},
     },
     resources::resource_types::{
-        Geometry, Resource, ResourceData, ShaderConfig, ShaderStage, Texture, TextureMap,
+        Geometry, Resource, ResourceData, ShaderConfig, ShaderStage, Texture, TextureHandle,
+        TextureMap,
     },
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
@@ -457,7 +458,7 @@ impl Renderer {
 
         Ok(())
     }
-    pub fn set_default_texture(&mut self, default_texture: Rc<RefCell<Texture>>) -> Result<()> {
+    pub fn set_default_texture(&mut self, default_texture: TextureHandle) -> Result<()> {
         self.backend
             .set_default_texture(default_texture)
             .map_err(|e| RendererError::BackendRendererError {
