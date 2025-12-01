@@ -68,9 +68,22 @@ pub enum ResourceSysError {
 
 type Result<T> = std::result::Result<T, ResourceSysError>;
 
+#[derive(Debug, Default, Clone)]
 pub struct ResourceSysConfig {
     pub max_loader_count: usize,
     pub asset_base_path: String,
+}
+
+impl ResourceSysConfig {
+    pub fn max_loader_count(mut self, max_loader_count: usize) -> Self {
+        self.max_loader_count = max_loader_count;
+        self
+    }
+
+    pub fn asset_base_path(mut self, asset_base_path: String) -> Self {
+        self.asset_base_path = asset_base_path;
+        self
+    }
 }
 
 #[derive(Debug, Clone)]

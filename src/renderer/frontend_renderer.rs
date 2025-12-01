@@ -3,7 +3,6 @@ use crate::application::{
         math::{
             consts::{INVALID_ID, deg_to_rad},
             matrix4::Matrix4,
-            vec3::Vec3,
             vec4::Vec4,
         },
         window::Window,
@@ -20,6 +19,7 @@ use crate::application::{
         TextureMap,
     },
     systems::{
+        camera_system::{CameraHandle, CameraSysError, CameraSystem},
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::Shader,
         texture_system::TextureSystem,
@@ -67,6 +67,12 @@ pub enum RendererError {
         file: &'static str,
         line: u32,
     },
+    #[error("{source}\nfrontend renderer error: camera_system error {file} {line}")]
+    CameraSysError {
+        source: CameraSysError,
+        file: &'static str,
+        line: u32,
+    },
     #[error("frontend renderer error: shader system error {file} {line}")]
     ShaderSysError { file: &'static str, line: u32 },
     #[error("frontend renderer error: material system error {file} {line}")]
@@ -77,9 +83,9 @@ pub enum RendererError {
 pub struct Renderer {
     backend: VulkanContext,
     resource_system: Rc<RefCell<ResourceSystem>>,
+    camera_system: Rc<RefCell<CameraSystem>>,
+    camera: CameraHandle,
     pub projection: Matrix4,
-    pub view: Matrix4,
-    pub view_position: Vec3,
     pub ambient_colour: Vec4,
     pub ui_projection: Matrix4,
     pub ui_view: Matrix4,
@@ -102,7 +108,17 @@ impl Renderer {
         window: &Window,
         resource_system: Rc<RefCell<ResourceSystem>>,
         texture_system: Rc<RefCell<TextureSystem>>,
+        camera_system: Rc<RefCell<CameraSystem>>,
     ) -> Result<Self> {
+        let camera_handle = camera_system
+            .borrow_mut()
+            .acquire("default_texture", true)
+            .map_err(|e| RendererError::CameraSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?;
+
         let world_renderpass_name = String::from("Renderpass.Builtin.World");
         let ui_renderpass_name = String::from("Renderpass.Builtin.UI");
         let world_renderpass_clear_flags: RenderpassClearFlags = RenderpassClearFlags::ColourBuffer
@@ -148,26 +164,11 @@ impl Renderer {
             line: line!(),
         })?;
 
-        //        let world_renderpass = backend
-        //            .get_renderpass(&world_renderpass_name)
-        //            .map_err(|e| RendererError::BackendRendererError {
-        //                source: e,
-        //                file: file!(),
-        //                line: line!(),
-        //            })?;
-        //        let ui_renderpass = backend.get_renderpass(&ui_renderpass_name).map_err(|e| {
-        //            RendererError::BackendRendererError {
-        //                source: e,
-        //                file: file!(),
-        //                line: line!(),
-        //            }
-        //        })?;
-
         Ok(Self {
             backend,
+            camera: camera_handle,
+            camera_system: camera_system,
             projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
-            view: Matrix4::inverse(&Matrix4::translation(&Vec3::new(0.0, 0.0, 30.0))),
-            view_position: Vec3::new_zeroes(),
             ambient_colour: Vec4::new(0.25, 0.25, 0.25, 1.0),
             ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
             ui_view: Matrix4::inverse(&Matrix4::identity()),
@@ -178,8 +179,6 @@ impl Renderer {
             render_mode: RendererDebugViewMode::Default,
             frame_number: 0,
             resource_system,
-            //            ui_renderpass: ui_renderpass,
-            //            world_renderpass: world_renderpass,
             resizing: false,
             framebuffer_width: 1280,
             framebuffer_height: 800,
@@ -351,12 +350,6 @@ impl Renderer {
                 file: file!(),
                 line: line!(),
             })
-    }
-
-    pub fn set_view(&mut self, view: Matrix4, view_position: Vec3) -> Result<()> {
-        self.view = view;
-        self.view_position = view_position;
-        Ok(())
     }
 
     pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()> {

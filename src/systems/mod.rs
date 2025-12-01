@@ -1,3 +1,4 @@
+pub mod camera_system;
 pub mod geometry_system;
 pub mod material_system;
 pub mod resource_system;

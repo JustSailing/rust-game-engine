@@ -23,6 +23,7 @@ use crate::application::resources::resource_types::{
     GeometryConfig, Mesh, ResourceData, ResourceType,
 };
 
+use crate::application::systems::camera_system::{CameraSysConfig, CameraSysError, CameraSystem};
 use crate::application::systems::material_system::{
     BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI,
 };
@@ -41,13 +42,40 @@ use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSyst
 use systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
 use systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct AppConfig {
     pub start_pos_x: i32,
     pub start_pos_y: i32,
     pub start_width: i32,
     pub start_height: i32,
     pub name: &'static str,
+}
+
+impl AppConfig {
+    pub fn start_pos_x(mut self, start_pos_x: i32) -> Self {
+        self.start_pos_x = start_pos_x;
+        self
+    }
+
+    pub fn start_pos_y(mut self, start_pos_y: i32) -> Self {
+        self.start_pos_y = start_pos_y;
+        self
+    }
+
+    pub fn start_width(mut self, start_width: i32) -> Self {
+        self.start_width = start_width;
+        self
+    }
+
+    pub fn start_height(mut self, start_height: i32) -> Self {
+        self.start_height = start_height;
+        self
+    }
+
+    pub fn name(mut self, name: &'static str) -> Self {
+        self.name = name;
+        self
+    }
 }
 
 #[derive(Error, Debug)]
@@ -126,6 +154,12 @@ pub enum AppError {
         file: &'static str,
         line: u32,
     },
+    #[error("{source}\napp error: error from camera_system {file} {line}")]
+    CameraSysError {
+        source: CameraSysError,
+        file: &'static str,
+        line: u32,
+    },
 }
 
 type Result<T> = std::result::Result<T, AppError>;
@@ -146,6 +180,7 @@ pub struct ApplicationState<'a> {
     texture_system: Rc<RefCell<TextureSystem>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
     geometry_system: Rc<RefCell<GeometrySystem<'a>>>,
+    camera_system: Rc<RefCell<CameraSystem>>,
     input_system: Rc<RefCell<InputState<'a>>>,
     shader_system: Rc<RefCell<ShaderSystem<'a>>>,
     event_system: Rc<RefCell<EventSystem<'a>>>,
@@ -153,18 +188,17 @@ pub struct ApplicationState<'a> {
 
 impl<'a> ApplicationState<'a> {
     pub fn create() -> Result<Self> {
-        let app_config = AppConfig {
-            start_pos_x: 0,
-            start_pos_y: 0,
-            start_width: 1280,
-            start_height: 720,
-            name: "Hello William",
-        };
+        let app_config = AppConfig::default()
+            .start_pos_x(0)
+            .start_pos_y(0)
+            .start_width(1280)
+            .start_height(720)
+            .name("Hello William");
 
-        let resource_sys_config = ResourceSysConfig {
-            max_loader_count: 32,
-            asset_base_path: "assets".to_string(),
-        };
+        let resource_sys_config = ResourceSysConfig::default()
+            .max_loader_count(32)
+            .asset_base_path("assets".to_string());
+
         let resource_system = Rc::new(RefCell::new(
             ResourceSystem::initialize(resource_sys_config).map_err(|e| {
                 AppError::ResourceSysError {
@@ -208,7 +242,16 @@ impl<'a> ApplicationState<'a> {
         window.set_title(app_config.name);
         window.show();
 
-        let texture_sys_config: TextureSysConfig = TextureSysConfig { max_count: 4096 };
+        let camera_sys_config = CameraSysConfig::default().max_count(61);
+        let camera_system = Rc::new(RefCell::new(
+            CameraSystem::initialize(&camera_sys_config).map_err(|e| AppError::CameraSysError {
+                source: e,
+                file: file!(),
+                line: line!(),
+            })?,
+        ));
+
+        let texture_sys_config = TextureSysConfig::default().max_count(4096);
         let texture_system = Rc::new(RefCell::new(
             TextureSystem::initialize(texture_sys_config, Rc::clone(&resource_system)).map_err(
                 |e| AppError::TextureSysError {
@@ -225,6 +268,7 @@ impl<'a> ApplicationState<'a> {
                 &window,
                 Rc::clone(&resource_system),
                 Rc::clone(&texture_system),
+                Rc::clone(&camera_system),
             )
             .map_err(|e| AppError::RendererSysError {
                 source: e,
@@ -265,12 +309,13 @@ impl<'a> ApplicationState<'a> {
                 file: file!(),
                 line: line!(),
             })?;
-        let shader_sys_config = ShaderSysConfig {
-            max_shader_count: 1024,
-            max_uniform_count: 128,
-            max_global_textures: 31,
-            max_instance_textures: 31,
-        };
+
+        let shader_sys_config = ShaderSysConfig::default()
+            .max_shader_count(1024)
+            .max_uniform_count(128)
+            .max_global_textures(31)
+            .max_instance_textures(31);
+
         let shader_system = Rc::new(RefCell::new(
             ShaderSystem::initialize(
                 shader_sys_config,
@@ -341,7 +386,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let material_sys_config: MaterialSysConfig = MaterialSysConfig { max_count: 4096 };
+        let material_sys_config = MaterialSysConfig::default().max_count(4096);
         let material_system = Rc::new(RefCell::new(
             MaterialSystem::initialize(
                 material_sys_config,
@@ -366,7 +411,7 @@ impl<'a> ApplicationState<'a> {
                 line: line!(),
             })?;
 
-        let geometry_sys_config: GeometrySysConfig = GeometrySysConfig { max_count: 4096 };
+        let geometry_sys_config = GeometrySysConfig::default().max_count(4096);
         let geometry_system = Rc::new(RefCell::new(
             GeometrySystem::initialize(
                 geometry_sys_config,
@@ -392,13 +437,8 @@ impl<'a> ApplicationState<'a> {
 
         let game = Rc::new(RefCell::new(Game {
             config: app_config,
-            state: GameState {
-                delta_time: 0.0,
-                view: Matrix4::new_zeros(),
-                camera_position: Vec3::new_zeroes(),
-                camera_euler: Vec3::new_zeroes(),
-                view_dirty: false,
-            },
+            state: GameState { delta_time: 0.0 },
+            camera_system: Rc::clone(&camera_system),
             texture_system: texture_system.clone(),
             renderer_system: renderer_system.clone(),
             material_system: material_system.clone(),
@@ -434,19 +474,6 @@ impl<'a> ApplicationState<'a> {
             .borrow_mut()
             .register_event(
                 EventCodes::Debug0 as usize,
-                ptr::null(),
-                Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
-            )
-            .map_err(|e| AppError::EventSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
-        event_system
-            .borrow_mut()
-            .register_event(
-                1,
                 ptr::null(),
                 Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
             )
@@ -710,6 +737,7 @@ impl<'a> ApplicationState<'a> {
             texture_system,
             material_system,
             geometry_system,
+            camera_system,
             event_system,
             input_system,
             shader_system,
@@ -853,12 +881,15 @@ impl<'a> ApplicationState<'a> {
                                     file: file!(),
                                     line: line!(),
                                 })?;
+                            let mut camera_system = self.camera_system.borrow_mut();
+                            let camera = camera_system.get_mut_default_camera();
+                            camera.recalculate_view();
                             material_sys
                                 .apply_global(
                                     material_ref.shader_id as u32,
                                     &self.renderer_system.borrow().projection,
-                                    &self.renderer_system.borrow().view,
-                                    &self.renderer_system.borrow().view_position,
+                                    camera.get_view(),
+                                    camera.get_position(),
                                     &self.renderer_system.borrow().ambient_colour,
                                     self.renderer_system.borrow().render_mode as u32,
                                 )

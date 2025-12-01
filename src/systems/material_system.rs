@@ -100,8 +100,16 @@ pub enum MaterialSysError {
     },
 }
 
+#[derive(Debug, Default, Clone, Copy)]
 pub struct MaterialSysConfig {
     pub max_count: usize,
+}
+
+impl MaterialSysConfig {
+    pub fn max_count(mut self, max_count: usize) -> Self {
+        self.max_count = max_count;
+        self
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -124,6 +132,16 @@ impl Default for MaterialRef {
 impl MaterialRef {
     fn auto_release(mut self, auto_release: bool) -> Self {
         self.auto_release = auto_release;
+        self
+    }
+
+    fn handle(mut self, handle: usize) -> Self {
+        self.handle = handle;
+        self
+    }
+
+    fn reference_count(mut self, reference_count: usize) -> Self {
+        self.reference_count = reference_count;
         self
     }
 }

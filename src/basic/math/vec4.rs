@@ -100,7 +100,7 @@ impl Vec4 {
 
     pub fn distance(&self, other: &Self) -> f32 {
         Vec4::new(
-            self.data[0] - other.data[1],
+            self.data[0] - other.data[0],
             self.data[1] - other.data[1],
             self.data[2] - other.data[2],
             self.data[3] - other.data[3],
@@ -318,27 +318,24 @@ impl Quat {
             + (q.data[3] * q.data[3]);
         o[1] = 2.0 * ((q.data[0] * q.data[1]) + (q.data[2] * q.data[3]));
         o[2] = 2.0 * ((q.data[0] * q.data[2]) - (q.data[1] * q.data[3]));
-        o[3] =
-            center.data[0] - center.data[0] * o[0] - center.data[1] * o[1] - center.data[2] * o[2];
-
+        o[3] = 0.0;
         o[4] = 2.0 * ((q.data[0] * q.data[1]) - (q.data[2] * q.data[3]));
         o[5] = -(q.data[0] * q.data[0]) + (q.data[1] * q.data[1]) - (q.data[2] * q.data[2])
             + (q.data[3] * q.data[3]);
         o[6] = 2.0 * ((q.data[1] * q.data[2]) + (q.data[0] * q.data[3]));
-        o[7] =
-            center.data[1] - center.data[0] * o[4] - center.data[1] * o[5] - center.data[2] * o[6];
-
+        o[7] = 0.0;
         o[8] = 2.0 * ((q.data[0] * q.data[2]) + (q.data[1] * q.data[3]));
         o[9] = 2.0 * ((q.data[1] * q.data[2]) - (q.data[0] * q.data[3]));
         o[10] = -(q.data[0] * q.data[0]) - (q.data[1] * q.data[1])
             + (q.data[2] * q.data[2])
             + (q.data[3] * q.data[3]);
-        o[11] =
+        o[11] = 0.0;
+        o[12] =
+            center.data[0] - center.data[0] * o[0] - center.data[1] * o[1] - center.data[2] * o[2];
+        o[13] =
+            center.data[1] - center.data[0] * o[4] - center.data[1] * o[5] - center.data[2] * o[6];
+        o[14] =
             center.data[2] - center.data[0] * o[8] - center.data[1] * o[9] - center.data[2] * o[10];
-
-        o[12] = 0.0;
-        o[13] = 0.0;
-        o[14] = 0.0;
         o[15] = 1.0;
         out_matrix
     }

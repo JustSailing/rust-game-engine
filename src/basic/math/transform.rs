@@ -89,8 +89,6 @@ impl Transform {
             l
         };
 
-        self.mark_dirty();
-
         result
     }
     pub fn set_position(&mut self, position: Vec3) {

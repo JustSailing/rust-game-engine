@@ -82,7 +82,7 @@ impl Vec3 {
 
     pub fn distance(&self, other: &Self) -> f32 {
         Vec3::new(
-            self.data[0] - other.data[1],
+            self.data[0] - other.data[0],
             self.data[1] - other.data[1],
             self.data[2] - other.data[2],
         )

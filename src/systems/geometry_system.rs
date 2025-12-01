@@ -16,8 +16,17 @@ use std::{
     rc::Rc,
 };
 use thiserror::Error;
+
+#[derive(Debug, Default, Clone, Copy)]
 pub struct GeometrySysConfig {
     pub max_count: usize,
+}
+
+impl GeometrySysConfig {
+    pub fn max_count(mut self, max_count: usize) -> Self {
+        self.max_count = max_count;
+        self
+    }
 }
 
 pub const DEFAULT_GEOMETRY_NAME: &'static str = "default";

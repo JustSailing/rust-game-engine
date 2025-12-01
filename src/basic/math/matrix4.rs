@@ -33,13 +33,15 @@ impl Matrix4 {
 
     pub fn perspective(fovy_rad: f32, aspect: f32, near: f32, far: f32) -> Self {
         let half_tan_fov = (fovy_rad * 0.5).tan();
-
         let mut mat = Self::new_zeros();
+
         mat.data[0] = 1.0 / (aspect * half_tan_fov);
+
         mat.data[5] = 1.0 / half_tan_fov;
-        mat.data[10] = -((far + near) / (far - near));
+
+        mat.data[10] = far / (near - far);
         mat.data[11] = -1.0;
-        mat.data[14] = -((2.0 * far * near) / (far - near));
+        mat.data[14] = (far * near) / (near - far);
 
         mat
     }
@@ -63,9 +65,9 @@ impl Matrix4 {
     pub fn look_at(position: Vec3, target: Vec3, up: Vec3) -> Matrix4 {
         let mut out_matrix: Self = Self::new_zeros();
         let mut z_axis: Vec3 = Vec3::default();
-        z_axis.set_x(target.data[0] - position.data[0]);
-        z_axis.set_y(target.data[1] - position.data[1]);
-        z_axis.set_z(target.data[2] - position.data[2]);
+        z_axis.set_x(position.data[0] - target.data[0]);
+        z_axis.set_y(position.data[1] - target.data[1]);
+        z_axis.set_z(position.data[2] - target.data[2]);
 
         z_axis.normalize();
         let mut cross = z_axis.cross(&up);

@@ -17,11 +17,34 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, ShaderSysError>;
 
+#[derive(Debug, Default, Clone, Copy)]
 pub struct ShaderSysConfig {
     pub max_shader_count: u16,
     pub max_uniform_count: u16,
     pub max_global_textures: u16,
     pub max_instance_textures: u16,
+}
+
+impl ShaderSysConfig {
+    pub fn max_shader_count(mut self, max_shader_count: u16) -> Self {
+        self.max_shader_count = max_shader_count;
+        self
+    }
+
+    pub fn max_uniform_count(mut self, max_uniform_count: u16) -> Self {
+        self.max_uniform_count = max_uniform_count;
+        self
+    }
+
+    pub fn max_global_textures(mut self, max_global_textures: u16) -> Self {
+        self.max_global_textures = max_global_textures;
+        self
+    }
+
+    pub fn max_instance_textures(mut self, max_instance_textures: u16) -> Self {
+        self.max_instance_textures = max_instance_textures;
+        self
+    }
 }
 
 pub enum ShaderState {
@@ -49,6 +72,23 @@ impl Default for ShaderRef {
             reference_count: Default::default(),
             auto_release: Default::default(),
         }
+    }
+}
+
+impl ShaderRef {
+    fn handle(mut self, handle: usize) -> Self {
+        self.handle = handle;
+        self
+    }
+
+    fn reference_count(mut self, reference_count: usize) -> Self {
+        self.reference_count = reference_count;
+        self
+    }
+
+    fn auto_release(mut self, auto_release: bool) -> Self {
+        self.auto_release = auto_release;
+        self
     }
 }
 
