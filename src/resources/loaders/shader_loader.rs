@@ -17,24 +17,11 @@ pub struct ShaderLoader;
 impl ShaderLoader {
     pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
         let full_path = format!("{}/{}/{}.{}", base_path, path, name, "config");
-        let mut file_handle =
-            FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
-                ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                }
-            })?;
+        let mut file_handle = FileHandle::open(&full_path, FileModes::READ, false)?;
 
         let mut shader_config = ShaderConfig::default();
 
-        let lines = file_handle
-            .read_lines()
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        let lines = file_handle.read_lines()?;
 
         for line in lines.iter() {
             if line.len() == 0 {
@@ -72,27 +59,11 @@ impl ShaderLoader {
                         .count();
                 }
                 "use_local" => {
-                    let check =
-                        split[1]
-                            .trim()
-                            .parse::<i32>()
-                            .map_err(|e| ResourceSysError::ParseErr {
-                                source: e,
-                                file: file!(),
-                                line: line!(),
-                            })?;
+                    let check = split[1].trim().parse::<i32>()?;
                     shader_config.use_locals = if 1 == check { true } else { false };
                 }
                 "use_instance" => {
-                    let check =
-                        split[1]
-                            .trim()
-                            .parse::<i32>()
-                            .map_err(|e| ResourceSysError::ParseErr {
-                                source: e,
-                                file: file!(),
-                                line: line!(),
-                            })?;
+                    let check = split[1].trim().parse::<i32>()?;
                     shader_config.use_instances = if 1 == check { true } else { false };
                 }
                 "attribute" => {
@@ -195,13 +166,7 @@ impl ShaderLoader {
     fn get_uniform(uniform: &Vec<&str>) -> Result<ShaderUniformConfig> {
         match uniform[0] {
             "f32" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 4,
@@ -219,13 +184,7 @@ impl ShaderLoader {
                 })
             }
             "vec2" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 8,
@@ -243,13 +202,7 @@ impl ShaderLoader {
                 })
             }
             "vec3" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 12,
@@ -267,13 +220,7 @@ impl ShaderLoader {
                 })
             }
             "vec4" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 16,
@@ -291,13 +238,7 @@ impl ShaderLoader {
                 })
             }
             "u8" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 1,
@@ -315,13 +256,7 @@ impl ShaderLoader {
                 })
             }
             "u16" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 2,
@@ -339,13 +274,7 @@ impl ShaderLoader {
                 })
             }
             "u32" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 4,
@@ -363,13 +292,7 @@ impl ShaderLoader {
                 })
             }
             "i8" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 1,
@@ -387,13 +310,7 @@ impl ShaderLoader {
                 })
             }
             "i16" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 2,
@@ -411,13 +328,7 @@ impl ShaderLoader {
                 })
             }
             "i32" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 4,
@@ -435,13 +346,7 @@ impl ShaderLoader {
                 })
             }
             "mat4" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 64,
@@ -459,13 +364,7 @@ impl ShaderLoader {
                 })
             }
             "samp" => {
-                let scope = uniform[1]
-                    .parse::<u32>()
-                    .map_err(|e| ResourceSysError::ParseErr {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                let scope = uniform[1].parse::<u32>()?;
                 Ok(ShaderUniformConfig {
                     name: uniform[2].to_string(),
                     size: 0,

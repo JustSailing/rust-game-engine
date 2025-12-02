@@ -43,22 +43,6 @@ pub enum RendererError {
     #[error("frontend renderer error: renderpass id is not recognized {file} {line}")]
     RendererIdInvalid { file: &'static str, line: u32 },
     #[error(
-        "{source}\nfrontend renderer error: backend renderer error {} {}",
-        file,
-        line
-    )]
-    BackendRendererError {
-        source: VulkanBackendError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nfrontend renderer error: resource system error {file} {line}")]
-    ResouceSysError {
-        source: ResourceSysError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error(
         "frontend renderer error: wrong resource type given: {given}, expected: {expected} {file} {line}"
     )]
     WrongResourceDataType {
@@ -67,12 +51,12 @@ pub enum RendererError {
         file: &'static str,
         line: u32,
     },
-    #[error("{source}\nfrontend renderer error: camera_system error {file} {line}")]
-    CameraSysError {
-        source: CameraSysError,
-        file: &'static str,
-        line: u32,
-    },
+    #[error("frontend renderer error: backend renderer error: {0}")]
+    BackendRendererErr(#[from] VulkanBackendError),
+    #[error("frontend renderer error: resource system error: {0}")]
+    ResourceSysErr(#[from] ResourceSysError),
+    #[error("frontend renderer error: camera_system error: {0}")]
+    CameraSysErr(#[from] CameraSysError),
     #[error("frontend renderer error: shader system error {file} {line}")]
     ShaderSysError { file: &'static str, line: u32 },
     #[error("frontend renderer error: material system error {file} {line}")]
@@ -112,12 +96,7 @@ impl Renderer {
     ) -> Result<Self> {
         let camera_handle = camera_system
             .borrow_mut()
-            .acquire("default_texture", true)
-            .map_err(|e| RendererError::CameraSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire("default_texture", true)?;
 
         let world_renderpass_name = String::from("Renderpass.Builtin.World");
         let ui_renderpass_name = String::from("Renderpass.Builtin.UI");
@@ -157,12 +136,7 @@ impl Renderer {
             &mut window_render_target_count,
             Rc::clone(&resource_system),
             texture_system,
-        )
-        .map_err(|e| RendererError::BackendRendererError {
-            source: e,
-            file: file!(),
-            line: line!(),
-        })?;
+        )?;
 
         Ok(Self {
             backend,
@@ -188,23 +162,12 @@ impl Renderer {
     }
 
     pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
-        self.backend
-            .create_texture(name, pixels, texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.backend.create_texture(name, pixels, texture)?;
+        Ok(())
     }
 
     pub fn create_writable_texture(&self, texture: &mut Texture) -> Result<()> {
-        self.backend.create_writable_texture(texture).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })
+        Ok(self.backend.create_writable_texture(texture)?)
     }
 
     pub fn write_data_texture(
@@ -215,32 +178,18 @@ impl Renderer {
         pixels: &[u8],
     ) -> Result<()> {
         self.backend
-            .write_data_texture(texture, offset, size, pixels)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+            .write_data_texture(texture, offset, size, pixels)?;
+        Ok(())
     }
 
     pub fn resize_texture(&self, texture: &mut Texture, width: u32, height: u32) -> Result<()> {
-        self.backend
-            .resize_texture(texture, width, height)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.backend.resize_texture(texture, width, height)?;
+        Ok(())
     }
 
     pub fn destroy_texture(&self, texture: &Texture) -> Result<()> {
-        self.backend
-            .destroy_texture(&texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.backend.destroy_texture(&texture)?;
+        Ok(())
     }
 
     pub fn create_geometry<T: Clone, U: Clone>(
@@ -249,89 +198,42 @@ impl Renderer {
         vertices: &[T],
         indicies: &[U],
     ) -> Result<()> {
-        self.backend
-            .create_geometry(geometry, vertices, indicies)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.backend.create_geometry(geometry, vertices, indicies)?;
+        Ok(())
     }
 
     pub fn destroy_geometry(&mut self, geometry: &Geometry) -> Result<()> {
-        self.backend
-            .destroy_geometry(geometry)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.backend.destroy_geometry(geometry)?;
+        Ok(())
     }
 
     pub fn begin_frame(&mut self, packet: &mut RendererPacket) -> Result<bool> {
-        self.backend.begin_frame(packet.delta_time).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })
+        Ok(self.backend.begin_frame(packet.delta_time)?)
     }
 
     pub fn end_frame(&mut self, delta: f32) -> Result<()> {
-        self.backend
-            .end_frame(delta)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.backend.end_frame(delta)?;
         self.frame_number += 1;
         Ok(())
     }
 
     pub fn draw_geometry(&mut self, data: &mut GeometryRenderData, _delta: f32) -> Result<()> {
         self.frame_number += 1;
-        self.backend
-            .draw_geometry(data)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+        self.backend.draw_geometry(data)?;
         Ok(())
     }
 
     pub fn begin_renderpass(&mut self, renderpass_name: &str) -> Result<()> {
-        self.backend
-            .begin_renderpass(renderpass_name)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.backend.begin_renderpass(renderpass_name)?;
         Ok(())
     }
 
     pub fn end_renderpass(&mut self) -> Result<()> {
-        self.backend
-            .end_renderpass()
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.backend.end_renderpass()?;
         Ok(())
     }
     pub fn get_renderpass(&self, name: &str) -> Result<Rc<RefCell<Renderpass>>> {
-        self.backend
-            .get_renderpass(name)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        Ok(self.backend.get_renderpass(name)?)
     }
 
     pub fn on_resize(&mut self, width: i32, height: i32) -> Result<()> {
@@ -343,13 +245,8 @@ impl Renderer {
         );
         self.ui_projection =
             Matrix4::orthographic(0.0, width as f32, height as f32, 0.0, -100.0, 100.0);
-        self.backend
-            .on_resize(width, height)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.backend.on_resize(width, height)?;
+        Ok(())
     }
 
     pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()> {
@@ -372,144 +269,72 @@ impl Renderer {
         stage_filenames: &Vec<String>,
         stages: &Vec<ShaderStage>,
     ) -> Result<()> {
-        self.backend
-            .create_shader(
-                shader,
-                renderpass_name,
-                stage_count,
-                stage_filenames,
-                stages,
-            )
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.backend.create_shader(
+            shader,
+            renderpass_name,
+            stage_count,
+            stage_filenames,
+            stages,
+        )?;
         Ok(())
     }
     pub fn destroy_shader(&self, shader: &mut Shader) -> Result<()> {
-        self.backend
-            .destroy_shader(shader)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+        self.backend.destroy_shader(shader)?;
         Ok(())
     }
 
     pub fn use_shader(&self, shader: &Shader) -> Result<()> {
-        self.backend
-            .use_shader(shader)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+        self.backend.use_shader(shader)?;
         Ok(())
     }
     pub fn shader_bind_globals(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_bind_globals(shader).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
+        self.backend.shader_bind_globals(shader)?;
         Ok(())
     }
     pub fn shader_bind_instance(&self, shader: &mut Shader) -> Result<()> {
         self.backend
-            .shader_bind_instance(shader, shader.bound_instance_id as u32)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .shader_bind_instance(shader, shader.bound_instance_id as u32)?;
         Ok(())
     }
     pub fn shader_apply_globals(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_apply_globals(shader).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
+        self.backend.shader_apply_globals(shader)?;
         Ok(())
     }
     pub fn shader_apply_instance(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_apply_instance(shader).map_err(|e| {
-            RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-
+        self.backend.shader_apply_instance(shader)?;
         Ok(())
     }
     pub fn set_default_texture(&mut self, default_texture: TextureHandle) -> Result<()> {
-        self.backend
-            .set_default_texture(default_texture)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.backend.set_default_texture(default_texture)?;
         Ok(())
     }
 
-    pub fn texture_map_acquire_resources(&self, map: &mut TextureMap) -> Result<()> {
-        self.backend
-            .texture_map_acquire_resources(map)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+    pub fn acquire_texture_map_resources(&self, map: &mut TextureMap) -> Result<()> {
+        self.backend.acquire_texture_map_resources(map)?;
         Ok(())
     }
 
-    pub fn texture_map_release_resources(&self, map: &mut TextureMap) -> Result<()> {
-        self.backend
-            .texture_map_release_resources(map)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+    pub fn release_texture_map_resources(&self, map: &mut TextureMap) -> Result<()> {
+        self.backend.release_texture_map_resources(map)?;
         Ok(())
     }
 
-    pub fn shader_acquire_instance_resources(
+    pub fn acquire_shader_instance_resources(
         &self,
         shader: &mut Shader,
         maps: &Vec<&TextureMap>,
     ) -> Result<u32> {
-        self.backend
-            .shader_acquire_instance_resources(shader, maps)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        Ok(self
+            .backend
+            .acquire_shader_instance_resources(shader, maps)?)
     }
-    pub fn shader_release_instance_resources(
+    pub fn release_shader_instance_resources(
         &self,
         shader: &mut Shader,
         instance_id: u32,
     ) -> Result<()> {
         self.backend
-            .shader_release_instance_resources(shader, instance_id)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+            .release_shader_instance_resources(shader, instance_id)?;
         Ok(())
     }
     pub fn set_uniform(
@@ -518,26 +343,12 @@ impl Renderer {
         uniform_index: usize,
         value: *const c_void,
     ) -> Result<()> {
-        self.backend
-            .set_uniform(shader, uniform_index, value)
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+        self.backend.set_uniform(shader, uniform_index, value)?;
         Ok(())
     }
 
     fn destroy_renderer_backend(&self) -> Result<()> {
-        Ok(self
-            .backend
-            .shutdown()
-            .map_err(|e| RendererError::BackendRendererError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?)
+        Ok(self.backend.shutdown()?)
     }
 
     fn get_shader_config(resource: &Resource) -> Result<&ShaderConfig> {

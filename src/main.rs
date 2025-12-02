@@ -42,6 +42,7 @@ pub struct Game<'a> {
     renderer_system: Rc<RefCell<Renderer>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
     camera_system: Rc<RefCell<CameraSystem>>,
+    input_system: Rc<RefCell<InputState<'a>>>,
 }
 
 impl<'a> Game<'a> {
@@ -54,85 +55,54 @@ impl<'a> Game<'a> {
         true
     }
 
-    pub fn update(
-        &mut self,
-        delta: f32,
-        input_system: &Rc<RefCell<InputState>>,
-        renderer: &Rc<RefCell<Renderer>>,
-        _meshes: &mut Vec<Mesh>,
-    ) -> bool {
+    pub fn update(&mut self, delta: f32, _meshes: &mut Vec<Mesh>) -> bool {
         let movement = 8000.0;
 
-        if input_system.borrow().is_key_down(Key::A).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .yaw(1.0 * delta * movement);
+        let mut cam_sys = self.camera_system.borrow_mut();
+        let camera = cam_sys.get_mut_default_camera();
+
+        let input_state = self.input_system.borrow();
+
+        if input_state.is_key_down(Key::A).unwrap() {
+            camera.yaw(1.0 * delta * movement);
         }
 
-        if input_system.borrow().is_key_down(Key::D).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .yaw(-1.0 * delta * movement);
+        if input_state.is_key_down(Key::D).unwrap() {
+            camera.yaw(-1.0 * delta * movement);
         }
-        if input_system.borrow().is_key_down(Key::Up).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .pitch(1.0 * delta * movement);
+        if input_state.is_key_down(Key::Up).unwrap() {
+            camera.pitch(1.0 * delta * movement);
         }
 
-        if input_system.borrow().is_key_down(Key::Down).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .pitch(-1.0 * delta * movement);
+        if input_state.is_key_down(Key::Down).unwrap() {
+            camera.pitch(-1.0 * delta * movement);
         }
 
-        if input_system.borrow().is_key_down(Key::W).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .move_forward(movement * delta);
+        if input_state.is_key_down(Key::W).unwrap() {
+            camera.move_forward(movement * delta);
         }
 
-        if input_system.borrow().is_key_down(Key::S).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .move_backward(movement * delta);
+        if input_state.is_key_down(Key::S).unwrap() {
+            camera.move_backward(movement * delta);
         }
 
-        if input_system.borrow().is_key_down(Key::Q).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .move_left(movement * delta);
+        if input_state.is_key_down(Key::Q).unwrap() {
+            camera.move_left(movement * delta);
         }
 
-        if input_system.borrow().is_key_down(Key::E).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .move_right(movement * delta);
+        if input_state.is_key_down(Key::E).unwrap() {
+            camera.move_right(movement * delta);
         }
 
-        if input_system.borrow().is_key_down(Key::Z).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .move_up(movement * delta);
+        if input_state.is_key_down(Key::Z).unwrap() {
+            camera.move_up(movement * delta);
         }
 
-        if input_system.borrow().is_key_down(Key::C).unwrap() {
-            self.camera_system
-                .borrow_mut()
-                .get_mut_default_camera()
-                .move_down(movement * delta);
+        if input_state.is_key_down(Key::C).unwrap() {
+            camera.move_down(movement * delta);
         }
 
-        if input_system.borrow().is_key_down(Key::T).unwrap() {
+        if input_state.is_key_down(Key::T).unwrap() {
             // let names = ["brick_wall", "door", "stone_wall", "tile", "test_material"];
             // static mut CHOICE: usize = 4;
             // let old_name = unsafe { names[CHOICE] };
@@ -176,28 +146,21 @@ impl<'a> Game<'a> {
             // let _ = self.material_system.borrow_mut().release(old_name);
         }
 
-        if input_system.borrow().is_key_down(Key::_1).unwrap() {
-            let _ = renderer
-                .borrow_mut()
-                .set_render_mode(RendererDebugViewMode::Lighting as u32);
+        let mut renderer = self.renderer_system.borrow_mut();
+
+        if input_state.is_key_down(Key::_1).unwrap() {
+            let _ = renderer.set_render_mode(RendererDebugViewMode::Lighting as u32);
         }
 
-        if input_system.borrow().is_key_down(Key::_2).unwrap() {
-            let _ = renderer
-                .borrow_mut()
-                .set_render_mode(RendererDebugViewMode::Normals as u32);
+        if input_state.is_key_down(Key::_2).unwrap() {
+            let _ = renderer.set_render_mode(RendererDebugViewMode::Normals as u32);
         }
 
-        if input_system.borrow().is_key_down(Key::_0).unwrap() {
-            let _ = renderer
-                .borrow_mut()
-                .set_render_mode(RendererDebugViewMode::Default as u32);
+        if input_state.is_key_down(Key::_0).unwrap() {
+            let _ = renderer.set_render_mode(RendererDebugViewMode::Default as u32);
         }
 
-        self.camera_system
-            .borrow_mut()
-            .get_mut_default_camera()
-            .recalculate_view();
+        camera.recalculate_view();
         true
     }
 

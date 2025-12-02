@@ -66,38 +66,20 @@ pub enum MaterialSysError {
         file: &'static str,
         line: u32,
     },
-    #[error("{source}\nmaterial system error:  shader system error in material sys {file} {line}")]
-    ShaderSysError {
-        source: ShaderSysError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nmaterial system error:  texture system error in material sys {file} {line}")]
-    TextureSysError {
-        source: TextureSysError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error(
-        "{source}\nmaterial system error:  frontend renderer error in material sys {file} {line}"
-    )]
-    RendererSysError {
-        source: RendererError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nmaterial system error:  file handle error in material sys {file} {line}")]
-    FileHandleError {
-        source: FileHandleError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nmaterial system error:  texture system error in material sys {file} {line}")]
-    ResourceSysError {
-        source: ResourceSysError,
-        file: &'static str,
-        line: u32,
-    },
+    #[error("material system error: shader system error: {0}")]
+    ShaderSysErr(#[from] ShaderSysError),
+
+    #[error("material system error: texture system error: {0}")]
+    TextureSysErr(#[from] TextureSysError),
+
+    #[error("material system error: frontend renderer error: {0}")]
+    RendererSysErr(#[from] RendererError),
+
+    #[error("material system error: file handle error: {0}")]
+    FileHandleErr(#[from] FileHandleError),
+
+    #[error("material system error: resource system error: {0}")]
+    ResourceSysErr(#[from] ResourceSysError),
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -266,34 +248,19 @@ impl<'a> MaterialSystem<'a> {
         material.diffuse_map.texture_handle = self
             .texture_system
             .borrow_mut()
-            .acquire(DEFAULT_TEXTURE_NAME, true)
-            .map_err(|e| MaterialSysError::TextureSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire(DEFAULT_TEXTURE_NAME, true)?;
         material.diffuse_map.use_type = TextureUse::MapDiffuse;
 
         material.specular_map.texture_handle = self
             .texture_system
             .borrow_mut()
-            .acquire(DEFAULT_TEXTURE_SPECULAR_NAME, true)
-            .map_err(|e| MaterialSysError::TextureSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire(DEFAULT_TEXTURE_SPECULAR_NAME, true)?;
         material.specular_map.use_type = TextureUse::MapSpecular;
 
         material.normal_map.texture_handle = self
             .texture_system
             .borrow_mut()
-            .acquire(DEFAULT_TEXTURE_NORMAL_NAME, true)
-            .map_err(|e| MaterialSysError::TextureSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire(DEFAULT_TEXTURE_NORMAL_NAME, true)?;
         material.normal_map.use_type = TextureUse::MapNormal;
 
         material.shininess = 32.0;
@@ -303,12 +270,7 @@ impl<'a> MaterialSystem<'a> {
         material.shader_id = self
             .shader_system
             .borrow_mut()
-            .get_mut_shader_by_name(BUILTIN_SHADER_NAME_MATERIAL)
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?
+            .get_mut_shader_by_name(BUILTIN_SHADER_NAME_MATERIAL)?
             .id;
         //self.material_shader_id = material.shader_id;
         let maps = vec![
@@ -319,22 +281,12 @@ impl<'a> MaterialSystem<'a> {
         material.internal_id = self
             .frontend_renderer
             .borrow()
-            .shader_acquire_instance_resources(
+            .acquire_shader_instance_resources(
                 self.shader_system
                     .borrow_mut()
-                    .get_mut_shader_by_name(BUILTIN_SHADER_NAME_MATERIAL)
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?,
+                    .get_mut_shader_by_name(BUILTIN_SHADER_NAME_MATERIAL)?,
                 &maps,
-            )
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })? as usize;
+            )? as usize;
 
         self.default_material = material;
         Ok(())
@@ -356,12 +308,7 @@ impl<'a> MaterialSystem<'a> {
         let mut material_res = self
             .resource_system
             .borrow()
-            .load(&config.name, ResourceType::Material)
-            .map_err(|e| MaterialSysError::ResourceSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .load(&config.name, ResourceType::Material)?;
 
         let mat_config = match material_res.data {
             ResourceData::MaterialResourceData(ref mut material_config) => material_config,
@@ -406,14 +353,7 @@ impl<'a> MaterialSystem<'a> {
 
         let (material, shader_instance_id) = self.acquire_from_config(mat_config)?;
 
-        self.resource_system
-            .borrow()
-            .unload(&mut material_res)
-            .map_err(|e| MaterialSysError::ResourceSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.resource_system.borrow().unload(&mut material_res)?;
 
         Ok((material, shader_instance_id))
     }
@@ -466,140 +406,45 @@ impl<'a> MaterialSystem<'a> {
 
             let shader_sys = self.shader_system.borrow();
 
-            let shader = shader_sys
-                .get_shader_by_name(&config.shader_name)
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            let shader = shader_sys.get_shader_by_name(&config.shader_name)?;
             if self.material_shader_id == INVALID_ID
                 && config.shader_name == BUILTIN_SHADER_NAME_MATERIAL
             {
                 self.material_shader_id = shader.id;
-                self.material_locations.projection = shader_sys
-                    .uniform_index(shader, "projection")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.material_locations.view =
-                    shader_sys.uniform_index(shader, "view").map_err(|e| {
-                        MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?;
-                self.material_locations.view_position = shader_sys
-                    .uniform_index(shader, "view_position")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.material_locations.ambient_colour = shader_sys
-                    .uniform_index(shader, "ambient_colour")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                self.material_locations.projection =
+                    shader_sys.get_uniform_index(shader, "projection")?;
+                self.material_locations.view = shader_sys.get_uniform_index(shader, "view")?;
+                self.material_locations.view_position =
+                    shader_sys.get_uniform_index(shader, "view_position")?;
+                self.material_locations.ambient_colour =
+                    shader_sys.get_uniform_index(shader, "ambient_colour")?;
 
-                self.material_locations.diffuse_colour = shader_sys
-                    .uniform_index(shader, "diffuse_colour")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.material_locations.diffuse_texture = shader_sys
-                    .uniform_index(shader, "diffuse_texture")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.material_locations.specular_texture = shader_sys
-                    .uniform_index(shader, "specular_texture")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                self.material_locations.diffuse_colour =
+                    shader_sys.get_uniform_index(shader, "diffuse_colour")?;
+                self.material_locations.diffuse_texture =
+                    shader_sys.get_uniform_index(shader, "diffuse_texture")?;
+                self.material_locations.specular_texture =
+                    shader_sys.get_uniform_index(shader, "specular_texture")?;
 
-                self.material_locations.normal_texture = shader_sys
-                    .uniform_index(shader, "normal_texture")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                self.material_locations.normal_texture =
+                    shader_sys.get_uniform_index(shader, "normal_texture")?;
                 self.material_locations.shininess =
-                    shader_sys.uniform_index(shader, "shininess").map_err(|e| {
-                        MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?;
-                self.material_locations.model =
-                    shader_sys.uniform_index(shader, "model").map_err(|e| {
-                        MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?;
-                self.material_locations.render_mode = shader_sys
-                    .uniform_index(shader, "mode")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                    shader_sys.get_uniform_index(shader, "shininess")?;
+                self.material_locations.model = shader_sys.get_uniform_index(shader, "model")?;
+                self.material_locations.render_mode =
+                    shader_sys.get_uniform_index(shader, "mode")?;
             } else if self.ui_shader_id == INVALID_ID
                 && config.shader_name == BUILTIN_SHADER_NAME_UI
             {
                 self.ui_shader_id = shader.id;
-                self.ui_locations.projection = shader_sys
-                    .uniform_index(&shader, "projection")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.ui_locations.view =
-                    shader_sys.uniform_index(&shader, "view").map_err(|e| {
-                        MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?;
-                self.ui_locations.diffuse_colour = shader_sys
-                    .uniform_index(&shader, "diffuse_colour")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.ui_locations.diffuse_texture = shader_sys
-                    .uniform_index(&shader, "diffuse_texture")
-                    .map_err(|e| MaterialSysError::ShaderSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
-                self.ui_locations.model =
-                    shader_sys.uniform_index(&shader, "model").map_err(|e| {
-                        MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        }
-                    })?;
+                self.ui_locations.projection =
+                    shader_sys.get_uniform_index(&shader, "projection")?;
+                self.ui_locations.view = shader_sys.get_uniform_index(&shader, "view")?;
+                self.ui_locations.diffuse_colour =
+                    shader_sys.get_uniform_index(&shader, "diffuse_colour")?;
+                self.ui_locations.diffuse_texture =
+                    shader_sys.get_uniform_index(&shader, "diffuse_texture")?;
+                self.ui_locations.model = shader_sys.get_uniform_index(&shader, "model")?;
             }
             if self.registered_materials[mat_ref.handle].generation == INVALID_ID {
                 self.registered_materials[mat_ref.handle].generation = 0;
@@ -621,22 +466,12 @@ impl<'a> MaterialSystem<'a> {
             material_instance_id = self
                 .frontend_renderer
                 .borrow()
-                .shader_acquire_instance_resources(
+                .acquire_shader_instance_resources(
                     self.shader_system
                         .borrow_mut()
-                        .get_mut_shader_by_name(&config.shader_name)
-                        .map_err(|e| MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        })?,
+                        .get_mut_shader_by_name(&config.shader_name)?,
                     &maps,
-                )
-                .map_err(|e| MaterialSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })? as usize;
+                )? as usize;
         }
         self.insert_hashmap(&config.name, &mat_ref)?;
         Ok((mat_ref.handle, material_instance_id))
@@ -688,95 +523,42 @@ impl<'a> MaterialSystem<'a> {
         mode: u32,
     ) -> Result<()> {
         if shader_id == self.material_shader_id as u32 {
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.projection,
-                    projection as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.view,
-                    view as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.view_position,
-                    view_positon as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.ambient_colour,
-                    ambient_colour as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.render_mode,
-                    &mode as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.projection,
+                projection as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.view,
+                view as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.view_position,
+                view_positon as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.ambient_colour,
+                ambient_colour as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.render_mode,
+                &mode as *const _ as *const c_void,
+            )?;
         } else if shader_id == self.ui_shader_id as u32 {
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.ui_locations.projection,
+                projection as *const _ as *const c_void,
+            )?;
             self.shader_system
                 .borrow_mut()
-                .uniform_set_by_index(
-                    self.ui_locations.projection,
-                    projection as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(self.ui_locations.view, view as *const _ as *const c_void)
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .set_uniform_by_index(self.ui_locations.view, view as *const _ as *const c_void)?;
         } else {
             return Err(MaterialSysError::UnrecognizedApplyGlobalCall {
                 file: file!(),
                 line: line!(),
             });
         }
-        self.shader_system
-            .borrow_mut()
-            .apply_globals()
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.shader_system.borrow_mut().apply_globals()?;
+        Ok(())
     }
 
     pub fn apply_instance(
@@ -787,124 +569,53 @@ impl<'a> MaterialSystem<'a> {
     ) -> Result<()> {
         self.shader_system
             .borrow_mut()
-            .bind_instance(material_instance_id)
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .bind_instance(material_instance_id)?;
         if material.shader_id == self.material_shader_id {
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.diffuse_colour,
-                    &material.diffuse_colour as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.diffuse_texture,
-                    &material.diffuse_map as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.specular_texture,
-                    &material.specular_map as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.normal_texture,
-                    &material.normal_map as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.shininess,
-                    &material.shininess as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.material_locations.model,
-                    model as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.diffuse_colour,
+                &material.diffuse_colour as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.diffuse_texture,
+                &material.diffuse_map as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.specular_texture,
+                &material.specular_map as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.normal_texture,
+                &material.normal_map as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.shininess,
+                &material.shininess as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.material_locations.model,
+                model as *const _ as *const c_void,
+            )?;
         } else if material.shader_id == self.ui_shader_id {
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.ui_locations.diffuse_colour,
-                    &material.diffuse_colour as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(
-                    self.ui_locations.diffuse_texture,
-                    &material.diffuse_map as *const _ as *const c_void,
-                )
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
-            self.shader_system
-                .borrow_mut()
-                .uniform_set_by_index(self.ui_locations.model, model as *const _ as *const c_void)
-                .map_err(|e| MaterialSysError::ShaderSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.ui_locations.diffuse_colour,
+                &material.diffuse_colour as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.ui_locations.diffuse_texture,
+                &material.diffuse_map as *const _ as *const c_void,
+            )?;
+            self.shader_system.borrow_mut().set_uniform_by_index(
+                self.ui_locations.model,
+                model as *const _ as *const c_void,
+            )?;
         } else {
             return Err(MaterialSysError::UnrecognizedApplyGlobalCall {
                 file: file!(),
                 line: line!(),
             });
         }
-        self.shader_system
-            .borrow_mut()
-            .apply_instance()
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.shader_system.borrow_mut().apply_instance()?;
+        Ok(())
     }
 
     // pub fn apply_local(&self, material: &Material, model: &Matrix4) -> Result<()> {
@@ -937,12 +648,7 @@ impl<'a> MaterialSystem<'a> {
         mat.shader_id = self
             .shader_system
             .borrow()
-            .get_shader_id(&config.shader_name)
-            .map_err(|e| MaterialSysError::ShaderSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .get_shader_id(&config.shader_name)?;
         mat.name = config.name.clone();
         mat.diffuse_colour = config.diffuse_colour.clone();
         mat.shininess = config.shininess;
@@ -955,35 +661,20 @@ impl<'a> MaterialSystem<'a> {
         mat.diffuse_map.repeat_w = TextureRepeat::Repeat;
         self.frontend_renderer
             .borrow()
-            .texture_map_acquire_resources(&mut mat.diffuse_map)
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire_texture_map_resources(&mut mat.diffuse_map)?;
 
         if config.diffuse_map_name.len() > 0 {
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
             mat.diffuse_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(&config.diffuse_map_name, config.auto_release)
-                .map_err(|e| MaterialSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(&config.diffuse_map_name, config.auto_release)?;
         } else {
             mat.diffuse_map.use_type = TextureUse::MapDiffuse;
             mat.diffuse_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(DEFAULT_TEXTURE_NAME, true)
-                .map_err(|e| MaterialSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(DEFAULT_TEXTURE_NAME, true)?;
         }
 
         mat.specular_map.texture_name = config.specular_map_name.clone();
@@ -994,36 +685,21 @@ impl<'a> MaterialSystem<'a> {
         mat.specular_map.repeat_w = TextureRepeat::Repeat;
         self.frontend_renderer
             .borrow()
-            .texture_map_acquire_resources(&mut mat.specular_map)
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire_texture_map_resources(&mut mat.specular_map)?;
 
         if config.specular_map_name.len() > 0 {
             mat.specular_map.use_type = TextureUse::MapSpecular;
             let texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(&config.specular_map_name, config.auto_release)
-                .map_err(|e| MaterialSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(&config.specular_map_name, config.auto_release)?;
             mat.specular_map.texture_handle = texture_handle;
         } else {
             mat.specular_map.use_type = TextureUse::MapDiffuse;
             mat.specular_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(DEFAULT_TEXTURE_SPECULAR_NAME, true)
-                .map_err(|e| MaterialSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(DEFAULT_TEXTURE_SPECULAR_NAME, true)?;
         }
 
         mat.normal_map.texture_name = config.normal_map_name.clone();
@@ -1034,36 +710,21 @@ impl<'a> MaterialSystem<'a> {
         mat.normal_map.repeat_w = TextureRepeat::Repeat;
         self.frontend_renderer
             .borrow()
-            .texture_map_acquire_resources(&mut mat.normal_map)
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire_texture_map_resources(&mut mat.normal_map)?;
 
         if config.normal_map_name.len() > 0 {
             mat.normal_map.use_type = TextureUse::MapNormal;
             let texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(&config.normal_map_name, config.auto_release)
-                .map_err(|e| MaterialSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(&config.normal_map_name, config.auto_release)?;
             mat.normal_map.texture_handle = texture_handle;
         } else {
             mat.normal_map.use_type = TextureUse::MapDiffuse;
             mat.normal_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(DEFAULT_TEXTURE_NORMAL_NAME, true)
-                .map_err(|e| MaterialSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(DEFAULT_TEXTURE_NORMAL_NAME, true)?;
         }
         Ok(mat)
     }
@@ -1072,75 +733,32 @@ impl<'a> MaterialSystem<'a> {
         let material = &mut self.registered_materials[material_handle];
         self.texture_system
             .borrow_mut()
-            .release(&material.diffuse_map.texture_name)
-            .map_err(|e| MaterialSysError::TextureSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+            .release(&material.diffuse_map.texture_name)?;
         self.texture_system
             .borrow_mut()
-            .release(&material.specular_map.texture_name)
-            .map_err(|e| MaterialSysError::TextureSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
-
+            .release(&material.specular_map.texture_name)?;
         self.texture_system
             .borrow_mut()
-            .release(&material.normal_map.texture_name)
-            .map_err(|e| MaterialSysError::TextureSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .release(&material.normal_map.texture_name)?;
         self.frontend_renderer
             .borrow()
-            .texture_map_release_resources(&mut material.diffuse_map)
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .release_texture_map_resources(&mut material.diffuse_map)?;
         self.frontend_renderer
             .borrow()
-            .texture_map_release_resources(&mut material.specular_map)
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .release_texture_map_resources(&mut material.specular_map)?;
         self.frontend_renderer
             .borrow()
-            .texture_map_release_resources(&mut material.normal_map)
-            .map_err(|e| MaterialSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .release_texture_map_resources(&mut material.normal_map)?;
         if material.shader_id != INVALID_ID && material.internal_id != INVALID_ID {
             self.frontend_renderer
                 .borrow()
-                .shader_release_instance_resources(
+                .release_shader_instance_resources(
                     self.shader_system
                         .borrow_mut()
-                        .get_mut_shader_by_id(material.shader_id)
-                        .map_err(|e| MaterialSysError::ShaderSysError {
-                            source: e,
-                            file: file!(),
-                            line: line!(),
-                        })?,
+                        .get_mut_shader_by_id(material.shader_id)?,
                     material.internal_id as u32,
-                )
-                .map_err(|e| MaterialSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                )?;
         }
-
         Ok(())
     }
 }
@@ -1155,15 +773,15 @@ impl<'a> Drop for MaterialSystem<'a> {
             let _ = self
                 .frontend_renderer
                 .borrow()
-                .texture_map_release_resources(&mut mat.diffuse_map);
+                .release_texture_map_resources(&mut mat.diffuse_map);
             let _ = self
                 .frontend_renderer
                 .borrow()
-                .texture_map_release_resources(&mut mat.specular_map);
+                .release_texture_map_resources(&mut mat.specular_map);
             let _ = self
                 .frontend_renderer
                 .borrow()
-                .texture_map_release_resources(&mut mat.normal_map);
+                .release_texture_map_resources(&mut mat.normal_map);
         }
     }
 }

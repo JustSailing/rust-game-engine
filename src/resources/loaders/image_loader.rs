@@ -64,14 +64,7 @@ impl ImageLoader {
             });
         }
 
-        let data = image::open(&full_filename)
-            .map_err(|e| ResourceSysError::ImageError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?
-            .flipv()
-            .to_rgba8();
+        let data = image::open(&full_filename)?.flipv().to_rgba8();
         let width = data.width();
         let height = data.height();
         let pixels = data.into_raw();

@@ -9,7 +9,6 @@ use crate::application::{
     systems::resource_system::{ResourceSysError, ResourceSystem},
 };
 
-use image::ImageError;
 use thiserror::Error;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -76,24 +75,12 @@ pub enum TextureSysError {
         file: &'static str,
         line: u32,
     },
-    #[error("{source}\ntexture system error: frontend renderer error : {file} {line}")]
-    RendererSysError {
-        source: RendererError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\ntexture system error: image error from image crate {file} {line}")]
-    ImageError {
-        source: ImageError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\ntexture system error: resource system error {file} {line}")]
-    ResourceSysError {
-        source: ResourceSysError,
-        file: &'static str,
-        line: u32,
-    },
+    #[error("texture system error: frontend renderer error: {0}")]
+    RendererSysError(Box<RendererError>),
+    #[error("texture system error: image error: {0}")]
+    ImageError(#[from] image::ImageError),
+    #[error("texture system error: resource system error: {0}")]
+    ResourceSysErr(#[from] ResourceSysError),
     #[error("texture system error: wrong resource data type {ty} {file} {line}")]
     WrongResourceDataType {
         ty: String,
@@ -106,6 +93,12 @@ pub enum TextureSysError {
         file: &'static str,
         line: u32,
     },
+}
+
+impl From<RendererError> for TextureSysError {
+    fn from(err: RendererError) -> Self {
+        TextureSysError::RendererSysError(Box::new(err))
+    }
 }
 
 type Result<T> = std::result::Result<T, TextureSysError>;
@@ -239,12 +232,7 @@ impl TextureSystem {
 
         renderer
             .borrow()
-            .create_texture("default", &pixels, &mut texture)
-            .map_err(|e| TextureSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .create_texture("default", &pixels, &mut texture)?;
 
         self.registered_textures[self.default_texture] = texture;
 
@@ -257,14 +245,11 @@ impl TextureSystem {
             .generation(INVALID_ID)
             .name(DEFAULT_TEXTURE_SPECULAR_NAME.to_string());
 
-        renderer
-            .borrow()
-            .create_texture("default_specular", &spec_pixels, &mut specular_texture)
-            .map_err(|e| TextureSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        renderer.borrow().create_texture(
+            "default_specular",
+            &spec_pixels,
+            &mut specular_texture,
+        )?;
         self.registered_textures[self.default_specular_texture] = specular_texture;
 
         let mut normal_pixels = [0u8; 16 * 16 * 4];
@@ -285,12 +270,7 @@ impl TextureSystem {
 
         renderer
             .borrow()
-            .create_texture("default_normal", &normal_pixels, &mut normal_texture)
-            .map_err(|e| TextureSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .create_texture("default_normal", &normal_pixels, &mut normal_texture)?;
 
         self.registered_textures[self.default_normal_texture] = normal_texture;
 
@@ -308,40 +288,21 @@ impl TextureSystem {
         };
         renderer
             .borrow()
-            .destroy_texture(&self.registered_textures[self.default_texture])
-            .map_err(|e| TextureSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .destroy_texture(&self.registered_textures[self.default_texture])?;
         renderer
             .borrow()
-            .destroy_texture(&self.registered_textures[self.default_specular_texture])
-            .map_err(|e| TextureSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .destroy_texture(&self.registered_textures[self.default_specular_texture])?;
         renderer
             .borrow()
-            .destroy_texture(&self.registered_textures[self.default_normal_texture])
-            .map_err(|e| TextureSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+            .destroy_texture(&self.registered_textures[self.default_normal_texture])?;
+        Ok(())
     }
 
     fn load_texture(&self, name: &str) -> Result<Texture> {
         let mut img_res = self
             .resource_system
             .borrow()
-            .load(name, ResourceType::Image)
-            .map_err(|e| TextureSysError::ResourceSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .load(name, ResourceType::Image)?;
         let data = match img_res.data {
             ResourceData::ImageResourceData(ref image_resource_data) => image_resource_data,
             ResourceData::Unknown => {
@@ -399,21 +360,9 @@ impl TextureSystem {
         if let Some(ref renderer) = self.frontend_renderer {
             renderer
                 .borrow()
-                .create_texture(name, data.pixels.as_slice(), &mut texture)
-                .map_err(|e| TextureSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .create_texture(name, data.pixels.as_slice(), &mut texture)?;
         }
-        self.resource_system
-            .borrow()
-            .unload(&mut img_res)
-            .map_err(|e| TextureSysError::ResourceSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.resource_system.borrow().unload(&mut img_res)?;
         Ok(texture)
     }
 
@@ -465,14 +414,7 @@ impl TextureSystem {
         texture.flags.insert(TextureFlags::Writable);
         texture.internal_data = TextureData::default();
         if let Some(ref renderer) = self.frontend_renderer {
-            renderer
-                .borrow()
-                .create_writable_texture(texture)
-                .map_err(|e| TextureSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            renderer.borrow().create_writable_texture(texture)?;
         }
         Ok(id as usize)
     }
@@ -538,14 +480,7 @@ impl TextureSystem {
         texture.height = height;
         if !texture.flags.contains(TextureFlags::Wrapped) && regenerate_internal_data {
             if let Some(ref renderer) = self.frontend_renderer {
-                renderer
-                    .borrow()
-                    .resize_texture(texture, width, height)
-                    .map_err(|e| TextureSysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                renderer.borrow().resize_texture(texture, width, height)?;
             }
         }
         Ok(())
@@ -633,13 +568,7 @@ impl TextureSystem {
                 } else {
                     return Err(TextureSysError::OperationFailed{ ty: "texture system: frontend_renderer not initialized in texture system value None".to_string(), file: file!(), line: line!()});
                 };
-                renderer.borrow().destroy_texture(&texture).map_err(|e| {
-                    TextureSysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    }
-                })?;
+                renderer.borrow().destroy_texture(&texture)?;
             }
         } else {
             // new texture

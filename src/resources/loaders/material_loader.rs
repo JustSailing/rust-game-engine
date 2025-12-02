@@ -13,22 +13,9 @@ pub struct MaterialLoader;
 impl MaterialLoader {
     pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
         let full_path = format!("{}/{}/{}.{}", base_path, path, name, "gmt");
-        let mut file_handle =
-            FileHandle::open(&full_path, FileModes::READ, false).map_err(|e| {
-                ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                }
-            })?;
+        let mut file_handle = FileHandle::open(&full_path, FileModes::READ, false)?;
         let mut config = MaterialConfig::default();
-        let lines = file_handle
-            .read_lines()
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        let lines = file_handle.read_lines()?;
         for line in lines.iter() {
             if line.len() == 0 {
                 continue;

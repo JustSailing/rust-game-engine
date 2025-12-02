@@ -48,24 +48,14 @@ pub enum GeometrySysError {
         "geometry system error: registered geometries has reached max count. adjust config {file} {line}"
     )]
     RegisteredGeometryFull { file: &'static str, line: u32 },
-    #[error("{source}\ngeometry system error: error returned from material system {file} {line}")]
-    MaterialSysError {
-        source: MaterialSysError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\ngeometry system error: error returned from frontend renderer {file} {line}")]
-    RendererSysError {
-        source: RendererError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nshader system error: error returned from shader system {file} {line}")]
-    ShaderSysError {
-        source: ShaderSysError,
-        file: &'static str,
-        line: u32,
-    },
+    #[error("geometry system error: {0}")]
+    MaterialSysError(#[from] MaterialSysError),
+
+    #[error("geometry system error: {0}")]
+    RendererSysError(#[from] RendererError),
+
+    #[error("geometry system error: {0}")]
+    ShaderSysError(#[from] ShaderSysError),
 }
 
 #[derive(Copy, Clone, Default)]
@@ -158,24 +148,14 @@ impl<'a> GeometrySystem<'a> {
         Ok(self
             .frontend_renderer
             .borrow_mut()
-            .destroy_geometry(&self.default_geometry)
-            .map_err(|e| GeometrySysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?)
+            .destroy_geometry(&self.default_geometry)?)
     }
 
     pub fn destroy_default_geometry2d(&self) -> Result<()> {
         Ok(self
             .frontend_renderer
             .borrow_mut()
-            .destroy_geometry(&self.default_geometry_2d)
-            .map_err(|e| GeometrySysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?)
+            .destroy_geometry(&self.default_geometry_2d)?)
     }
 
     // pub fn acquire_by_id(&mut self, id: usize) -> Result<Rc<RefCell<Geometry>>> {
@@ -507,21 +487,11 @@ impl<'a> GeometrySystem<'a> {
             if geo_ref.reference_count < 1 && geo_ref.auto_release {
                 self.frontend_renderer
                     .borrow_mut()
-                    .destroy_geometry(&self.registered_geometries[geo_ref.handle])
-                    .map_err(|e| GeometrySysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                    .destroy_geometry(&self.registered_geometries[geo_ref.handle])?;
 
                 self.material_system
                     .borrow_mut()
-                    .release(&self.registered_geometries[geometry_handle].material_name)
-                    .map_err(|e| GeometrySysError::MaterialSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                    .release(&self.registered_geometries[geometry_handle].material_name)?;
 
                 self.registered_geometries[geo_ref.handle] = Geometry::default();
                 self.registered_geometries_hashmap.remove(&geometry_handle);
@@ -539,14 +509,11 @@ impl<'a> GeometrySystem<'a> {
     ) -> Result<()> {
         let geo = &mut self.registered_geometries[handle];
 
-        self.frontend_renderer
-            .borrow_mut()
-            .create_geometry(geo, &config.vertices, &config.indices)
-            .map_err(|e| GeometrySysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.frontend_renderer.borrow_mut().create_geometry(
+            geo,
+            &config.vertices,
+            &config.indices,
+        )?;
 
         let mut material_config = MaterialConfig::default()
             .name(&config.material_name)
@@ -556,12 +523,7 @@ impl<'a> GeometrySystem<'a> {
         (geo.material_handle, geo.material_instance_id) = self
             .material_system
             .borrow_mut()
-            .acquire(&mut material_config)
-            .map_err(|e| GeometrySysError::MaterialSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .acquire(&mut material_config)?;
         Ok(())
     }
 
@@ -572,12 +534,7 @@ impl<'a> GeometrySystem<'a> {
         }
         self.frontend_renderer
             .borrow_mut()
-            .destroy_geometry(&self.registered_geometries[index])
-            .map_err(|e| GeometrySysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .destroy_geometry(&self.registered_geometries[index])?;
 
         let geo_ref = self
             .registered_geometries_hashmap
@@ -586,12 +543,7 @@ impl<'a> GeometrySystem<'a> {
 
         self.material_system
             .borrow_mut()
-            .release(&self.registered_geometries[index].material_name)
-            .map_err(|e| GeometrySysError::MaterialSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .release(&self.registered_geometries[index].material_name)?;
 
         self.registered_geometries[geo_ref.handle] = Geometry::default();
         self.registered_geometries_hashmap
@@ -640,12 +592,7 @@ impl<'a> GeometrySystem<'a> {
         //geometry.id = 10;
         self.frontend_renderer
             .borrow_mut()
-            .create_geometry(&mut geometry, &verts, &indices)
-            .map_err(|e| GeometrySysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .create_geometry(&mut geometry, &verts, &indices)?;
 
         let verts_2d: [Vector2D; VERT_COUNT] = [
             Vector2D {
@@ -669,14 +616,11 @@ impl<'a> GeometrySystem<'a> {
         let mut geometry_2d = Geometry::default();
         //geometry_2d.id = 11;
 
-        self.frontend_renderer
-            .borrow_mut()
-            .create_geometry(&mut geometry_2d, &verts_2d, &indices_2d)
-            .map_err(|e| GeometrySysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.frontend_renderer.borrow_mut().create_geometry(
+            &mut geometry_2d,
+            &verts_2d,
+            &indices_2d,
+        )?;
 
         self.default_geometry = geometry;
         self.default_geometry_2d = geometry_2d;
@@ -701,7 +645,7 @@ impl<'a> Drop for GeometrySystem<'a> {
                     let _ = self
                         .frontend_renderer
                         .borrow_mut()
-                        .shader_release_instance_resources(s, geo.material_instance_id as u32);
+                        .release_shader_instance_resources(s, geo.material_instance_id as u32);
                 }
                 Err(e) => {
                     println!("{:?}", e);

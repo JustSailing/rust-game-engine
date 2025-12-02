@@ -14,20 +14,8 @@ impl BinaryLoader {
     pub fn load(name: &str, path: &str, _base_path: &str) -> Result<Resource> {
         let file_path = format!("{}/{}/{}", "bin/assets", path, name,);
 
-        let mut file = FileHandle::open(&file_path, FileModes::READ, true).map_err(|e| {
-            ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
-        let v = file
-            .read_all_bytes()
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        let mut file = FileHandle::open(&file_path, FileModes::READ, true)?;
+        let v = file.read_all_bytes()?;
         let res = Resource {
             loader_id: INVALID_ID,
             name: name.to_string(),

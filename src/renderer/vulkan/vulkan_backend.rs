@@ -26,9 +26,11 @@ use crate::application::{
         geometry_system::DEFAULT_GEOMETRY_NAME,
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{Shader, ShaderInternalData},
-        texture_system::{DEFAULT_TEXTURE_NAME, TextureSystem},
+        texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
     },
 };
+
+use std::collections::HashMap;
 
 use ash::{
     Entry, Instance, LoadingError,
@@ -59,7 +61,6 @@ use ash::{ext::debug_utils, vk::DebugUtilsMessengerEXT};
 use std::{borrow::Cow, ffi};
 use std::{
     cell::RefCell,
-    collections::HashMap,
     ffi::{CString, NulError, c_void},
     ptr,
     rc::Rc,
@@ -75,26 +76,16 @@ pub enum VulkanBackendError {
         file: &'static str,
         line: u32,
     },
-    #[error("{source}\nvulkan backend error: loading error")]
-    AshLoadingError {
-        #[from]
-        source: LoadingError,
-    },
-    #[error("{source}\nvulkan backend error: CString error")]
-    CStringError {
-        #[from]
-        source: NulError,
-    },
-    #[error("{source}\nvulkan backend error: ash result error")]
-    AshResultError {
-        #[from]
-        source: vk::Result,
-    },
-    #[error("{source}\nvulkan backend error: resource sys error")]
-    ResourceError {
-        #[from]
-        source: ResourceSysError,
-    },
+    #[error("vulkan backend error: loading error {0}")]
+    AshLoadingError(#[from] LoadingError),
+    #[error("vulkan backend error: CStringError {0}")]
+    CStringError(#[from] NulError),
+    #[error("vulkan backend error: ash result error {0}")]
+    AshResultError(#[from] vk::Result),
+    #[error("vulkan backend error: resource sys error {0}")]
+    ResourceError(#[from] ResourceSysError),
+    #[error("vulkan backend error: texture sys error: {0}")]
+    TextureSysError(#[from] TextureSysError),
 }
 
 const VULKAN_MAX_GEOMETRY_COUNT: usize = 4096;
@@ -1634,12 +1625,12 @@ impl<'a> VulkanContext {
             attributes: [(); VULKAN_SHADER_MAX_ATTRIBUTES]
                 .map(|_| VertexInputAttributeDescription::default()),
         };
-        let vk_shader = self.shader_initialize(shader, vulkan_shader_config, renderpass_name)?;
+        let vk_shader = self.initialize_shader(shader, vulkan_shader_config, renderpass_name)?;
         shader.internal_data = ShaderInternalData::Vulkan(vk_shader);
         Ok(())
     }
 
-    pub fn shader_initialize(
+    pub fn initialize_shader(
         &self,
         shader: &mut Shader<'a>,
         mut vulkan_shader_config: VulkanShaderConfig<'a>,
@@ -1654,7 +1645,7 @@ impl<'a> VulkanContext {
             vulkan_shader_stages[i] = self.create_shader_module(&vulkan_shader_config, i)?;
         }
 
-        let attr_formats = HashMap::from([
+        let attr_formats: HashMap<u32, Format> = HashMap::from([
             (ShaderAttributeType::Float32 as u32, Format::R32_SFLOAT),
             (ShaderAttributeType::Float32_2 as u32, Format::R32G32_SFLOAT),
             (
@@ -2189,7 +2180,7 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn texture_map_acquire_resources(&self, map: &mut TextureMap) -> Result<()> {
+    pub fn acquire_texture_map_resources(&self, map: &mut TextureMap) -> Result<()> {
         let mut sampler_create_info = SamplerCreateInfo::default();
 
         sampler_create_info.min_filter = map.filter_minify.into();
@@ -2219,7 +2210,7 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn texture_map_release_resources(&self, map: &mut TextureMap) -> Result<()> {
+    pub fn release_texture_map_resources(&self, map: &mut TextureMap) -> Result<()> {
         unsafe {
             self.device.device.destroy_sampler(map.internal_data, None);
         }
@@ -2227,7 +2218,7 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn shader_acquire_instance_resources(
+    pub fn acquire_shader_instance_resources(
         &self,
         shader: &mut Shader,
         maps: &Vec<&TextureMap>,
@@ -2328,7 +2319,7 @@ impl<'a> VulkanContext {
         };
         Ok(instance_id)
     }
-    pub fn shader_release_instance_resources(
+    pub fn release_shader_instance_resources(
         &self,
         shader: &mut Shader,
         instance_id: u32,

@@ -89,18 +89,11 @@ impl MeshLoader {
             if !FileHandle::exists(&full_file_path) {
                 continue;
             }
-            f.write(
-                FileHandle::open(
-                    &full_file_path,
-                    crate::application::basic::filesystem::FileModes::READ,
-                    supported_filetypes[i].is_binary,
-                )
-                .map_err(|e| ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?,
-            );
+            f.write(FileHandle::open(
+                &full_file_path,
+                crate::application::basic::filesystem::FileModes::READ,
+                supported_filetypes[i].is_binary,
+            )?);
             file_type = supported_filetypes[i].mesh_file_type;
             break;
         }
@@ -157,13 +150,7 @@ impl MeshLoader {
         let mut current_mat_name_count = 0;
         let mut material_names = vec![String::from(""); 64];
 
-        let lines = file_handle
-            .read_lines()
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        let lines = file_handle.read_lines()?;
 
         for line in lines.iter() {
             if line.len() < 1 {
@@ -367,41 +354,16 @@ impl MeshLoader {
             println!("WARN: {} already exists", &file_name);
             return Ok(());
         }
-        let mut file_handle =
-            FileHandle::open(&file_name, FileModes::WRITE, true).map_err(|e| {
-                ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                }
-            })?;
+        let mut file_handle = FileHandle::open(&file_name, FileModes::WRITE, true)?;
 
         println!("writing gmt file: {}", file_name);
 
-        file_handle
-            .write("# material file\n")
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        file_handle.write("# material file\n")?;
 
-        file_handle
-            .write("version=0.1\n")
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        file_handle.write("version=0.1\n")?;
 
         let name = format!("name={}\n", material_config.name);
-        file_handle
-            .write(name.as_str())
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        file_handle.write(name.as_str())?;
 
         let diffuse_colour = format!(
             "diffuse_colour={} {} {} {}\n",
@@ -410,85 +372,37 @@ impl MeshLoader {
             material_config.diffuse_colour.data[2],
             material_config.diffuse_colour.data[3]
         );
-        file_handle
-            .write(diffuse_colour.as_str())
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        file_handle.write(diffuse_colour.as_str())?;
 
         let shininess = format!("shininess={}\n", material_config.shininess);
-        file_handle
-            .write(shininess.as_str())
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        file_handle.write(shininess.as_str())?;
         if material_config.diffuse_map_name.len() > 0 {
             let texture_name = format!("diffuse_map_name={}\n", material_config.diffuse_map_name);
-            file_handle
-                .write(texture_name.as_str())
-                .map_err(|e| ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            file_handle.write(texture_name.as_str())?;
         }
 
         if material_config.specular_map_name.len() > 0 {
             let texture_name = format!("specular_map_name={}\n", material_config.specular_map_name);
-            file_handle
-                .write(texture_name.as_str())
-                .map_err(|e| ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            file_handle.write(texture_name.as_str())?;
         }
 
         if material_config.normal_map_name.len() > 0 {
             let texture_name = format!("normal_map_name={}\n", material_config.normal_map_name);
-            file_handle
-                .write(texture_name.as_str())
-                .map_err(|e| ResourceSysError::FileError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            file_handle.write(texture_name.as_str())?;
         }
         let shader = format!("shader={}\n", material_config.shader_name);
-        file_handle
-            .write(shader.as_str())
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        file_handle.write(shader.as_str())?;
         Ok(())
     }
 
     fn import_obj_material_library_file(file_path: &String) -> Result<()> {
         println!("importing obj .mtl file {} ...", file_path);
-        let mut file_handle = FileHandle::open(file_path, FileModes::READ, true).map_err(|e| {
-            ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            }
-        })?;
+        let mut file_handle = FileHandle::open(file_path, FileModes::READ, true)?;
 
         let mut current_mat_config = MaterialConfig::default();
         let mut hit_name = false;
 
-        let lines = file_handle
-            .read_lines()
-            .map_err(|e| ResourceSysError::FileError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        let lines = file_handle.read_lines()?;
 
         for line in lines.iter() {
             let l = line.trim();

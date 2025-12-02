@@ -44,26 +44,12 @@ pub enum ResourceSysError {
     ResourceIdInvalid { file: &'static str, line: u32 },
     #[error("resource system error: image loader error {file} {line}")]
     ImageLoaderError { file: &'static str, line: u32 },
-    #[error(
-        "{source}\nresource system error: image loader error when opening texture file failed {file} {line}"
-    )]
-    ImageError {
-        source: image::ImageError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nresource system error: opening file failed {file} {line}")]
-    FileError {
-        source: FileHandleError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nresource system error: parse int failed {file} {line}")]
-    ParseErr {
-        source: ParseIntError,
-        file: &'static str,
-        line: u32,
-    },
+    #[error("resource system error: image error: {0}")]
+    ImageErr(#[from] image::ImageError),
+    #[error("resource system error: file error: {0}")]
+    FileErr(#[from] FileHandleError),
+    #[error("resource system error: parse int failed: {0}")]
+    ParseErrr(#[from] ParseIntError),
 }
 
 type Result<T> = std::result::Result<T, ResourceSysError>;

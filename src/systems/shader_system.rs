@@ -373,7 +373,7 @@ impl<'a> ShaderSystem<'a> {
                         line: line!(),
                     });
                 }
-                _ => self.uniform_add(
+                _ => self.add_uniform(
                     id.unwrap(),
                     &config.name,
                     config.size as u32,
@@ -504,7 +504,7 @@ impl<'a> ShaderSystem<'a> {
         Ok(())
     }
 
-    pub fn uniform_index(&self, shader: &Shader, name: &str) -> Result<u16> {
+    pub fn get_uniform_index(&self, shader: &Shader, name: &str) -> Result<u16> {
         let uniform = shader.uniform_lookup.get(name);
         let u = match uniform {
             Some(ref u) => u,
@@ -519,7 +519,7 @@ impl<'a> ShaderSystem<'a> {
         Ok(u.index)
     }
 
-    pub fn uniform_set(&mut self, name: &str, value: *const c_void) -> Result<()> {
+    pub fn set_uniform(&mut self, name: &str, value: *const c_void) -> Result<()> {
         if self.current_shader_id == INVALID_ID {
             return Err(ShaderSysError::NoShaderInUse {
                 file: file!(),
@@ -527,11 +527,11 @@ impl<'a> ShaderSystem<'a> {
             });
         }
         let shader = &self.registered_shaders[self.current_shader_id];
-        let index = self.uniform_index(shader, name)?;
-        self.uniform_set_by_index(index, value)
+        let index = self.get_uniform_index(shader, name)?;
+        self.set_uniform_by_index(index, value)
     }
 
-    pub fn uniform_set_by_index(&mut self, index: u16, value: *const c_void) -> Result<()> {
+    pub fn set_uniform_by_index(&mut self, index: u16, value: *const c_void) -> Result<()> {
         let mut shader = &mut self.registered_shaders[self.current_shader_id];
         let uniform = shader.uniforms[index as usize];
 
@@ -568,8 +568,8 @@ impl<'a> ShaderSystem<'a> {
             })
     }
 
-    pub fn sampler_set_by_index(&mut self, index: u16, value: *const c_void) -> Result<()> {
-        self.uniform_set_by_index(index, value)
+    pub fn set_sampler_by_index(&mut self, index: u16, value: *const c_void) -> Result<()> {
+        self.set_uniform_by_index(index, value)
     }
 
     pub fn apply_globals(&mut self) -> Result<()> {
@@ -660,7 +660,7 @@ impl<'a> ShaderSystem<'a> {
             let mut texture_map = TextureMap::default();
             self.frontend_renderer
                 .borrow_mut()
-                .texture_map_acquire_resources(&mut texture_map)
+                .acquire_texture_map_resources(&mut texture_map)
                 .map_err(|e| ShaderSysError::RendererSysError {
                     source: e,
                     file: file!(),
@@ -692,7 +692,7 @@ impl<'a> ShaderSystem<'a> {
             self.registered_shaders[shader_id].instance_texture_count += 1;
         }
 
-        self.uniform_add(
+        self.add_uniform(
             shader_id,
             &config.name,
             0,
@@ -703,7 +703,7 @@ impl<'a> ShaderSystem<'a> {
         )
     }
 
-    fn uniform_add(
+    fn add_uniform(
         &mut self,
         shader_id: usize,
         uniform_name: &str,
