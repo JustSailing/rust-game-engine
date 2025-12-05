@@ -1,11 +1,10 @@
-use crate::application::renderer::vulkan::{
+use crate::renderer::vulkan::{
     vulkan_backend::{VulkanBackendError, VulkanContext},
     vulkan_buffer::VulkanBuffer,
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,
 };
 use ash::{
-    Instance,
     vk::{
         AccessFlags, BufferImageCopy, DependencyFlags, DeviceMemory, Extent3D, Format, Image,
         ImageAspectFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
@@ -13,6 +12,7 @@ use ash::{
         ImageViewCreateInfo, ImageViewType, MemoryAllocateInfo, MemoryPropertyFlags,
         PipelineStageFlags, SampleCountFlags, SharingMode,
     },
+    Instance,
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;

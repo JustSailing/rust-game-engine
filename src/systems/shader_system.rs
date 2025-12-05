@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, ffi::c_void, rc::Rc, u8};
 
-use crate::application::{
+use crate::{
     basic::math::consts::INVALID_ID,
     renderer::{
         frontend_renderer::{Renderer, RendererError},
@@ -10,7 +10,7 @@ use crate::application::{
         ShaderAttributeType, ShaderConfig, ShaderScope, ShaderUniformConfig, ShaderUniformType,
         TextureMap,
     },
-    systems::texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
+    systems::texture_system::{TextureSysError, TextureSystem, DEFAULT_TEXTURE_NAME},
 };
 
 use thiserror::Error;
@@ -242,7 +242,9 @@ pub enum ShaderSysError {
     MaxUniformCountReached { file: &'static str, line: u32 },
     #[error("shader system error: uniform type unknown {file} {line}")]
     ShaderUniformTypeUnknown { file: &'static str, line: u32 },
-    #[error("shader system error: uniform use of shader scope local was not allowed {file} {line}")]
+    #[error(
+        "shader system error: uniform use of shader scope local was not allowed {file} {line}"
+    )]
     ShaderUniformUseLocal { file: &'static str, line: u32 },
     #[error("shader system error: given shader id that was invalid {file} {line}")]
     ShaderInvalidId { file: &'static str, line: u32 },
@@ -254,18 +256,15 @@ pub enum ShaderSysError {
         file: &'static str,
         line: u32,
     },
-    #[error("{source}\nshader system error: error recieved from renderer {file} {line}")]
-    RendererSysError {
-        source: RendererError,
-        file: &'static str,
-        line: u32,
-    },
-    #[error("{source}\nshader system error: error recieved from texture system {file} {line}")]
-    TextureSysError {
-        source: TextureSysError,
-        file: &'static str,
-        line: u32,
-    },
+    #[error("shader system error: frontend renderer error: {0}")]
+    RendererSysError(Box<RendererError>),
+    #[error("shader system error: texture_system error: {0}")]
+    TextureSysError(#[from] TextureSysError),
+}
+impl From<RendererError> for ShaderSysError {
+    fn from(err: RendererError) -> Self {
+        ShaderSysError::RendererSysError(Box::new(err))
+    }
 }
 
 pub struct ShaderSystem<'a> {
@@ -273,15 +272,15 @@ pub struct ShaderSystem<'a> {
     lookup: HashMap<String, ShaderRef>,
     current_shader_id: usize,
     registered_shaders: Vec<Shader<'a>>,
-    frontend_renderer: Rc<RefCell<Renderer>>,
-    texture_system: Rc<RefCell<TextureSystem>>,
+    frontend_renderer: Rc<RefCell<Renderer<'a>>>,
+    texture_system: Rc<RefCell<TextureSystem<'a>>>,
 }
 
 impl<'a> ShaderSystem<'a> {
     pub fn initialize(
         config: ShaderSysConfig,
-        frontend_renderer: Rc<RefCell<Renderer>>,
-        texture_system: Rc<RefCell<TextureSystem>>,
+        frontend_renderer: Rc<RefCell<Renderer<'a>>>,
+        texture_system: Rc<RefCell<TextureSystem<'a>>>,
     ) -> Result<Self> {
         if config.max_shader_count < 512 || config.max_shader_count == 0 {
             return Err(ShaderSysError::ShaderCountZero {
@@ -385,20 +384,13 @@ impl<'a> ShaderSystem<'a> {
             };
         }
 
-        self.frontend_renderer
-            .borrow_mut()
-            .create_shader(
-                &mut self.registered_shaders[id.unwrap()],
-                &shader_config.renderpass_name,
-                shader_config.stages.len() as u8,
-                &shader_config.stage_filenames,
-                &shader_config.stages,
-            )
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+        self.frontend_renderer.borrow_mut().create_shader(
+            &mut self.registered_shaders[id.unwrap()],
+            &shader_config.renderpass_name,
+            shader_config.stages.len() as u8,
+            &shader_config.stage_filenames,
+            &shader_config.stages,
+        )?;
 
         self.lookup.insert(
             shader_config.name.clone(),
@@ -465,12 +457,7 @@ impl<'a> ShaderSystem<'a> {
     pub fn destroy_shader(&mut self, shader_handle: usize) -> Result<()> {
         self.frontend_renderer
             .borrow()
-            .destroy_shader(&mut self.registered_shaders[shader_handle])
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })?;
+            .destroy_shader(&mut self.registered_shaders[shader_handle])?;
         self.registered_shaders[shader_handle] = Shader::default();
         Ok(())
     }
@@ -484,22 +471,10 @@ impl<'a> ShaderSystem<'a> {
         if self.current_shader_id != id {
             self.current_shader_id = id;
             let shader = self.get_shader_by_id(id)?;
-            self.frontend_renderer
-                .borrow()
-                .use_shader(shader)
-                .map_err(|e| ShaderSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+            self.frontend_renderer.borrow().use_shader(shader)?;
             self.frontend_renderer
                 .borrow_mut()
-                .shader_bind_globals(&mut self.registered_shaders[id])
-                .map_err(|e| ShaderSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .bind_globals_for_shader(&mut self.registered_shaders[id])?;
         }
         Ok(())
     }
@@ -539,33 +514,21 @@ impl<'a> ShaderSystem<'a> {
             if uniform.shader_scope == ShaderScope::Global {
                 self.frontend_renderer
                     .borrow()
-                    .shader_bind_globals(&mut shader)
-                    .map_err(|e| ShaderSysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                    .bind_globals_for_shader(&mut shader)?;
             } else if uniform.shader_scope == ShaderScope::Instance {
                 self.frontend_renderer
                     .borrow()
-                    .shader_bind_instance(&mut shader)
-                    .map_err(|e| ShaderSysError::RendererSysError {
-                        source: e,
-                        file: file!(),
-                        line: line!(),
-                    })?;
+                    .bind_instance_for_shader(&mut shader)?;
             }
             shader.bound_scope = uniform.shader_scope;
         }
 
-        self.frontend_renderer
-            .borrow()
-            .set_uniform(&mut shader, index as usize, value)
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+        self.frontend_renderer.borrow().set_uniform_for_shader(
+            &mut shader,
+            index as usize,
+            value,
+        )?;
+        Ok(())
     }
 
     pub fn set_sampler_by_index(&mut self, index: u16, value: *const c_void) -> Result<()> {
@@ -575,23 +538,15 @@ impl<'a> ShaderSystem<'a> {
     pub fn apply_globals(&mut self) -> Result<()> {
         self.frontend_renderer
             .borrow()
-            .shader_apply_globals(&mut self.registered_shaders[self.current_shader_id])
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+            .apply_globals_for_shader(&mut self.registered_shaders[self.current_shader_id])?;
+        Ok(())
     }
 
     pub fn apply_instance(&mut self) -> Result<()> {
         self.frontend_renderer
             .borrow()
-            .shader_apply_instance(&mut self.registered_shaders[self.current_shader_id])
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+            .apply_instance_for_shader(&mut self.registered_shaders[self.current_shader_id])?;
+        Ok(())
     }
 
     pub fn bind_instance(&mut self, instance_id: usize) -> Result<()> {
@@ -599,12 +554,8 @@ impl<'a> ShaderSystem<'a> {
 
         self.frontend_renderer
             .borrow()
-            .shader_bind_instance(&mut self.registered_shaders[self.current_shader_id])
-            .map_err(|e| ShaderSysError::RendererSysError {
-                source: e,
-                file: file!(),
-                line: line!(),
-            })
+            .bind_instance_for_shader(&mut self.registered_shaders[self.current_shader_id])?;
+        Ok(())
     }
 
     fn add_sampler(
@@ -660,21 +611,11 @@ impl<'a> ShaderSystem<'a> {
             let mut texture_map = TextureMap::default();
             self.frontend_renderer
                 .borrow_mut()
-                .acquire_texture_map_resources(&mut texture_map)
-                .map_err(|e| ShaderSysError::RendererSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire_texture_map_resources(&mut texture_map)?;
             texture_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
-                .acquire(DEFAULT_TEXTURE_NAME, true)
-                .map_err(|e| ShaderSysError::TextureSysError {
-                    source: e,
-                    file: file!(),
-                    line: line!(),
-                })?;
+                .acquire(DEFAULT_TEXTURE_NAME, true)?;
 
             self.registered_shaders[shader_id]
                 .global_texture_maps

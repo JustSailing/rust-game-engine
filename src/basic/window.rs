@@ -10,9 +10,9 @@ use x11::xlib::Display as Display_;
 use x11::xlib::Window as Window_;
 use x11::xlib::*;
 
-use crate::application::basic::event::{EventCodes, EventCtx, EventSysError, EventSystem};
+use crate::basic::event::{EventCodes, EventCtx, EventSysError, EventSystem};
 
-use super::input::{InputState, InputSysError};
+use super::input::InputSysError;
 
 use thiserror::Error;
 
@@ -62,25 +62,23 @@ impl Drop for Display {
     }
 }
 
-pub struct Window<'a> {
+pub struct Window {
     pub display: Display,
     pub window_id: Window_,
     wm_protocols: Atom,
     wm_delete: Atom,
     pub width: u32,
     pub height: u32,
-    input_system: Rc<RefCell<InputState<'a>>>,
-    event_system: Rc<RefCell<EventSystem<'a>>>,
+    event_system: Rc<RefCell<EventSystem>>,
 }
 
-impl<'a> Window<'a> {
+impl Window {
     pub fn create(
         x: i32,
         y: i32,
         width: i32,
         height: i32,
-        input_system: Rc<RefCell<InputState<'a>>>,
-        event_system: Rc<RefCell<EventSystem<'a>>>,
+        event_system: Rc<RefCell<EventSystem>>,
     ) -> Result<Self> {
         let display = match Display::open() {
             Ok(d) => d,
@@ -167,7 +165,6 @@ impl<'a> Window<'a> {
             wm_delete: wm_delete_window,
             width: width as u32,
             height: height as u32,
-            input_system,
             event_system,
         })
     }
@@ -229,15 +226,27 @@ impl<'a> Window<'a> {
                         let key_sym =
                             XkbKeycodeToKeysym(self.display.raw, event.key.keycode as u8, 0, 0);
                         let key = Window::keysym_to_key(key_sym);
+
                         println!("key press {:?}", key);
-                        self.input_system.borrow_mut().process_key(key, true)?;
+                        let key_code = key as u16;
+                        self.event_system.borrow_mut().fire_event(
+                            EventCodes::KeyPressed as usize,
+                            ptr::null(),
+                            &EventCtx::U16([key_code, 0, 0, 0, 0, 0, 0, 0]),
+                        )?;
                     }
                     KeyRelease => {
                         let key_sym =
                             XkbKeycodeToKeysym(self.display.raw, event.key.keycode as u8, 0, 0);
                         let key = Window::keysym_to_key(key_sym);
+
                         println!("key release {:?}", key);
-                        self.input_system.borrow_mut().process_key(key, false)?;
+                        let key_code = key as u16;
+                        self.event_system.borrow_mut().fire_event(
+                            EventCodes::KeyReleased as usize,
+                            ptr::null(),
+                            &EventCtx::U16([key_code, 0, 0, 0, 0, 0, 0, 0]),
+                        )?;
                     }
                     ButtonPress => {
                         let mut button = Button::MaxButtons;
@@ -249,9 +258,12 @@ impl<'a> Window<'a> {
                         };
 
                         println!("button press {:?}", button);
-                        self.input_system
-                            .borrow_mut()
-                            .process_button(button, true)?;
+                        let button_code = button as u16;
+                        self.event_system.borrow_mut().fire_event(
+                            EventCodes::ButtonPressed as usize,
+                            ptr::null(),
+                            &EventCtx::U16([button_code, 0, 0, 0, 0, 0, 0, 0]),
+                        )?;
                     }
                     ButtonRelease => {
                         let mut button = Button::MaxButtons;
@@ -263,9 +275,12 @@ impl<'a> Window<'a> {
                         };
 
                         println!("button release {:?}", button);
-                        self.input_system
-                            .borrow_mut()
-                            .process_button(button, true)?;
+                        let button_code = button as u16;
+                        self.event_system.borrow_mut().fire_event(
+                            EventCodes::ButtonReleased as usize,
+                            ptr::null(),
+                            &EventCtx::U16([button_code, 0, 0, 0, 0, 0, 0, 0]),
+                        )?;
                     }
 
                     _ => {} //return Ok(false),
@@ -404,12 +419,13 @@ impl<'a> Window<'a> {
     }
 }
 
-impl<'a> Drop for Window<'a> {
+impl Drop for Window {
     fn drop(&mut self) {
         unsafe { XDestroyWindow(self.display.raw, self.window_id) };
     }
 }
 
+#[repr(u16)]
 #[derive(Debug, Clone, Copy)]
 pub enum Key {
     Unknown = 0x00,

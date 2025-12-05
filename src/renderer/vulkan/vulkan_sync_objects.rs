@@ -1,8 +1,6 @@
 use ash::vk::{self, Fence, FenceCreateFlags, FenceCreateInfo, Semaphore, SemaphoreCreateInfo};
 
-use crate::application::renderer::vulkan::{
-    vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice,
-};
+use crate::renderer::vulkan::{vulkan_backend::VulkanBackendError, vulkan_device::VulkanDevice};
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 #[derive(Clone, Copy)]

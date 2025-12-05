@@ -10,7 +10,7 @@ use ash::vk::{
     VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate, Viewport,
 };
 
-use crate::application::renderer::vulkan::{
+use crate::renderer::vulkan::{
     vulkan_backend::{VulkanBackendError, VulkanRenderPass},
     vulkan_command_buffer::VulkanCommandBuffer,
     vulkan_device::VulkanDevice,

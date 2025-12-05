@@ -17,12 +17,14 @@ struct point_light {
 };
 
 directional_light dir_light = {
-  vec3(-0.57735, -0.57735, 0.57735),
+  //vec3(0,0,0 ),
+  vec3(-4.7, -5.5, -5.5),
+  //vec3(-0.57735, -0.57735, -0.57735),
   vec4(0.8, 0.8, 0.8, 1.0)
 };
 
 point_light p_light_0 = {
-  vec3(-5.5, 0.0, -5.5),
+  vec3( 1.0, 0, 0),
   vec4(0.0, 1.0, 0.0, 1.0),
   1.0,
   0.35,
@@ -30,7 +32,7 @@ point_light p_light_0 = {
 };
 
 point_light p_light_1 = {
-  vec3(5.5, 0.0, -5.5),
+  vec3(0.5, 0.5, 0.5),
   vec4(1.0, 0.0, 0.0, 1.0),
   1.0,
   0.35,
@@ -74,29 +76,53 @@ void main() {
   if (in_mode == 0 || in_mode == 1) {
     vec3 view_direction = normalize(in_dto.view_position - in_dto.frag_position);
      out_colour = calculate_directional_light(dir_light, normal, view_direction); 
-     out_colour += calculate_point_light(p_light_0, normal, in_dto.frag_position, view_direction);
-     out_colour += calculate_point_light(p_light_1, normal, in_dto.frag_position, view_direction);
+     //out_colour += calculate_point_light(p_light_0, normal, in_dto.frag_position, view_direction);
+     //out_colour += calculate_point_light(p_light_1, normal, in_dto.frag_position, view_direction);
   } else if(in_mode == 2) {
     out_colour = vec4(abs(normal), 1.0);
   }
 }
 
 vec4 calculate_directional_light(directional_light light, vec3 normal, vec3 view_direction) {
-  float diffuse_factor = max(dot(normal, -light.direction), 0.0);
+    vec3 N = normalize(in_dto.normal); 
+    vec3 T = normalize(in_dto.tangent.xyz); 
+    vec3 B = normalize(cross(N, T)) * in_dto.tangent.w;
 
-  vec3 half_direction = normalize(view_direction - light.direction);
-  float specular_factor = pow(max(dot(half_direction, normal), 0.0), in_dto.shininess.x);
+    mat3 TBN = mat3(T, B, N);
 
-  vec4 diff_samp = texture(samplers[SAMP_DIFFUSE], in_dto.tex_coord);
-  vec4 ambient = vec4(vec3(in_dto.ambient * in_dto.diffuse_colour), diff_samp.a);
-  vec4 diffuse = vec4(vec3(light.colour * diffuse_factor),diff_samp.a );
-  vec4 specular = vec4(vec3(light.colour *specular_factor), diff_samp.a);
-  if (in_mode == 0) {
-    diffuse *= diff_samp;
-    ambient *= diff_samp;
-    specular *= vec4(texture(samplers[SAMP_SPECULAR], in_dto.tex_coord).rgb, diffuse.a);
-  }
-  return (ambient + diffuse + specular);
+    vec3 normal_sample = texture(samplers[SAMP_NORMAL], in_dto.tex_coord).rgb;
+    
+    vec3 tangent_space_normal = normalize(normal_sample * 2.0 - 1.0); 
+
+    vec3 final_normal = normalize(TBN * tangent_space_normal); 
+
+    if(in_mode == 2) {
+        return vec4(final_normal * 0.5 + 0.5, 1.0);
+    }
+    
+
+    vec4 diff_samp = texture(samplers[SAMP_DIFFUSE], in_dto.tex_coord);
+    vec4 spec_samp = texture(samplers[SAMP_SPECULAR], in_dto.tex_coord); // sampler 1
+
+    vec3 ambient = in_dto.ambient.rgb * diff_samp.rgb;
+
+    vec3 light_direction = -normalize(light.direction);
+    float diff_factor = max(dot(final_normal, light_direction), 0.0);
+    vec3 diffuse = diff_factor * light.colour.rgb;
+
+    vec3 view_dir = normalize(in_dto.view_position - in_dto.frag_position);
+    vec3 half_vector = normalize(light_direction + view_dir);
+    
+    float spec_factor = pow(max(dot(final_normal, half_vector), 0.0), in_dto.shininess.x);
+    
+    vec3 specular = spec_factor * light.colour.rgb * spec_samp.rgb;
+
+    if (in_mode == 0) {
+        vec3 final_light = ambient + (diffuse * diff_samp.rgb) + specular;
+        return vec4(final_light, diff_samp.a);
+    } 
+
+    return vec4(ambient + diffuse + specular, 1.0);
 }
 
 vec4 calculate_point_light(point_light light, vec3 normal, vec3 frag_position, vec3 view_direction) {

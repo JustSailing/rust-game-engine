@@ -1,4 +1,4 @@
-use crate::application::basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3};
+use crate::basic::math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3};
 
 pub struct Camera {
     pub id: usize,

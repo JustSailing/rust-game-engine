@@ -1,4 +1,4 @@
-use crate::application::basic::math::matrix4::Matrix4;
+use crate::basic::math::matrix4::Matrix4;
 
 use super::consts::FLOAT_EPSILON;
 use std::ops::{Add, Div, Mul, Sub};

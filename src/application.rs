@@ -1,46 +1,37 @@
-#[path = "./basic/mod.rs"]
-pub mod basic;
-#[path = "./renderer/mod.rs"]
-pub mod renderer;
-
-#[path = "./resources/mod.rs"]
-pub mod resources;
-
-#[path = "./systems/mod.rs"]
-pub mod systems;
-
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc::{channel, Receiver};
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{ptr, thread};
 use thiserror::Error;
 
-use crate::application::basic::math::transform::Transform;
-use crate::application::basic::math::vec2::Vec2;
-use crate::application::basic::math::vec3::{Vec3, Vector2D};
-use crate::application::basic::math::vec4::{Quat, Vec4};
-use crate::application::resources::resource_types::{
-    GeometryConfig, Mesh, ResourceData, ResourceType,
-};
+use crate::basic::event::EventTuple;
+use crate::basic::math::transform::Transform;
+use crate::basic::math::vec2::Vec2;
+use crate::basic::math::vec3::{Vec3, Vector2D};
+use crate::basic::math::vec4::Quat;
+use crate::resources::resource_types::{GeometryConfig, Mesh, ResourceData, ResourceType};
 
-use crate::application::systems::camera_system::{CameraSysConfig, CameraSysError, CameraSystem};
-use crate::application::systems::material_system::{
-    BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI,
+use crate::basic::event::{EventCodes, EventCtx, EventSysError, EventSystem};
+use crate::basic::input::{InputState, InputSysError};
+use crate::basic::window::{Window, WindowError};
+use crate::renderer::frontend_renderer::{Renderer, RendererError};
+use crate::renderer::renderer_types::{
+    MeshPacketData, RenderViewConfig, RenderViewKnownType, RenderViewMatrixViewSource,
+    RenderViewPassConfig,
 };
-use crate::application::systems::shader_system::{ShaderSysConfig, ShaderSysError, ShaderSystem};
-use crate::application::systems::texture_system::DEFAULT_TEXTURE_NAME;
+use crate::systems::camera_system::{CameraSysConfig, CameraSysError, CameraSystem};
+use crate::systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
+use crate::systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
+use crate::systems::material_system::{BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI};
+use crate::systems::render_view_system::{
+    RenderViewSysConfig, RenderViewSysError, RenderViewSystem,
+};
+use crate::systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
+use crate::systems::shader_system::{ShaderSysConfig, ShaderSysError, ShaderSystem};
+use crate::systems::texture_system::DEFAULT_TEXTURE_NAME;
+use crate::systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
 use crate::{Game, GameState};
-use basic::event::{EventCallback, EventCodes, EventSysError, EventSystem};
-use basic::input::{InputState, InputSysError};
-use basic::math::matrix4::Matrix4;
-use basic::window::{Window, WindowError};
-use renderer::frontend_renderer::{Renderer, RendererError};
-use renderer::renderer_types::{GeometryRenderData, RendererPacket};
-use resources::resource_types::GeometryHandle;
-use systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
-use systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
-use systems::resource_system::{ResourceSysConfig, ResourceSysError, ResourceSystem};
-use systems::texture_system::{TextureSysConfig, TextureSysError, TextureSystem};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AppConfig {
@@ -120,6 +111,8 @@ pub enum AppError {
     GeometrySysErr(#[from] GeometrySysError),
     #[error(transparent)]
     CameraSysErr(#[from] CameraSysError),
+    #[error(transparent)]
+    RenderViewSysErr(#[from] RenderViewSysError),
 }
 
 type Result<T> = std::result::Result<T, AppError>;
@@ -128,22 +121,25 @@ pub struct ApplicationState<'a> {
     game: Rc<RefCell<Game<'a>>>,
     is_running: bool,
     is_suspended: bool,
-    window: Window<'a>,
+    window: Window,
     pos_x: i32,
     pos_y: i32,
     width: i32,
     height: i32,
-    test_ui_geometry: GeometryHandle,
+    world_view_handle: usize,
+    ui_view_handle: usize,
+    ui_meshes: Vec<Mesh>,
     meshes: Vec<Mesh>,
     resource_system: Rc<RefCell<ResourceSystem>>,
-    renderer_system: Rc<RefCell<Renderer>>,
-    texture_system: Rc<RefCell<TextureSystem>>,
+    render_view_system: Rc<RefCell<RenderViewSystem<'a>>>,
+    renderer_system: Rc<RefCell<Renderer<'a>>>,
+    texture_system: Rc<RefCell<TextureSystem<'a>>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
     geometry_system: Rc<RefCell<GeometrySystem<'a>>>,
     camera_system: Rc<RefCell<CameraSystem>>,
-    input_system: Rc<RefCell<InputState<'a>>>,
+    input_system: Rc<RefCell<InputState>>,
     shader_system: Rc<RefCell<ShaderSystem<'a>>>,
-    event_system: Rc<RefCell<EventSystem<'a>>>,
+    event_receiver: Receiver<EventTuple>,
 }
 
 impl<'a> ApplicationState<'a> {
@@ -163,16 +159,17 @@ impl<'a> ApplicationState<'a> {
             resource_sys_config,
         )?));
 
-        let event_system = Rc::new(RefCell::new(EventSystem::initialize()?));
+        let (tx, rx) = channel::<EventTuple>();
 
-        let input_system = Rc::new(RefCell::new(InputState::initialize(event_system.clone())?));
+        let event_system = Rc::new(RefCell::new(EventSystem::initialize(tx)?));
+
+        let input_system = Rc::new(RefCell::new(InputState::initialize()?));
 
         let window = Window::create(
             app_config.start_pos_x,
             app_config.start_pos_y,
             app_config.start_width,
             app_config.start_height,
-            Rc::clone(&input_system),
             Rc::clone(&event_system),
         )?;
 
@@ -276,6 +273,44 @@ impl<'a> ApplicationState<'a> {
 
         geometry_system.borrow_mut().create_default_geometries()?;
 
+        let render_view_sys_config = RenderViewSysConfig::default().max_count(251);
+        let render_view_system = Rc::new(RefCell::new(RenderViewSystem::initialize(
+            &render_view_sys_config,
+            Rc::clone(&renderer_system),
+            Rc::clone(&shader_system),
+            Rc::clone(&camera_system),
+            Rc::clone(&material_system),
+            Rc::clone(&geometry_system),
+        )?));
+
+        renderer_system
+            .borrow_mut()
+            .set_render_view_system(Rc::clone(&render_view_system));
+
+        let world = RenderViewConfig::default()
+            .known_type(RenderViewKnownType::World)
+            .width(0)
+            .height(0)
+            .name("world")
+            .passes(vec![
+                RenderViewPassConfig::default().name("Renderpass.Builtin.World")
+            ])
+            .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
+
+        let world_view_handle = render_view_system.borrow_mut().create_view(&world)?;
+
+        let ui = RenderViewConfig::default()
+            .known_type(RenderViewKnownType::UI)
+            .width(0)
+            .height(0)
+            .name("ui")
+            .passes(vec![
+                RenderViewPassConfig::default().name("Renderpass.Builtin.UI")
+            ])
+            .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
+
+        let ui_view_handle = render_view_system.borrow_mut().create_view(&ui)?;
+
         let game = Rc::new(RefCell::new(Game {
             config: app_config,
             state: GameState { delta_time: 0.0 },
@@ -284,25 +319,8 @@ impl<'a> ApplicationState<'a> {
             renderer_system: Rc::clone(&renderer_system),
             material_system: Rc::clone(&material_system),
             input_system: Rc::clone(&input_system),
+            event_system: Rc::clone(&event_system),
         }));
-
-        event_system.borrow_mut().register_event(
-            EventCodes::ApplicationQuit as usize,
-            ptr::null(),
-            Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
-        )?;
-
-        event_system.borrow_mut().register_event(
-            EventCodes::WindowResized as usize,
-            ptr::null(),
-            Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
-        )?;
-
-        event_system.borrow_mut().register_event(
-            EventCodes::Debug0 as usize,
-            ptr::null(),
-            Box::new(Rc::clone(&game) as Rc<RefCell<dyn EventCallback>>),
-        )?;
 
         let w = 256.0;
         let h = 128.0;
@@ -335,9 +353,12 @@ impl<'a> ApplicationState<'a> {
             material_name: String::from("test_ui"),
         };
 
-        let test_ui_geometry = geometry_system
-            .borrow_mut()
-            .acquire_from_config(ui_config, true)?;
+        let ui_meshes = vec![Mesh {
+            geometries: vec![geometry_system
+                .borrow_mut()
+                .acquire_from_config(ui_config, true)?],
+            transform: Rc::new(RefCell::new(Transform::create())),
+        }];
 
         let mut cube_mesh = Mesh {
             geometries: Vec::new(),
@@ -362,13 +383,10 @@ impl<'a> ApplicationState<'a> {
 
         let mut cube_mesh2 = Mesh {
             geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 1.0)))),
+            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
         };
 
-        cube_mesh2
-            .transform
-            .borrow_mut()
-            .set_parent(Rc::clone(&cube_mesh.transform));
+        Transform::set_parent(&cube_mesh2.transform, &cube_mesh.transform);
 
         let geo_config2 = geometry_system.borrow().generate_cube_config(
             5.0,
@@ -380,21 +398,18 @@ impl<'a> ApplicationState<'a> {
             "test_material",
         )?;
 
-        let little_cube = geometry_system
+        let middle_cube = geometry_system
             .borrow_mut()
             .acquire_from_config(geo_config2, true)?;
 
-        cube_mesh2.geometries.push(little_cube);
+        cube_mesh2.geometries.push(middle_cube);
 
         let mut cube_mesh3 = Mesh {
             geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(7.5, 0.0, 1.0)))),
+            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(7.0, 0.0, 0.0)))),
         };
 
-        cube_mesh3
-            .transform
-            .borrow_mut()
-            .set_parent(Rc::clone(&cube_mesh2.transform));
+        Transform::set_parent(&cube_mesh3.transform, &cube_mesh2.transform);
 
         let geo_config3 = geometry_system.borrow().generate_cube_config(
             2.0,
@@ -412,19 +427,9 @@ impl<'a> ApplicationState<'a> {
 
         cube_mesh3.geometries.push(little_cube);
 
-        cube_mesh2
-            .transform
-            .borrow_mut()
-            .set_parent(Rc::clone(&cube_mesh.transform));
-
-        cube_mesh3
-            .transform
-            .borrow_mut()
-            .set_parent(Rc::clone(&cube_mesh2.transform));
-
         let mut car_mesh = Mesh {
             geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 1.0)))),
+            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
         };
 
         let mut resource = resource_system
@@ -454,15 +459,13 @@ impl<'a> ApplicationState<'a> {
         let mut sponza_mesh = Mesh {
             geometries: Vec::new(),
             transform: Rc::new(RefCell::new(Transform::from_pos_rot_scale(
-                Vec3::new(15.0, 0.0, 1.0),
+                Vec3::new(0.0, 0.0, 0.0),
                 Quat::identity(),
-                Vec3::new(0.05, 0.05, 0.05),
+                Vec3::new(5.0, 5.0, 5.0),
             ))),
         };
 
-        let mut resource = resource_system
-            .borrow()
-            .load("sponza", ResourceType::Mesh)?;
+        let mut resource = resource_system.borrow().load("scene", ResourceType::Mesh)?;
 
         let geometry_configs = match resource.data {
             ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
@@ -500,15 +503,18 @@ impl<'a> ApplicationState<'a> {
             pos_y: app_config.start_pos_y,
             width: app_config.start_width,
             height: app_config.start_height,
+            world_view_handle,
+            ui_view_handle,
             meshes,
-            test_ui_geometry,
+            ui_meshes,
             resource_system,
+            render_view_system,
             renderer_system,
             texture_system,
             material_system,
             geometry_system,
             camera_system,
-            event_system,
+            event_receiver: rx,
             input_system,
             shader_system,
         };
@@ -522,14 +528,52 @@ impl<'a> ApplicationState<'a> {
         const FPS: f32 = 60.0;
         let frame_duration: Duration = Duration::from_secs_f32(1.0 / FPS);
         let mut last_frame_time = Instant::now();
-
-        let world_renderpass_name = String::from("Renderpass.Builtin.World");
-        let ui_renderpass_name = String::from("Renderpass.Builtin.UI");
-        loop {
+        'outer: loop {
             if self.window.get_event()? {
                 let current_time = Instant::now();
                 let delta = current_time.duration_since(last_frame_time).as_secs_f32();
                 self.input_system.borrow_mut().update(delta)?;
+                while let Ok((code, data)) = self.event_receiver.try_recv() {
+                    if code == EventCodes::ApplicationQuit as usize {
+                        self.is_running = false;
+                        break 'outer;
+                    }
+
+                    if code == EventCodes::KeyReleased as usize {
+                        let key = match data {
+                            EventCtx::U16(d) => d[0],
+                            _ => todo!(),
+                        };
+                        self.input_system.borrow_mut().process_key(key, false)?;
+                    }
+
+                    if code == EventCodes::KeyPressed as usize {
+                        let key = match data {
+                            EventCtx::U16(d) => d[0],
+                            _ => todo!(),
+                        };
+                        self.input_system.borrow_mut().process_key(key, true)?;
+                    }
+
+                    if code == EventCodes::SetRenderMode as usize {
+                        self.render_view_system
+                            .borrow_mut()
+                            .get_mut_render_view_by_id(self.world_view_handle)?
+                            .handle_event(code, std::ptr::null(), std::ptr::null(), &data);
+                    }
+
+                    if code == EventCodes::WindowResized as usize {
+                        match data {
+                            EventCtx::I32(d) => {
+                                self.render_view_system
+                                    .borrow_mut()
+                                    .on_window_resize(d[0] as u16, d[1] as u16)?;
+                                self.renderer_system.borrow_mut().on_resize(d[0], d[1])?;
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                }
                 if !self.game.borrow_mut().update(delta, &mut self.meshes) {
                     return Err(AppError::CouldNotUpdateGame {
                         file: file!(),
@@ -544,149 +588,55 @@ impl<'a> ApplicationState<'a> {
                     });
                 }
 
-                let geo_sys = self.geometry_system.borrow_mut();
-
-                let mut test_ui_render = GeometryRenderData {
-                    model: Matrix4::translation(&Vec3::new(0.0, 0.0, 0.0)),
-                    geometry: geo_sys.get_geometry(self.test_ui_geometry)?,
-                };
-
-                // shouldn't be creating a new vec each iteration
-                let geometries = Vec::new();
-
-                let mut ui_geometries = Vec::new();
-                ui_geometries.push(test_ui_render.clone());
-
-                let mut render_packet = RendererPacket {
-                    delta_time: delta,
-                    geometries,
-                    ui_geometries,
-                };
-
-                match self
-                    .renderer_system
+                self.camera_system
                     .borrow_mut()
-                    .begin_frame(&mut render_packet)?
-                {
+                    .get_mut_default_camera()
+                    .recalculate_view();
+
+                match self.renderer_system.borrow_mut().begin_frame(delta)? {
                     true => {}
                     false => continue,
                 }
+                let frame_number = self.renderer_system.borrow().frame_number;
 
-                self.renderer_system
+                let mut world_mesh_data = MeshPacketData {
+                    meshes: self.meshes.clone(),
+                };
+                let mut world_view_packet = self
+                    .render_view_system
                     .borrow_mut()
-                    .begin_renderpass(&world_renderpass_name)?;
+                    .get_mut_render_view_by_id(self.world_view_handle)?
+                    .build_packet(&mut world_mesh_data, &self.camera_system);
+
+                let mut ui_mesh_data = MeshPacketData {
+                    meshes: self.ui_meshes.clone(),
+                };
+
+                self.render_view_system.borrow().on_render(
+                    self.world_view_handle,
+                    frame_number,
+                    &mut world_view_packet,
+                )?;
+
+                let mut ui_view_packet = self
+                    .render_view_system
+                    .borrow_mut()
+                    .get_mut_render_view_by_id(self.ui_view_handle)?
+                    .build_packet(&mut ui_mesh_data, &self.camera_system);
+
+                self.render_view_system.borrow_mut().on_render(
+                    self.ui_view_handle,
+                    frame_number,
+                    &mut ui_view_packet,
+                )?;
+
+                self.renderer_system.borrow_mut().end_frame(delta)?;
 
                 let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 100.0 * delta, false);
 
                 self.meshes[0].transform.borrow_mut().rotate(quat);
                 self.meshes[1].transform.borrow_mut().rotate(quat);
-                self.meshes[2].transform.borrow_mut().rotate(quat);
-
-                let mut global_updated = false;
-
-                for mesh in self.meshes.iter() {
-                    for g in mesh.geometries.iter() {
-                        //let g_ref = g.borrow_mut();
-                        let g_ref = geo_sys.get_geometry(*g)?;
-                        {
-                            let mut material_sys = self.material_system.borrow_mut();
-                            let material_ref =
-                                material_sys.get_mut_material(g_ref.material_handle)?;
-
-                            self.shader_system
-                                .borrow_mut()
-                                .use_by_id(material_ref.shader_id)?;
-                        }
-                        if !global_updated {
-                            let material_sys = self.material_system.borrow();
-                            let material_ref = material_sys.get_material(g_ref.material_handle)?;
-                            let mut camera_system = self.camera_system.borrow_mut();
-                            let camera = camera_system.get_mut_default_camera();
-                            camera.recalculate_view();
-                            material_sys.apply_global(
-                                material_ref.shader_id as u32,
-                                &self.renderer_system.borrow().projection,
-                                camera.get_view(),
-                                camera.get_position(),
-                                &self.renderer_system.borrow().ambient_colour,
-                                self.renderer_system.borrow().render_mode as u32,
-                            )?;
-                            global_updated = true;
-                        }
-
-                        let mut material_render_frame_number_equal_render_system = false;
-                        let w = mesh.transform.borrow_mut().get_world();
-                        {
-                            let mut material_sys = self.material_system.borrow_mut();
-                            material_render_frame_number_equal_render_system = material_sys
-                                .get_mut_material(g_ref.material_handle)?
-                                .render_frame_number
-                                != self.renderer_system.borrow().frame_number;
-                        }
-                        if material_render_frame_number_equal_render_system {
-                            let material_sys = self.material_system.borrow();
-                            let material_ref = material_sys.get_material(g_ref.material_handle)?;
-                            material_sys.apply_instance(
-                                material_ref,
-                                g_ref.material_instance_id,
-                                &w,
-                            )?;
-                        } else {
-                            let mut material_sys = self.material_system.borrow_mut();
-                            let material_ref =
-                                material_sys.get_mut_material(g_ref.material_handle)?;
-                            material_ref.render_frame_number =
-                                self.renderer_system.borrow().frame_number;
-                        }
-
-                        let mut geo_render_data = GeometryRenderData {
-                            model: w, //mesh.transform.borrow_mut().get_world(),
-                            geometry: g_ref,
-                        };
-
-                        self.renderer_system
-                            .borrow_mut()
-                            .draw_geometry(&mut geo_render_data, render_packet.delta_time)?;
-                        render_packet.geometries.push(geo_render_data);
-                    }
-                }
-
-                self.renderer_system.borrow_mut().end_renderpass()?;
-
-                self.renderer_system
-                    .borrow_mut()
-                    .begin_renderpass(&ui_renderpass_name)?;
-                let material_sys = self.material_system.borrow();
-                let material_ref =
-                    material_sys.get_material(test_ui_render.geometry.material_handle)?;
-
-                self.shader_system
-                    .borrow_mut()
-                    .use_by_id(material_ref.shader_id)?;
-                material_sys.apply_global(
-                    material_ref.shader_id as u32,
-                    &self.renderer_system.borrow().ui_projection,
-                    &self.renderer_system.borrow().ui_view,
-                    &Vec3::new(1.0, 1.0, 1.0),
-                    &Vec4::new(1.0, 1.0, 1.0, 1.0),
-                    0,
-                )?;
-                {
-                    material_sys.apply_instance(
-                        material_ref,
-                        test_ui_render.geometry.material_instance_id,
-                        &test_ui_render.model,
-                    )?;
-                }
-                self.renderer_system
-                    .borrow_mut()
-                    .draw_geometry(&mut test_ui_render, render_packet.delta_time)?;
-
-                self.renderer_system.borrow_mut().end_renderpass()?;
-
-                self.renderer_system
-                    .borrow_mut()
-                    .end_frame(render_packet.delta_time)?;
+                // self.meshes[2].transform.borrow_mut().rotate(quat);
 
                 let elapsed_since_last_frame = last_frame_time.elapsed();
                 if elapsed_since_last_frame < frame_duration {

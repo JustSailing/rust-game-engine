@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, ffi::c_void, rc::Rc, u16};
 
-use crate::application::{
+use crate::{
     basic::{
         filesystem::FileHandleError,
         math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3, vec4::Vec4},
@@ -14,8 +14,8 @@ use crate::application::{
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{ShaderSysError, ShaderSystem},
         texture_system::{
-            DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_NORMAL_NAME, DEFAULT_TEXTURE_SPECULAR_NAME,
-            TextureSysError, TextureSystem,
+            TextureSysError, TextureSystem, DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_NORMAL_NAME,
+            DEFAULT_TEXTURE_SPECULAR_NAME,
         },
     },
 };
@@ -72,14 +72,20 @@ pub enum MaterialSysError {
     #[error("material system error: texture system error: {0}")]
     TextureSysErr(#[from] TextureSysError),
 
-    #[error("material system error: frontend renderer error: {0}")]
-    RendererSysErr(#[from] RendererError),
+    #[error("texture system error: frontend renderer error: {0}")]
+    RendererSysError(Box<RendererError>),
 
     #[error("material system error: file handle error: {0}")]
     FileHandleErr(#[from] FileHandleError),
 
     #[error("material system error: resource system error: {0}")]
     ResourceSysErr(#[from] ResourceSysError),
+}
+
+impl From<RendererError> for MaterialSysError {
+    fn from(err: RendererError) -> Self {
+        MaterialSysError::RendererSysError(Box::new(err))
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -194,8 +200,8 @@ pub struct MaterialSystem<'a> {
     material_locations: MaterialShaderUniformLocations,
     ui_shader_id: usize,
     ui_locations: MaterialUiUniformLocations,
-    texture_system: Rc<RefCell<TextureSystem>>,
-    frontend_renderer: Rc<RefCell<Renderer>>,
+    texture_system: Rc<RefCell<TextureSystem<'a>>>,
+    frontend_renderer: Rc<RefCell<Renderer<'a>>>,
     resource_system: Rc<RefCell<ResourceSystem>>,
     shader_system: Rc<RefCell<ShaderSystem<'a>>>,
 }
@@ -203,8 +209,8 @@ pub struct MaterialSystem<'a> {
 impl<'a> MaterialSystem<'a> {
     pub fn initialize(
         config: MaterialSysConfig,
-        texture_system: Rc<RefCell<TextureSystem>>,
-        frontend_renderer: Rc<RefCell<Renderer>>,
+        texture_system: Rc<RefCell<TextureSystem<'a>>>,
+        frontend_renderer: Rc<RefCell<Renderer<'a>>>,
         resource_system: Rc<RefCell<ResourceSystem>>,
         shader_system: Rc<RefCell<ShaderSystem<'a>>>,
     ) -> Result<Self> {

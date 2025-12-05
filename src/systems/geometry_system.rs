@@ -1,4 +1,4 @@
-use crate::application::{
+use crate::{
     basic::math::{
         consts::INVALID_ID,
         vec2::Vec2,
@@ -52,10 +52,16 @@ pub enum GeometrySysError {
     MaterialSysError(#[from] MaterialSysError),
 
     #[error("geometry system error: {0}")]
-    RendererSysError(#[from] RendererError),
+    RendererSysError(Box<RendererError>),
 
     #[error("geometry system error: {0}")]
     ShaderSysError(#[from] ShaderSysError),
+}
+
+impl From<RendererError> for GeometrySysError {
+    fn from(err: RendererError) -> Self {
+        GeometrySysError::RendererSysError(Box::new(err))
+    }
 }
 
 #[derive(Copy, Clone, Default)]
@@ -88,7 +94,7 @@ pub struct GeometrySystem<'a> {
     default_geometry_2d: Geometry,
     registered_geometries: Vec<Geometry>,
     registered_geometries_hashmap: HashMap<usize, GeometryRef>,
-    frontend_renderer: Rc<RefCell<Renderer>>,
+    frontend_renderer: Rc<RefCell<Renderer<'a>>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
     // NOTE: should change this. It's only here to release shader resources
     // have issues destroying samplers since they are being used by a descriptor set
@@ -98,7 +104,7 @@ pub struct GeometrySystem<'a> {
 impl<'a> GeometrySystem<'a> {
     pub fn initialize(
         config: GeometrySysConfig,
-        frontend_renderer: Rc<RefCell<Renderer>>,
+        frontend_renderer: Rc<RefCell<Renderer<'a>>>,
         material_system: Rc<RefCell<MaterialSystem<'a>>>,
         shader_system: Rc<RefCell<ShaderSystem<'a>>>,
     ) -> Result<Self> {

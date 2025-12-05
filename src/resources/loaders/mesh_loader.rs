@@ -1,16 +1,12 @@
 use std::mem::MaybeUninit;
 use std::path::Path;
 
-use crate::application::basic::filesystem::{FileHandle, FileModes};
-use crate::application::basic::math::vec4::Vec4;
-use crate::application::basic::math::{consts::INVALID_ID, vec2::Vec2, vec3::Vec3, vec3::Vector3D};
-use crate::application::resources::resource_types::{
-    GeometryConfig, MaterialConfig, Resource, ResourceData,
-};
-use crate::application::systems::geometry_system::{
-    geometry_deduplicate_vertices, geometry_generate_tangents,
-};
-use crate::application::systems::resource_system::ResourceSysError;
+use crate::basic::filesystem::{FileHandle, FileModes};
+use crate::basic::math::vec4::Vec4;
+use crate::basic::math::{consts::INVALID_ID, vec2::Vec2, vec3::Vec3, vec3::Vector3D};
+use crate::resources::resource_types::{GeometryConfig, MaterialConfig, Resource, ResourceData};
+use crate::systems::geometry_system::{geometry_deduplicate_vertices, geometry_generate_tangents};
+use crate::systems::resource_system::ResourceSysError;
 
 type Result<T> = std::result::Result<T, ResourceSysError>;
 
@@ -91,7 +87,7 @@ impl MeshLoader {
             }
             f.write(FileHandle::open(
                 &full_file_path,
-                crate::application::basic::filesystem::FileModes::READ,
+                crate::basic::filesystem::FileModes::READ,
                 supported_filetypes[i].is_binary,
             )?);
             file_type = supported_filetypes[i].mesh_file_type;
@@ -148,7 +144,7 @@ impl MeshLoader {
         let mut material_file_name = String::from("");
         let mut name = String::from("");
         let mut current_mat_name_count = 0;
-        let mut material_names = vec![String::from(""); 64];
+        let mut material_names = vec![String::from(""); 10000];
 
         let lines = file_handle.read_lines()?;
 

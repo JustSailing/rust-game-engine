@@ -1,16 +1,12 @@
-use crate::application::{
+use crate::{
     basic::{
-        math::{
-            consts::{INVALID_ID, deg_to_rad},
-            matrix4::Matrix4,
-            vec4::Vec4,
-        },
+        math::{consts::INVALID_ID, vec4::Vec4},
         window::Window,
     },
     renderer::{
         renderer_types::{
-            GeometryRenderData, RendererBackendConfig, RendererDebugViewMode, RendererPacket,
-            Renderpass, RenderpassClearFlags, RenderpassConfig,
+            GeometryRenderData, RendererBackendConfig, Renderpass, RenderpassClearFlags,
+            RenderpassConfig, RenderpassHandle,
         },
         vulkan::vulkan_backend::{VulkanBackendError, VulkanContext},
     },
@@ -19,9 +15,12 @@ use crate::application::{
         TextureMap,
     },
     systems::{
-        camera_system::{CameraHandle, CameraSysError, CameraSystem},
+        camera_system::{CameraHandle, CameraSysError, CameraSystem, DEFAULT_CAMERA_NAME},
+        geometry_system::GeometrySysError,
+        material_system::MaterialSysError,
+        render_view_system::{RenderViewSysError, RenderViewSystem},
         resource_system::{ResourceSysError, ResourceSystem},
-        shader_system::Shader,
+        shader_system::{Shader, ShaderSysError},
         texture_system::TextureSystem,
     },
 };
@@ -57,27 +56,26 @@ pub enum RendererError {
     ResourceSysErr(#[from] ResourceSysError),
     #[error("frontend renderer error: camera_system error: {0}")]
     CameraSysErr(#[from] CameraSysError),
-    #[error("frontend renderer error: shader system error {file} {line}")]
-    ShaderSysError { file: &'static str, line: u32 },
-    #[error("frontend renderer error: material system error {file} {line}")]
-    MaterialSysError { file: &'static str, line: u32 },
+    #[error("frontend renderer error: shader system error {0}")]
+    ShaderSysErr(#[from] ShaderSysError),
+    #[error("frontend renderer error: material system error {0}")]
+    MaterialSysErr(#[from] MaterialSysError),
+
+    #[error("frontend renderer error: geometry system error {0}")]
+    GeometrySysErr(#[from] GeometrySysError),
+    #[error("frontend renderer error: render view system error {0}")]
+    RenderViewSysErr(#[from] RenderViewSysError),
 }
 
 #[repr(C)]
-pub struct Renderer {
-    backend: VulkanContext,
+pub struct Renderer<'a> {
+    backend: VulkanContext<'a>,
     resource_system: Rc<RefCell<ResourceSystem>>,
     camera_system: Rc<RefCell<CameraSystem>>,
+    render_view_system: Option<Rc<RefCell<RenderViewSystem<'a>>>>,
     camera: CameraHandle,
-    pub projection: Matrix4,
-    pub ambient_colour: Vec4,
-    pub ui_projection: Matrix4,
-    pub ui_view: Matrix4,
-    far_clip: f32,
-    near_clip: f32,
     material_shader_id: u32,
     ui_shader_id: u32,
-    pub render_mode: RendererDebugViewMode,
     window_render_target_count: u32,
     framebuffer_width: u32,
     framebuffer_height: u32,
@@ -86,17 +84,17 @@ pub struct Renderer {
     pub frame_number: u64,
 }
 
-impl Renderer {
+impl<'a> Renderer<'a> {
     pub fn initialize(
         app_name: &str,
         window: &Window,
         resource_system: Rc<RefCell<ResourceSystem>>,
-        texture_system: Rc<RefCell<TextureSystem>>,
+        texture_system: Rc<RefCell<TextureSystem<'a>>>,
         camera_system: Rc<RefCell<CameraSystem>>,
     ) -> Result<Self> {
         let camera_handle = camera_system
             .borrow_mut()
-            .acquire("default_texture", true)?;
+            .acquire(DEFAULT_CAMERA_NAME, true)?;
 
         let world_renderpass_name = String::from("Renderpass.Builtin.World");
         let ui_renderpass_name = String::from("Renderpass.Builtin.UI");
@@ -142,23 +140,24 @@ impl Renderer {
             backend,
             camera: camera_handle,
             camera_system: camera_system,
-            projection: Matrix4::perspective(deg_to_rad(45.0), 1280.0 / 720.0, 0.1, 100.0),
-            ambient_colour: Vec4::new(0.25, 0.25, 0.25, 1.0),
-            ui_projection: Matrix4::orthographic(0.0, 1280.0, 720.0, 0.0, -100.0, 100.0),
-            ui_view: Matrix4::inverse(&Matrix4::identity()),
-            far_clip: 1000.0,
-            near_clip: 0.1,
             material_shader_id: INVALID_ID as u32,
             ui_shader_id: INVALID_ID as u32,
-            render_mode: RendererDebugViewMode::Default,
             frame_number: 0,
             resource_system,
+            render_view_system: None,
             resizing: false,
             framebuffer_width: 1280,
             framebuffer_height: 800,
             frames_since_resize: 0,
             window_render_target_count: window_render_target_count,
         })
+    }
+
+    pub fn set_render_view_system(
+        &mut self,
+        render_view_system: Rc<RefCell<RenderViewSystem<'a>>>,
+    ) {
+        self.render_view_system = Some(render_view_system);
     }
 
     pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
@@ -207,8 +206,8 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn begin_frame(&mut self, packet: &mut RendererPacket) -> Result<bool> {
-        Ok(self.backend.begin_frame(packet.delta_time)?)
+    pub fn begin_frame(&mut self, delta: f32) -> Result<bool> {
+        Ok(self.backend.begin_frame(delta)?)
     }
 
     pub fn end_frame(&mut self, delta: f32) -> Result<()> {
@@ -223,8 +222,13 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn begin_renderpass(&mut self, renderpass_name: &str) -> Result<()> {
-        self.backend.begin_renderpass(renderpass_name)?;
+    pub fn begin_renderpass_by_name(&mut self, renderpass_name: &str) -> Result<()> {
+        self.backend.begin_renderpass_by_name(renderpass_name)?;
+        Ok(())
+    }
+
+    pub fn begin_renderpass_by_id(&mut self, renderpass_id: RenderpassHandle) -> Result<()> {
+        self.backend.begin_renderpass_by_id(renderpass_id)?;
         Ok(())
     }
 
@@ -232,38 +236,33 @@ impl Renderer {
         self.backend.end_renderpass()?;
         Ok(())
     }
-    pub fn get_renderpass(&self, name: &str) -> Result<Rc<RefCell<Renderpass>>> {
-        Ok(self.backend.get_renderpass(name)?)
+
+    pub fn get_renderpass_handle(&self, name: &str) -> Result<RenderpassHandle> {
+        Ok(self.backend.get_renderpass_handle(name)?)
+    }
+    pub fn get_renderpass_by_name(&self, name: &str) -> Result<&Renderpass> {
+        Ok(self.backend.get_renderpass_by_name(name)?)
     }
 
+    pub fn get_mut_renderpass_by_name(&mut self, name: &str) -> Result<&mut Renderpass> {
+        Ok(self.backend.get_mut_renderpass_by_name(name)?)
+    }
+
+    pub fn get_renderpass_by_id(&self, id: usize) -> Result<&Renderpass> {
+        Ok(self.backend.get_renderpass_by_id(id)?)
+    }
+
+    pub fn get_mut_renderpass_by_id(&mut self, id: usize) -> Result<&mut Renderpass> {
+        Ok(self.backend.get_mut_renderpass_by_id(id)?)
+    }
     pub fn on_resize(&mut self, width: i32, height: i32) -> Result<()> {
-        self.projection = Matrix4::perspective(
-            45.0,
-            width as f32 / height as f32,
-            self.near_clip,
-            self.far_clip,
-        );
-        self.ui_projection =
-            Matrix4::orthographic(0.0, width as f32, height as f32, 0.0, -100.0, 100.0);
         self.backend.on_resize(width, height)?;
-        Ok(())
-    }
-
-    pub fn set_render_mode(&mut self, render_mode: u32) -> Result<()> {
-        match render_mode {
-            0 => self.render_mode = RendererDebugViewMode::Default,
-            1 => self.render_mode = RendererDebugViewMode::Lighting,
-            2 => self.render_mode = RendererDebugViewMode::Normals,
-            // should warn here
-            _ => self.render_mode = RendererDebugViewMode::Default,
-        }
-
         Ok(())
     }
 
     pub fn create_shader(
         &mut self,
-        shader: &mut Shader,
+        shader: &mut Shader<'a>,
         renderpass_name: &str,
         stage_count: u8,
         stage_filenames: &Vec<String>,
@@ -287,21 +286,21 @@ impl Renderer {
         self.backend.use_shader(shader)?;
         Ok(())
     }
-    pub fn shader_bind_globals(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_bind_globals(shader)?;
+    pub fn bind_globals_for_shader(&self, shader: &mut Shader) -> Result<()> {
+        self.backend.bind_globals_for_shader(shader)?;
         Ok(())
     }
-    pub fn shader_bind_instance(&self, shader: &mut Shader) -> Result<()> {
+    pub fn bind_instance_for_shader(&self, shader: &mut Shader) -> Result<()> {
         self.backend
-            .shader_bind_instance(shader, shader.bound_instance_id as u32)?;
+            .bind_instance_for_shader(shader, shader.bound_instance_id as u32)?;
         Ok(())
     }
-    pub fn shader_apply_globals(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_apply_globals(shader)?;
+    pub fn apply_globals_for_shader(&self, shader: &mut Shader) -> Result<()> {
+        self.backend.apply_globals_for_shader(shader)?;
         Ok(())
     }
-    pub fn shader_apply_instance(&self, shader: &mut Shader) -> Result<()> {
-        self.backend.shader_apply_instance(shader)?;
+    pub fn apply_instance_for_shader(&self, shader: &mut Shader) -> Result<()> {
+        self.backend.apply_instance_for_shader(shader)?;
         Ok(())
     }
     pub fn set_default_texture(&mut self, default_texture: TextureHandle) -> Result<()> {
@@ -337,13 +336,14 @@ impl Renderer {
             .release_shader_instance_resources(shader, instance_id)?;
         Ok(())
     }
-    pub fn set_uniform(
+    pub fn set_uniform_for_shader(
         &self,
         shader: &mut Shader,
         uniform_index: usize,
         value: *const c_void,
     ) -> Result<()> {
-        self.backend.set_uniform(shader, uniform_index, value)?;
+        self.backend
+            .set_uniform_for_shader(shader, uniform_index, value)?;
         Ok(())
     }
 

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::application::{
+use crate::{
     basic::math::consts::INVALID_ID,
     renderer::frontend_renderer::{Renderer, RendererError},
     resources::resource_types::{
@@ -107,19 +107,19 @@ pub const DEFAULT_TEXTURE_NAME: &'static str = "default";
 pub const DEFAULT_TEXTURE_SPECULAR_NAME: &'static str = "default_specular";
 pub const DEFAULT_TEXTURE_NORMAL_NAME: &'static str = "default_normal";
 
-pub struct TextureSystem {
+pub struct TextureSystem<'a> {
     config: TextureSysConfig,
     default_texture: TextureHandle,
     default_specular_texture: TextureHandle,
     default_normal_texture: TextureHandle,
     registered_textures: Vec<Texture>,
     registered_textures_hashmap: HashMap<String, TextureRef>,
-    frontend_renderer: Option<Rc<RefCell<Renderer>>>,
+    frontend_renderer: Option<Rc<RefCell<Renderer<'a>>>>,
     resource_system: Rc<RefCell<ResourceSystem>>,
     //TODO: add free list of indices when we release textures
 }
 
-impl TextureSystem {
+impl<'a> TextureSystem<'a> {
     pub fn initialize(
         config: TextureSysConfig,
         resource_system: Rc<RefCell<ResourceSystem>>,
@@ -138,10 +138,13 @@ impl TextureSystem {
             registered_array.push(Texture::default());
         }
 
-        let default_texture_id = registered_array
-            .iter()
-            .enumerate()
-            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
+        let default_texture_id = registered_array.iter().enumerate().find_map(|(i, tex)| {
+            if tex.id == INVALID_ID {
+                Some(i)
+            } else {
+                None
+            }
+        });
         registered_array[default_texture_id.unwrap()].id = default_texture_id.unwrap();
         registered_hash_map.insert(
             DEFAULT_TEXTURE_NAME.to_string(),
@@ -167,10 +170,13 @@ impl TextureSystem {
             },
         );
 
-        let default_normal_texture_id = registered_array
-            .iter()
-            .enumerate()
-            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
+        let default_normal_texture_id = registered_array.iter().enumerate().find_map(|(i, tex)| {
+            if tex.id == INVALID_ID {
+                Some(i)
+            } else {
+                None
+            }
+        });
 
         registered_array[default_normal_texture_id.unwrap()].id =
             default_normal_texture_id.unwrap();
@@ -194,7 +200,7 @@ impl TextureSystem {
         })
     }
 
-    pub fn set_renderer(&mut self, frontend_renderer: Rc<RefCell<Renderer>>) {
+    pub fn set_renderer(&mut self, frontend_renderer: Rc<RefCell<Renderer<'a>>>) {
         self.frontend_renderer = Some(frontend_renderer);
     }
 
@@ -601,7 +607,7 @@ impl TextureSystem {
     }
 }
 
-impl Drop for TextureSystem {
+impl<'a> Drop for TextureSystem<'a> {
     fn drop(&mut self) {
         let _ = self.destroy_default_textures();
         for texture in self.registered_textures.iter_mut() {

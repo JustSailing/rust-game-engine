@@ -1,20 +1,25 @@
 mod application;
+mod basic;
+mod renderer;
+mod resources;
+mod systems;
 
 use std::cell::RefCell;
+use std::ptr;
 use std::rc::Rc;
 
-use application::basic::math::vec3::Vec3;
 use application::{AppConfig, ApplicationState};
+use basic::math::vec3::Vec3;
 
-use crate::application::basic::event::{EventCallback, EventCodes, EventCtx};
-use crate::application::basic::input::InputState;
-use crate::application::basic::window::Key;
-use crate::application::renderer::frontend_renderer::Renderer;
-use crate::application::renderer::renderer_types::RendererDebugViewMode;
-use crate::application::resources::resource_types::Mesh;
-use crate::application::systems::camera_system::CameraSystem;
-use crate::application::systems::material_system::MaterialSystem;
-use crate::application::systems::texture_system::TextureSystem;
+use crate::basic::event::{EventCodes, EventCtx, EventSystem};
+use crate::basic::input::InputState;
+use crate::basic::window::Key;
+use crate::renderer::frontend_renderer::Renderer;
+use crate::renderer::renderer_types::RendererDebugViewMode;
+use crate::resources::resource_types::Mesh;
+use crate::systems::camera_system::CameraSystem;
+use crate::systems::material_system::MaterialSystem;
+use crate::systems::texture_system::TextureSystem;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -38,11 +43,12 @@ pub struct GameState {
 pub struct Game<'a> {
     config: AppConfig,
     state: GameState,
-    texture_system: Rc<RefCell<TextureSystem>>,
-    renderer_system: Rc<RefCell<Renderer>>,
+    texture_system: Rc<RefCell<TextureSystem<'a>>>,
+    renderer_system: Rc<RefCell<Renderer<'a>>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
     camera_system: Rc<RefCell<CameraSystem>>,
-    input_system: Rc<RefCell<InputState<'a>>>,
+    input_system: Rc<RefCell<InputState>>,
+    event_system: Rc<RefCell<EventSystem>>,
 }
 
 impl<'a> Game<'a> {
@@ -51,7 +57,7 @@ impl<'a> Game<'a> {
         self.camera_system
             .borrow_mut()
             .get_mut_default_camera()
-            .set_position(&Vec3::new(10.5, 5.0, 9.5));
+            .set_position(&Vec3::new(10.5, 5.0, 5.5));
         true
     }
 
@@ -146,18 +152,28 @@ impl<'a> Game<'a> {
             // let _ = self.material_system.borrow_mut().release(old_name);
         }
 
-        let mut renderer = self.renderer_system.borrow_mut();
-
         if input_state.is_key_down(Key::_1).unwrap() {
-            let _ = renderer.set_render_mode(RendererDebugViewMode::Lighting as u32);
+            let _ = self.event_system.borrow_mut().fire_event(
+                EventCodes::SetRenderMode as usize,
+                ptr::null(),
+                &EventCtx::U32([RendererDebugViewMode::Lighting as u32, 0, 0, 0]),
+            );
         }
 
         if input_state.is_key_down(Key::_2).unwrap() {
-            let _ = renderer.set_render_mode(RendererDebugViewMode::Normals as u32);
+            let _ = self.event_system.borrow_mut().fire_event(
+                EventCodes::SetRenderMode as usize,
+                ptr::null(),
+                &EventCtx::U32([RendererDebugViewMode::Normals as u32, 0, 0, 0]),
+            );
         }
 
         if input_state.is_key_down(Key::_0).unwrap() {
-            let _ = renderer.set_render_mode(RendererDebugViewMode::Default as u32);
+            let _ = self.event_system.borrow_mut().fire_event(
+                EventCodes::SetRenderMode as usize,
+                ptr::null(),
+                &EventCtx::U32([RendererDebugViewMode::Default as u32, 0, 0, 0]),
+            );
         }
 
         camera.recalculate_view();
@@ -170,46 +186,5 @@ impl<'a> Game<'a> {
 
     pub fn resize(&self, _width: u32, _height: u32) -> bool {
         true
-    }
-}
-
-impl<'a> EventCallback for Game<'a> {
-    fn handle_event(
-        &mut self,
-        code: usize,
-        _sender: *const std::os::raw::c_void,
-        _listener: *const std::os::raw::c_void,
-        data: &EventCtx,
-    ) -> bool {
-        match EventCodes::from(code) {
-            EventCodes::ApplicationQuit => {
-                println!("in game event call back handle event");
-                true
-            }
-            EventCodes::KeyPressed => todo!(),
-            EventCodes::KeyReleased => todo!(),
-            EventCodes::ButtonPressed => todo!(),
-            EventCodes::ButtonReleased => todo!(),
-            EventCodes::MouseMoved => todo!(),
-            EventCodes::MouseWheel => todo!(),
-            EventCodes::WindowResized => {
-                let arr = match data {
-                    EventCtx::I32(arr) => arr,
-                    _ => return false,
-                };
-                println!(
-                    "in game event callback on resize: width {} height {} x {} y {}",
-                    arr[0], arr[1], arr[2], arr[3]
-                );
-
-                match self.renderer_system.borrow_mut().on_resize(arr[0], arr[1]) {
-                    Ok(_) => true,
-                    Err(_) => false,
-                }
-            }
-            EventCodes::SetRenderMode => todo!(),
-            EventCodes::Debug0 => todo!(),
-            EventCodes::MaxCodes => todo!(),
-        }
     }
 }

@@ -1,12 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
-
-use crate::application::basic::math::vec3::{Vec3, Vector3D};
-use crate::application::{
+use crate::basic::math::vec3::{Vec3, Vector3D};
+use crate::{
     basic::math::{consts::INVALID_ID, transform::Transform, vec4::Vec4},
     renderer::vulkan::vulkan_image::VulkanImage,
 };
 use ash::vk::{Filter, Sampler, SamplerAddressMode};
 use bitflags::bitflags;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 #[repr(C)]
@@ -332,7 +332,7 @@ impl Default for Geometry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct Mesh {
     pub geometries: Vec<GeometryHandle>,

@@ -1,4 +1,4 @@
-use crate::application::{basic::math::consts::INVALID_ID, renderer::camera::Camera};
+use crate::{basic::math::consts::INVALID_ID, renderer::camera::Camera};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -98,13 +98,29 @@ impl CameraSystem {
 
         registered_cameras[idx.unwrap()].id = idx.unwrap();
 
-        let registered_cameras_hashmap = HashMap::<String, CameraRef>::new();
+        let mut registered_cameras_hashmap = HashMap::<String, CameraRef>::new();
+        registered_cameras_hashmap.insert(
+            DEFAULT_CAMERA_NAME.to_string(),
+            CameraRef {
+                handle: idx.unwrap(),
+                reference_count: 0,
+                auto_release: true,
+            },
+        );
         Ok(Self {
             config: *config,
             default_camera: idx.unwrap(),
             registered_cameras,
             registered_cameras_hashmap,
         })
+    }
+
+    pub fn get_camera(&self, camera_handle: CameraHandle) -> &Camera {
+        &self.registered_cameras[camera_handle]
+    }
+
+    pub fn get_mut_camera(&mut self, camera_handle: CameraHandle) -> &mut Camera {
+        &mut self.registered_cameras[camera_handle]
     }
 
     pub fn acquire(&mut self, name: &str, auto_release: bool) -> Result<CameraHandle> {

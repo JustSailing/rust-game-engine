@@ -1,7 +1,4 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use super::event::{EventCodes, EventCtx, EventSystem};
+use super::event::{EventCodes, EventCtx};
 use super::window::{Button, Key};
 use thiserror::Error;
 
@@ -29,16 +26,15 @@ pub enum InputSysError {
     NotInitialized,
 }
 
-pub struct InputState<'a> {
+pub struct InputState {
     keyboard_current: KeyboardState,
     keyboard_previous: KeyboardState,
     mouse_current: MouseState,
     mouse_previous: MouseState,
-    event_system: Rc<RefCell<EventSystem<'a>>>,
 }
 
-impl<'a> InputState<'a> {
-    pub fn initialize(event_system: Rc<RefCell<EventSystem<'a>>>) -> Result<Self> {
+impl InputState {
+    pub fn initialize() -> Result<Self> {
         Ok(InputState {
             keyboard_current: KeyboardState { keys: [0; 256] },
             keyboard_previous: KeyboardState { keys: [0; 256] },
@@ -52,7 +48,6 @@ impl<'a> InputState<'a> {
                 pos_y: 0,
                 buttons: [0; Button::MaxButtons as usize],
             },
-            event_system,
         })
     }
 
@@ -63,49 +58,47 @@ impl<'a> InputState<'a> {
         Ok(())
     }
 
-    pub fn process_key(&mut self, key: Key, pressed: bool) -> Result<()> {
-        if self.keyboard_current.keys[key as usize] != pressed as u8 {
-            self.keyboard_current.keys[key as usize] = pressed as u8;
-            let mut arr = [0u16; 8];
-            arr[0] = key as u16;
-            let ctx = EventCtx::U16(arr);
-            let code = if pressed {
-                EventCodes::KeyPressed as usize
-            } else {
-                EventCodes::KeyReleased as usize
-            };
-            match self
-                .event_system
-                .borrow_mut()
-                .fire_event(code, std::ptr::null(), &ctx)
-            {
-                Ok(()) => (),
-                Err(_) => return Err(InputSysError::NotInitialized),
-            }
+    pub fn handle_event(&mut self, code: usize, data: &EventCtx) -> Result<()> {
+        match EventCodes::from(code) {
+            EventCodes::KeyPressed => match data {
+                EventCtx::U16(d) => {
+                    self.process_key(d[0], true)?;
+                }
+                _ => {}
+            },
+            EventCodes::KeyReleased => match data {
+                EventCtx::U16(d) => {
+                    self.process_key(d[0], false)?;
+                }
+                _ => {}
+            },
+            EventCodes::ButtonPressed => match data {
+                EventCtx::U16(d) => {
+                    self.process_button(d[0], true)?;
+                }
+                _ => {}
+            },
+            EventCodes::ButtonReleased => match data {
+                EventCtx::U16(d) => {
+                    self.process_button(d[0], false)?;
+                }
+                _ => {}
+            },
+            _ => {}
         }
-
         Ok(())
     }
 
-    pub fn process_button(&mut self, button: Button, pressed: bool) -> Result<()> {
+    pub fn process_key(&mut self, key: u16, pressed: bool) -> Result<()> {
+        if self.keyboard_current.keys[key as usize] != pressed as u8 {
+            self.keyboard_current.keys[key as usize] = pressed as u8;
+        }
+        Ok(())
+    }
+
+    pub fn process_button(&mut self, button: u16, pressed: bool) -> Result<()> {
         if self.mouse_current.buttons[button as usize] != pressed as u8 {
             self.mouse_current.buttons[button as usize] = pressed as u8;
-            let mut arr = [0u16; 8];
-            arr[0] = button as u16;
-            let ctx = EventCtx::U16(arr);
-            let code = if pressed {
-                EventCodes::ButtonPressed as usize
-            } else {
-                EventCodes::ButtonReleased as usize
-            };
-            match self
-                .event_system
-                .borrow_mut()
-                .fire_event(code, std::ptr::null(), &ctx)
-            {
-                Ok(()) => (),
-                Err(_) => return Err(InputSysError::NotInitialized),
-            }
         }
 
         Ok(())
@@ -115,35 +108,14 @@ impl<'a> InputState<'a> {
         if self.mouse_current.pos_x != x || self.mouse_current.pos_y != y {
             self.mouse_current.pos_x = x;
             self.mouse_current.pos_y = y;
-            let mut arr = [0u16; 8];
-            arr[0] = x as u16;
-            arr[1] = y as u16;
-            let ctx = EventCtx::U16(arr);
-            match self.event_system.borrow_mut().fire_event(
-                EventCodes::MouseMoved as usize,
-                std::ptr::null(),
-                &ctx,
-            ) {
-                Ok(()) => (),
-                Err(_) => return Err(InputSysError::NotInitialized),
-            }
         }
 
         Ok(())
     }
 
-    pub fn process_mouse_wheel(&self, z_delta: i8) -> Result<()> {
-        let mut arr = [0i8; 16];
-        arr[0] = z_delta;
-        let ctx = EventCtx::I8(arr);
-        match self.event_system.borrow_mut().fire_event(
-            EventCodes::MouseWheel as usize,
-            std::ptr::null(),
-            &ctx,
-        ) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(InputSysError::NotInitialized),
-        }
+    pub fn process_mouse_wheel(&self, _z_delta: i8) -> Result<()> {
+        // TODO: Add mouse wheel to input state
+        Ok(())
     }
 
     pub fn is_key_down(&self, key: Key) -> Result<bool> {

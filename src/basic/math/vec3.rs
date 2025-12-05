@@ -1,4 +1,4 @@
-use crate::application::basic::math::vec4::Vec4;
+use crate::basic::math::vec4::Vec4;
 
 use super::{consts::FLOAT_EPSILON, vec2::Vec2};
 use std::ops::{Add, Div, Mul, Sub};

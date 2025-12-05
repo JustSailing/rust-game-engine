@@ -1,0 +1,7 @@
+# material file
+version=0.1
+name=material_11
+diffuse_colour=0.588 0.588 0.588 1
+shininess=8
+diffuse_map_name=material_11
+shader=Shader.Builtin.Material

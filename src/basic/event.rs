@@ -1,8 +1,9 @@
-use std::{cell::RefCell, os::raw::c_void, rc::Rc};
+use std::{os::raw::c_void, sync::mpsc::Sender};
 use thiserror::Error;
 
 type Result<T> = std::result::Result<T, EventSysError>;
 
+#[derive(Clone, Copy)]
 pub enum EventCtx {
     I64([i64; 2]),
     U64([u64; 2]),
@@ -57,29 +58,6 @@ impl From<usize> for EventCodes {
     }
 }
 
-pub trait EventCallback {
-    fn handle_event(
-        &mut self,
-        code: usize,
-        sender: *const c_void,
-        listener: *const c_void,
-        data: &EventCtx,
-    ) -> bool;
-}
-
-type PfnOnEvent =
-    fn(code: usize, sender: *const c_void, listener: *const c_void, data: &EventCtx) -> bool;
-
-//#[derive(Default)]
-struct RegisteredEvent<'a> {
-    listener: *const c_void,
-    callback: Box<Rc<RefCell<dyn EventCallback + 'a>>>,
-}
-#[derive(Default)]
-struct EventCodeEntry<'a> {
-    events: Vec<RegisteredEvent<'a>>,
-}
-
 #[derive(Error, Debug)]
 pub enum EventSysError {
     #[error("event system error: already initialize {} {}", file!(), line!())]
@@ -88,77 +66,30 @@ pub enum EventSysError {
     NotInitialized,
     #[error("event system error: already shutdown {} {}", file!(), line!())]
     AlreadyShutdown,
+    #[error("event system error: channel send failed")]
+    SendError,
 }
 
-pub struct EventSystem<'a> {
-    registered: [EventCodeEntry<'a>; EventCodes::MaxCodes as usize],
+pub type EventTuple = (usize, EventCtx);
+
+pub struct EventSystem {
+    sender: Sender<EventTuple>,
 }
 
-impl<'a> EventSystem<'a> {
-    pub fn initialize() -> Result<Self> {
-        let codes: [EventCodeEntry; EventCodes::MaxCodes as usize] =
-            [(); EventCodes::MaxCodes as usize].map(|_| EventCodeEntry { events: Vec::new() });
-
-        Ok(EventSystem { registered: codes })
+impl EventSystem {
+    pub fn initialize(sender: Sender<EventTuple>) -> Result<Self> {
+        Ok(Self { sender: sender })
     }
 
-    pub fn register_event(
+    pub fn fire_event(
         &mut self,
         code: usize,
-        listener: *const c_void,
-        on_event: Box<Rc<RefCell<dyn EventCallback + 'a>>>,
+        _sender: *const c_void,
+        ctx: &EventCtx,
     ) -> Result<()> {
-        for v in &self.registered[code].events {
-            if v.listener == listener {
-                // TODO: Warn
-                return Ok(());
-            }
+        match self.sender.send((code, ctx.clone())) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(EventSysError::SendError),
         }
-
-        self.registered[code].events.push(RegisteredEvent {
-            listener,
-            callback: on_event,
-        });
-        Ok(())
-    }
-
-    //FIXME
-    pub fn unregister_event(
-        &mut self,
-        code: usize,
-        listener: *const c_void,
-        _on_event: Box<Rc<RefCell<dyn EventCallback + 'a>>>,
-    ) -> Result<()> {
-        let mut i: usize = 0;
-        let mut check: bool = false;
-
-        for (it, reg) in self.registered[code].events.iter().enumerate() {
-            if reg.listener == listener
-            //&& (_on_event.borrow() as Any).type_id() == (reg.callback.borrow() as Any).type_id()
-            {
-                check = true;
-                i = it;
-                break;
-            }
-        }
-
-        if check {
-            self.registered[code].events.remove(i);
-        }
-
-        Ok(())
-    }
-
-    pub fn fire_event(&mut self, code: usize, sender: *const c_void, ctx: &EventCtx) -> Result<()> {
-        for reg in &mut self.registered[code].events {
-            if reg
-                .callback
-                .borrow_mut()
-                .handle_event(code, sender, reg.listener, &ctx)
-            {
-                return Ok(());
-            }
-        }
-        Ok(())
     }
 }

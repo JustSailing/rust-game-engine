@@ -1,12 +1,11 @@
-use crate::application::{
-    basic::{
+use crate::basic::{
         math::{consts::INVALID_ID, vec3::Vector3D},
         window::Window,
-    },
-    renderer::{
+};
+use crate::renderer::{
         renderer_types::{
             GeometryRenderData, RenderTarget, RendererBackendConfig, Renderpass,
-            RenderpassClearFlags,
+            RenderpassClearFlags, RenderpassHandle,
         },
         vulkan::{
             vulkan_buffer::VulkanBuffer,
@@ -17,18 +16,17 @@ use crate::application::{
             vulkan_swapchain::VulkanSwapchain,
             vulkan_sync_objects::{InFlightFrames, SyncObjects},
         },
-    },
-    resources::resource_types::{
+    };
+ use crate::resources::resource_types::{
         Geometry, ResourceData, ResourceType, ShaderAttributeType, ShaderScope, ShaderStage,
         ShaderUniformType, Texture, TextureHandle, TextureMap,
-    },
-    systems::{
+    };
+ use crate::systems::{
         geometry_system::DEFAULT_GEOMETRY_NAME,
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{Shader, ShaderInternalData},
         texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
-    },
-};
+ };
 
 use std::collections::HashMap;
 
@@ -211,7 +209,7 @@ impl Default for VulkanShaderInstanceState {
 pub struct VulkanShader<'a> {
     pub mapped_uniform_block: *mut c_void,
     vulkan_shader_config: VulkanShaderConfig<'a>,
-    renderpass: Rc<RefCell<Renderpass>>,
+    renderpass: RenderpassHandle,
     stages: [VulkanShaderStage<'a>; VULKAN_SHADER_MAX_STAGES],
     descriptor_pool: DescriptorPool,
     descriptor_set_layouts: [DescriptorSetLayout; 2],
@@ -250,7 +248,7 @@ impl Default for VulkanGeometryData {
 }
 
 #[repr(C)]
-pub struct VulkanContext {
+pub struct VulkanContext <'a>{
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
@@ -260,7 +258,7 @@ pub struct VulkanContext {
     default_texture: TextureHandle,
     image_index: u32,
     resource_system: Rc<RefCell<ResourceSystem>>,
-    texture_system: Rc<RefCell<TextureSystem>>,
+    texture_system: Rc<RefCell<TextureSystem<'a>>>,
     frame_delta_time: f32,
     geometry_vertex_offset: u64,
     geometry_index_offset: u64,
@@ -271,7 +269,7 @@ pub struct VulkanContext {
     in_flight_frames: InFlightFrames,
     graphics_cmd_bufs: VulkanCommandBuffer,
     registered_renderpasses_hashmap: HashMap<String, usize>,
-    registered_renderpasses: [Rc<RefCell<Renderpass>>; VULKAN_MAX_REGISTERED_RENDERPASSES],
+    registered_renderpasses: [Renderpass; VULKAN_MAX_REGISTERED_RENDERPASSES],
     recreating_swapchain: bool,
     swapchain: VulkanSwapchain,
     frame_buffer_size_generation: u32,
@@ -284,13 +282,13 @@ pub struct VulkanContext {
     instance: Instance,
 }
 
-impl<'a> VulkanContext {
+impl<'a> VulkanContext <'a>{
     pub fn initialize(
         window: &Window,
         backend_config: &RendererBackendConfig,
         window_render_target_count: &mut u32,
         resource_system: Rc<RefCell<ResourceSystem>>,
-        texture_system: Rc<RefCell<TextureSystem>>,
+        texture_system: Rc<RefCell<TextureSystem<'a>>>,
     ) -> Result<Self> {
         let entry = unsafe { Entry::load()? };
 
@@ -360,8 +358,8 @@ impl<'a> VulkanContext {
         *window_render_target_count = swap.image_count;
 
         // Initialize and create renderpasses
-        let registered_renderpasses: [Rc<RefCell<Renderpass>>; VULKAN_MAX_REGISTERED_RENDERPASSES] =
-            std::array::from_fn(|_| Rc::new(RefCell::new(Renderpass::default())));
+        let mut registered_renderpasses: [Renderpass; VULKAN_MAX_REGISTERED_RENDERPASSES] =
+            std::array::from_fn(|_| Renderpass::default());
 
         let mut renderpass_hashmap = HashMap::<String, usize>::new();
 
@@ -369,13 +367,7 @@ impl<'a> VulkanContext {
             let i = registered_renderpasses
                 .iter()
                 .enumerate()
-                .find_map(|(i, r)| {
-                    if r.borrow().id == INVALID_ID {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                });
+                .find_map(|(i, r)| if r.id == INVALID_ID { Some(i) } else { None });
             if i.is_none() {
                 return Err(VulkanBackendError::OperationFailed {
                     issue: "registered renderpass exceeded the a maximum allowed",
@@ -385,23 +377,21 @@ impl<'a> VulkanContext {
             }
             let index = i.unwrap();
 
-            registered_renderpasses[index].borrow_mut().id = index;
+            registered_renderpasses[index].id = index;
 
-            registered_renderpasses[index].borrow_mut().clear_flags = renderpass_config.clear_flags;
-            registered_renderpasses[index].borrow_mut().clear_colour =
-                renderpass_config.clear_color;
-            registered_renderpasses[index].borrow_mut().render_area = renderpass_config.render_area;
-            registered_renderpasses[index].borrow_mut().internal_data =
-                Self::create_vulkan_renderpass(
-                    1.0,
-                    0,
-                    &dev,
-                    swap.image_format.format,
-                    dev.depth_format,
-                    renderpass_config.clear_flags,
-                    !renderpass_config.prev_name.is_empty(),
-                    !renderpass_config.next_name.is_empty(),
-                )?;
+            registered_renderpasses[index].clear_flags = renderpass_config.clear_flags;
+            registered_renderpasses[index].clear_colour = renderpass_config.clear_color;
+            registered_renderpasses[index].render_area = renderpass_config.render_area;
+            registered_renderpasses[index].internal_data = Self::create_vulkan_renderpass(
+                1.0,
+                0,
+                &dev,
+                swap.image_format.format,
+                dev.depth_format,
+                renderpass_config.clear_flags,
+                !renderpass_config.prev_name.is_empty(),
+                !renderpass_config.next_name.is_empty(),
+            )?;
             renderpass_hashmap.insert(renderpass_config.name.clone(), index);
             for i in 0..swap.render_textures.len() {
                 // let tex_sys = texture_system.borrow_mut();
@@ -434,12 +424,7 @@ impl<'a> VulkanContext {
                 }
 
                 let framebuffer_create_info = FramebufferCreateInfo::default()
-                    .render_pass(
-                        registered_renderpasses[index]
-                            .borrow()
-                            .internal_data
-                            .renderpass,
-                    )
+                    .render_pass(registered_renderpasses[index].internal_data.renderpass)
                     .attachments(&attachment_views)
                     .width(window.width)
                     .height(window.height)
@@ -453,10 +438,7 @@ impl<'a> VulkanContext {
                     attachments: attachments,
                     internal_framebuffer: framebuffer,
                 };
-                registered_renderpasses[index]
-                    .borrow_mut()
-                    .targets
-                    .push(render_target);
+                registered_renderpasses[index].targets.push(render_target);
             }
         }
 
@@ -867,7 +849,7 @@ impl<'a> VulkanContext {
         })
     }
 
-    pub fn begin_renderpass(&mut self, renderpass_name: &str) -> Result<()> {
+    pub fn begin_renderpass_by_name(&mut self, renderpass_name: &str) -> Result<()> {
         let index = if let Some(renderpass_index) =
             self.registered_renderpasses_hashmap.get(renderpass_name)
         {
@@ -879,32 +861,26 @@ impl<'a> VulkanContext {
                 line: line!(),
             });
         };
-        let renderpass = if let Some(renderpass) = self.registered_renderpasses.get(*index) {
-            renderpass
-        } else {
-            return Err(VulkanBackendError::OperationFailed {
-                issue: "renderpass does not exist",
-                file: file!(),
-                line: line!(),
-            });
-        };
+        self.begin_renderpass_by_id(*index)
+    }
+
+    pub fn begin_renderpass_by_id(&mut self, renderpass_index: RenderpassHandle) -> Result<()> {
+        let renderpass = &self.registered_renderpasses[renderpass_index];
 
         let mut begin_info = RenderPassBeginInfo::default()
-            .render_pass(renderpass.borrow().internal_data.renderpass)
-            .framebuffer(
-                renderpass.borrow().targets[self.image_index as usize].internal_framebuffer,
-            )
+            .render_pass(renderpass.internal_data.renderpass)
+            .framebuffer(renderpass.targets[self.image_index as usize].internal_framebuffer)
             .render_area(
                 Rect2D::default()
                     .extent(
                         Extent2D::default()
-                            .height(renderpass.borrow().render_area.get_h() as u32)
-                            .width(renderpass.borrow().render_area.get_w() as u32),
+                            .height(renderpass.render_area.get_h() as u32)
+                            .width(renderpass.render_area.get_w() as u32),
                     )
                     .offset(
                         Offset2D::default()
-                            .x(renderpass.borrow().render_area.get_x() as i32)
-                            .y(renderpass.borrow().render_area.get_y() as i32),
+                            .x(renderpass.render_area.get_x() as i32)
+                            .y(renderpass.render_area.get_y() as i32),
                     ),
             );
 
@@ -913,32 +889,29 @@ impl<'a> VulkanContext {
         let mut clear_values: [ClearValue; 2];
         clear_values = [ClearValue::default(), ClearValue::default()];
         if renderpass
-            .borrow()
             .clear_flags
             .contains(RenderpassClearFlags::ColourBuffer)
         {
             clear_values[clear_value_count] = ClearValue {
                 color: ClearColorValue {
-                    float32: renderpass.borrow().clear_colour.data,
+                    float32: renderpass.clear_colour.data,
                 },
             };
             clear_value_count += 1;
         }
         if renderpass
-            .borrow()
             .clear_flags
             .contains(RenderpassClearFlags::DepthBuffer)
         {
             clear_values[clear_value_count] = ClearValue {
                 depth_stencil: ClearDepthStencilValue::default()
-                    .depth(renderpass.borrow().internal_data.depth)
+                    .depth(renderpass.internal_data.depth)
                     .stencil(
                         if renderpass
-                            .borrow()
                             .clear_flags
                             .contains(RenderpassClearFlags::StencilBuffer)
                         {
-                            renderpass.borrow().internal_data.stencil
+                            renderpass.internal_data.stencil
                         } else {
                             0
                         },
@@ -969,7 +942,12 @@ impl<'a> VulkanContext {
         }
     }
 
-    pub fn get_renderpass(&self, name: &str) -> Result<Rc<RefCell<Renderpass>>> {
+    pub fn get_renderpass_by_name(&self, name: &str) -> Result<&Renderpass> {
+        let index = self.get_renderpass_handle(name)?;
+        Ok(&self.registered_renderpasses[index])
+    }
+
+    pub fn get_renderpass_handle(&self, name: &str) -> Result<RenderpassHandle> {
         let index = self.registered_renderpasses_hashmap.get(name);
         if index.is_none() {
             return Err(VulkanBackendError::OperationFailed {
@@ -978,17 +956,21 @@ impl<'a> VulkanContext {
                 line: line!(),
             });
         }
-        if let Some(renderpass) = self.registered_renderpasses.get(*index.unwrap()) {
-            Ok(Rc::clone(&renderpass))
-        } else {
-            return Err(VulkanBackendError::OperationFailed {
-                issue: "renderpass index was not valid",
-                file: file!(),
-                line: line!(),
-            });
-        }
+        Ok(*index.unwrap())
+}
+
+    pub fn get_mut_renderpass_by_name(&mut self, name: &str) -> Result<&mut Renderpass> {
+        let index = self.get_renderpass_handle(name)?;
+        Ok(&mut self.registered_renderpasses[index])
     }
 
+    pub fn get_renderpass_by_id(&self, id: usize) -> Result<&Renderpass> {
+        Ok(&self.registered_renderpasses[id])
+    }
+
+    pub fn get_mut_renderpass_by_id(&mut self, id: usize) -> Result<&mut Renderpass> {
+        Ok(&mut self.registered_renderpasses[id])
+    }
     pub fn end_renderpass(&mut self) -> Result<()> {
         unsafe {
             self.device.device.cmd_end_render_pass(
@@ -1068,21 +1050,23 @@ impl<'a> VulkanContext {
     fn refresh_render_targets(&mut self) -> Result<()> {
         // regenerate targets for all registered renderpass
         for (_, index) in self.registered_renderpasses_hashmap.iter() {
+            let renderpass = &mut self.registered_renderpasses[*index];
+            renderpass.render_area.set_w(self.framebuffer_width as f32);
+            renderpass.render_area.set_h(self.framebuffer_height as f32);
+
             for i in 0..self.swapchain.image_count as usize {
                 unsafe {
                     self.device.device.destroy_framebuffer(
-                        self.registered_renderpasses[*index].borrow().targets[i]
-                            .internal_framebuffer,
+                        self.registered_renderpasses[*index].targets[i].internal_framebuffer,
                         None,
                     );
                 }
-                self.registered_renderpasses[*index].borrow_mut().targets[i].internal_framebuffer =
+                self.registered_renderpasses[*index].targets[i].internal_framebuffer =
                     Framebuffer::null();
                 let window_target_texture = self.get_window_attachment(i);
                 let depth_target_texture = self.get_depth_attachment();
 
                 let attachments = if self.registered_renderpasses[*index]
-                    .borrow()
                     .clear_flags
                     .contains(RenderpassClearFlags::DepthBuffer)
                 {
@@ -1091,7 +1075,7 @@ impl<'a> VulkanContext {
                     vec![window_target_texture]
                 };
                 let render_target = self.create_render_target(*index, attachments.clone())?;
-                self.registered_renderpasses[*index].borrow_mut().targets[i] = render_target;
+                self.registered_renderpasses[*index].targets[i] = render_target;
             }
         }
         Ok(())
@@ -1102,15 +1086,6 @@ impl<'a> VulkanContext {
         renderpass_index: usize,
         attachments: Vec<TextureHandle>,
     ) -> Result<RenderTarget> {
-        let renderpass = &self.registered_renderpasses[renderpass_index];
-        renderpass
-            .borrow_mut()
-            .render_area
-            .set_w(self.framebuffer_width as f32);
-        renderpass
-            .borrow_mut()
-            .render_area
-            .set_h(self.framebuffer_height as f32);
         let mut attachment_views = vec![];
         for i in 0..attachments.len() {
             let tex_sys = self.texture_system.borrow_mut();
@@ -1123,9 +1098,9 @@ impl<'a> VulkanContext {
             })?;
             attachment_views.push(texture.internal_data.image.view.unwrap());
         }
-
+        let renderpass = &self.registered_renderpasses[renderpass_index];
         let framebuffer_create_info = FramebufferCreateInfo::default()
-            .render_pass(renderpass.borrow().internal_data.renderpass)
+            .render_pass(renderpass.internal_data.renderpass)
             .attachments(&attachment_views)
             .width(self.framebuffer_width)
             .height(self.framebuffer_height)
@@ -1493,7 +1468,7 @@ impl<'a> VulkanContext {
 
     pub fn draw_geometry(&mut self, data: &mut GeometryRenderData) -> Result<()> {
         //let geo = data.geometry.borrow_mut();
-        let buffer_data = &self.geometries[data.geometry.internal_id];
+        let buffer_data = &self.geometries[data.geometry_handle];
         let command_buffer =
             self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame];
 
@@ -1753,10 +1728,10 @@ impl<'a> VulkanContext {
             pipeline_create_infos[i] = vulkan_shader_stages[i].shader_stage_create_info;
         }
 
-        let renderpass = self.get_renderpass(renderpass_name)?;
+        let renderpass = self.get_renderpass_by_name(renderpass_name)?;
         let pipeline = VulkanPipeline::create(
             &self.device,
-            &renderpass.borrow().internal_data,
+            &renderpass.internal_data,
             shader.attribute_stride as u32,
             attribute_count as u32,
             &vulkan_shader_config.attributes,
@@ -1813,7 +1788,7 @@ impl<'a> VulkanContext {
         let vulkan_shader = VulkanShader {
             mapped_uniform_block: mapped_memory,
             vulkan_shader_config,
-            renderpass: renderpass,
+            renderpass: renderpass.id,
             stages: vulkan_shader_stages,
             descriptor_pool,
             descriptor_set_layouts: descriptor_set_layout,
@@ -1984,11 +1959,11 @@ impl<'a> VulkanContext {
 
         Ok(())
     }
-    pub fn shader_bind_globals(&self, shader: &mut Shader) -> Result<()> {
+    pub fn bind_globals_for_shader(&self, shader: &mut Shader) -> Result<()> {
         shader.bound_ubo_offset = shader.global_ubo_offset;
         Ok(())
     }
-    pub fn shader_bind_instance(&self, shader: &mut Shader, instance_id: u32) -> Result<()> {
+    pub fn bind_instance_for_shader(&self, shader: &mut Shader, instance_id: u32) -> Result<()> {
         shader.bound_instance_id = instance_id as usize;
         //let object_state = &internal_data.instance_states[instance_id as usize];
         shader.bound_ubo_offset = (shader.global_ubo_stride as u64
@@ -1997,7 +1972,7 @@ impl<'a> VulkanContext {
         Ok(())
     }
 
-    pub fn shader_apply_globals(&self, shader: &Shader) -> Result<()> {
+    pub fn apply_globals_for_shader(&self, shader: &Shader) -> Result<()> {
         let internal_data = match shader.internal_data {
             ShaderInternalData::Vulkan(ref vulkan_shader) => vulkan_shader,
             ShaderInternalData::Unknown => {
@@ -2052,7 +2027,7 @@ impl<'a> VulkanContext {
         }
         Ok(())
     }
-    pub fn shader_apply_instance(&self, shader: &mut Shader) -> Result<()> {
+    pub fn apply_instance_for_shader(&self, shader: &mut Shader) -> Result<()> {
         let internal_data = match shader.internal_data {
             ShaderInternalData::Vulkan(ref mut vulkan_shader) => vulkan_shader,
             ShaderInternalData::Unknown => {
@@ -2357,7 +2332,7 @@ impl<'a> VulkanContext {
         instance_state.id = INVALID_ID as u32;
         Ok(())
     }
-    pub fn set_uniform(
+    pub fn set_uniform_for_shader(
         &self,
         shader: &mut Shader,
         uniform_index: usize,
@@ -2461,7 +2436,7 @@ impl<'a> VulkanContext {
     }
 }
 
-impl Drop for VulkanContext {
+impl<'a> Drop for VulkanContext<'a> {
     fn drop(&mut self) {
         #[cfg(feature = "debug")]
         {

@@ -1,9 +1,0 @@
-# material file
-version=0.1
-name=vase_hanging
-diffuse_colour=0.588 0.588 0.588 1
-shininess=10
-diffuse_map_name=vase_hanging
-specular_map_name=vase_hanging_spec
-normal_map_name=vase_hanging_ddn
-shader=Shader.Builtin.Material
