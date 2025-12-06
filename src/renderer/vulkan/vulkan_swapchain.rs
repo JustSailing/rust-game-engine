@@ -6,6 +6,7 @@ use crate::renderer::vulkan::{
 use crate::resources::resource_types::{TextureData, TextureHandle};
 use crate::systems::texture_system::TextureSystem;
 use ash::{
+    Instance,
     khr::{surface, swapchain},
     vk::{
         self, CompositeAlphaFlagsKHR, Extent2D, Fence, ImageAspectFlags, ImageSubresourceRange,
@@ -13,7 +14,6 @@ use ash::{
         MemoryPropertyFlags, PresentInfoKHR, PresentModeKHR, Queue, Semaphore, SharingMode,
         SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
     },
-    Instance,
 };
 use std::cell::RefCell;
 use std::rc::Rc;

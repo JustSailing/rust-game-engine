@@ -70,11 +70,11 @@ impl<'a> Game<'a> {
         let input_state = self.input_system.borrow();
 
         if input_state.is_key_down(Key::A).unwrap() {
-            camera.yaw(1.0 * delta * movement);
+            camera.yaw(1.0 * delta * movement * 0.9);
         }
 
         if input_state.is_key_down(Key::D).unwrap() {
-            camera.yaw(-1.0 * delta * movement);
+            camera.yaw(-1.0 * delta * movement * 0.9);
         }
         if input_state.is_key_down(Key::Up).unwrap() {
             camera.pitch(1.0 * delta * movement);

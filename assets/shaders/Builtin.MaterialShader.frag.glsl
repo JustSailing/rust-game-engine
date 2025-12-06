@@ -18,8 +18,8 @@ struct point_light {
 
 directional_light dir_light = {
   //vec3(0,0,0 ),
-  vec3(-4.7, -5.5, -5.5),
-  //vec3(-0.57735, -0.57735, -0.57735),
+ // vec3(-4.7, -5.5, -5.5),
+  vec3(-0.57735, -2.07735, -6.27735),
   vec4(0.8, 0.8, 0.8, 1.0)
 };
 
@@ -74,10 +74,12 @@ void main() {
   normal = normalize(TBN * localNormal);
 
   if (in_mode == 0 || in_mode == 1) {
-    vec3 view_direction = normalize(in_dto.view_position - in_dto.frag_position);
-     out_colour = calculate_directional_light(dir_light, normal, view_direction); 
+     //vec3 view_direction = normalize(in_dto.view_position - in_dto.frag_position);
+     //out_colour = calculate_directional_light(dir_light, normal, view_direction); 
      //out_colour += calculate_point_light(p_light_0, normal, in_dto.frag_position, view_direction);
      //out_colour += calculate_point_light(p_light_1, normal, in_dto.frag_position, view_direction);
+    vec4 diff_samp = texture(samplers[SAMP_DIFFUSE], in_dto.tex_coord);
+    out_colour = diff_samp;
   } else if(in_mode == 2) {
     out_colour = vec4(abs(normal), 1.0);
   }

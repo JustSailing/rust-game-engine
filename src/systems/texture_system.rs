@@ -138,13 +138,10 @@ impl<'a> TextureSystem<'a> {
             registered_array.push(Texture::default());
         }
 
-        let default_texture_id = registered_array.iter().enumerate().find_map(|(i, tex)| {
-            if tex.id == INVALID_ID {
-                Some(i)
-            } else {
-                None
-            }
-        });
+        let default_texture_id = registered_array
+            .iter()
+            .enumerate()
+            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
         registered_array[default_texture_id.unwrap()].id = default_texture_id.unwrap();
         registered_hash_map.insert(
             DEFAULT_TEXTURE_NAME.to_string(),
@@ -170,13 +167,10 @@ impl<'a> TextureSystem<'a> {
             },
         );
 
-        let default_normal_texture_id = registered_array.iter().enumerate().find_map(|(i, tex)| {
-            if tex.id == INVALID_ID {
-                Some(i)
-            } else {
-                None
-            }
-        });
+        let default_normal_texture_id = registered_array
+            .iter()
+            .enumerate()
+            .find_map(|(i, tex)| if tex.id == INVALID_ID { Some(i) } else { None });
 
         registered_array[default_normal_texture_id.unwrap()].id =
             default_normal_texture_id.unwrap();

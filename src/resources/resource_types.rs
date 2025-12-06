@@ -1,4 +1,4 @@
-use crate::basic::math::vec3::{Vec3, Vector3D};
+use crate::basic::math::vec3::{Extents3D, Vec3, Vector3D};
 use crate::{
     basic::math::{consts::INVALID_ID, transform::Transform, vec4::Vec4},
     renderer::vulkan::vulkan_image::VulkanImage,
@@ -313,6 +313,8 @@ pub struct Geometry {
     pub internal_id: usize,
     pub material_instance_id: usize,
     pub generation: usize,
+    pub center: Vec3,
+    pub extents: Extents3D,
     pub name: String,
     pub material_handle: MaterialHandle,
     pub material_name: String,
@@ -324,6 +326,8 @@ impl Default for Geometry {
             id: INVALID_ID,
             internal_id: INVALID_ID,
             generation: INVALID_ID,
+            extents: Default::default(),
+            center: Vec3::new_zeroes(),
             name: Default::default(),
             material_handle: INVALID_ID,
             material_name: Default::default(),

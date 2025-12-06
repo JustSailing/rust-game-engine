@@ -1,0 +1,7 @@
+# material file
+version=0.1
+name=Georg_O
+diffuse_colour=1 1 1 1
+shininess=8
+diffuse_map_name=Georg_C_Georg_O
+shader=Shader.Builtin.Material

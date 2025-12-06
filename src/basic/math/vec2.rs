@@ -122,3 +122,8 @@ impl PartialEq for Vec2 {
 }
 
 impl Eq for Vec2 {}
+
+pub struct Extents2D {
+    min: Vec2,
+    max: Vec2,
+}

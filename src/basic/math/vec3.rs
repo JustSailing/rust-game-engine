@@ -1,3 +1,4 @@
+use crate::basic::math::matrix4::Matrix4;
 use crate::basic::math::vec4::Vec4;
 
 use super::{consts::FLOAT_EPSILON, vec2::Vec2};
@@ -87,6 +88,29 @@ impl Vec3 {
             self.data[2] - other.data[2],
         )
         .length()
+    }
+
+    pub fn transform(&self, m: &Matrix4) -> Vec3 {
+        let mut out = Vec3::new_zeroes();
+        out.set_x(
+            self.data[0] * m.data[0 + 0]
+                + self.data[1] * m.data[4 + 0]
+                + self.data[2] * m.data[8 + 0]
+                + 1.0 * m.data[12 + 0],
+        );
+        out.set_y(
+            self.data[0] * m.data[0 + 1]
+                + self.data[1] * m.data[4 + 1]
+                + self.data[2] * m.data[8 + 1]
+                + 1.0 * m.data[12 + 1],
+        );
+        out.set_z(
+            self.data[0] * m.data[0 + 2]
+                + self.data[1] * m.data[4 + 2]
+                + self.data[2] * m.data[8 + 2]
+                + 1.0 * m.data[12 + 2],
+        );
+        out
     }
 
     pub fn dot(&self, other: &Self) -> f32 {
@@ -261,5 +285,20 @@ impl From<&Vector3D> for VectorKey {
         process_vec!(v.tangent);
 
         VectorKey(data)
+    }
+}
+
+#[derive(Debug)]
+pub struct Extents3D {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl Default for Extents3D {
+    fn default() -> Self {
+        Self {
+            min: Vec3::new_zeroes(),
+            max: Vec3::new_zeroes(),
+        }
     }
 }

@@ -10,7 +10,7 @@ use crate::{
         ShaderAttributeType, ShaderConfig, ShaderScope, ShaderUniformConfig, ShaderUniformType,
         TextureMap,
     },
-    systems::texture_system::{TextureSysError, TextureSystem, DEFAULT_TEXTURE_NAME},
+    systems::texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
 };
 
 use thiserror::Error;
@@ -242,9 +242,7 @@ pub enum ShaderSysError {
     MaxUniformCountReached { file: &'static str, line: u32 },
     #[error("shader system error: uniform type unknown {file} {line}")]
     ShaderUniformTypeUnknown { file: &'static str, line: u32 },
-    #[error(
-        "shader system error: uniform use of shader scope local was not allowed {file} {line}"
-    )]
+    #[error("shader system error: uniform use of shader scope local was not allowed {file} {line}")]
     ShaderUniformUseLocal { file: &'static str, line: u32 },
     #[error("shader system error: given shader id that was invalid {file} {line}")]
     ShaderInvalidId { file: &'static str, line: u32 },

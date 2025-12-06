@@ -21,7 +21,7 @@ use crate::{
         render_view_system::{RenderViewSysError, RenderViewSystem},
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{Shader, ShaderSysError},
-        texture_system::TextureSystem,
+        texture_system::{TextureSysError, TextureSystem},
     },
 };
 
@@ -60,7 +60,8 @@ pub enum RendererError {
     ShaderSysErr(#[from] ShaderSysError),
     #[error("frontend renderer error: material system error {0}")]
     MaterialSysErr(#[from] MaterialSysError),
-
+    #[error("frontend renderer error: texture system error {0}")]
+    TextureSysErr(#[from] TextureSysError),
     #[error("frontend renderer error: geometry system error {0}")]
     GeometrySysErr(#[from] GeometrySysError),
     #[error("frontend renderer error: render view system error {0}")]

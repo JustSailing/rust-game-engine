@@ -1,14 +1,14 @@
 use crate::renderer::vulkan::vulkan_backend::VulkanBackendError;
 use ash::{
+    Device, Instance,
     khr::surface,
     vk::{
         CommandPool, CommandPoolCreateFlags, CommandPoolCreateInfo, DeviceCreateInfo,
-        DeviceQueueCreateInfo, Format, FormatFeatureFlags, PhysicalDevice, PhysicalDeviceFeatures,
-        PhysicalDeviceMemoryProperties, PhysicalDeviceProperties, PhysicalDeviceType,
-        PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR, SurfaceFormatKHR, SurfaceKHR,
-        KHR_SWAPCHAIN_NAME,
+        DeviceQueueCreateInfo, Format, FormatFeatureFlags, KHR_SWAPCHAIN_NAME, PhysicalDevice,
+        PhysicalDeviceFeatures, PhysicalDeviceMemoryProperties, PhysicalDeviceProperties,
+        PhysicalDeviceType, PresentModeKHR, Queue, QueueFlags, SurfaceCapabilitiesKHR,
+        SurfaceFormatKHR, SurfaceKHR,
     },
-    Device, Instance,
 };
 use std::ffi::CStr;
 

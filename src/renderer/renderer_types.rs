@@ -11,6 +11,7 @@ use crate::{
     systems::{
         camera_system::CameraSystem, geometry_system::GeometrySystem,
         material_system::MaterialSystem, shader_system::ShaderSystem,
+        texture_system::TextureSystem,
     },
 };
 use std::{cell::RefCell, rc::Rc};
@@ -25,7 +26,7 @@ pub enum RendererBackendType {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GeometryRenderData {
     pub model: Matrix4,
     pub geometry_handle: GeometryHandle,
@@ -257,7 +258,10 @@ pub trait RenderView {
         &self,
         mesh_packet: &mut MeshPacketData,
         camera_system: &Rc<RefCell<CameraSystem>>,
-    ) -> RenderViewPacket;
+        geometry_system: &Rc<RefCell<GeometrySystem>>,
+        material_system: &Rc<RefCell<MaterialSystem>>,
+        texture_system: &Rc<RefCell<TextureSystem>>,
+    ) -> Result<RenderViewPacket, RendererError>;
     fn render(
         &self,
         shader_system: &Rc<RefCell<ShaderSystem>>,

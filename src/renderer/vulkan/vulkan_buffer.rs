@@ -5,11 +5,11 @@ use crate::renderer::vulkan::{
     vulkan_backend::VulkanBackendError, vulkan_backend::VulkanContext,
     vulkan_command_buffer::VulkanCommandBuffer, vulkan_device::VulkanDevice,
 };
+use ash::Instance;
 use ash::vk::{
     Buffer, BufferCopy, BufferCreateInfo, BufferUsageFlags, CommandPool, DeviceMemory, DeviceSize,
     Fence, MemoryAllocateInfo, MemoryMapFlags, MemoryPropertyFlags, Queue, SharingMode,
 };
-use ash::Instance;
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
 

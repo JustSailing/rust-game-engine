@@ -12,6 +12,7 @@ use crate::{
     systems::{
         camera_system::CameraSystem, geometry_system::GeometrySystem,
         material_system::MaterialSystem, shader_system::ShaderSystem,
+        texture_system::TextureSystem,
     },
 };
 use thiserror::Error;
@@ -89,6 +90,7 @@ pub struct RenderViewSystem<'a> {
     camera_system: Rc<RefCell<CameraSystem>>,
     material_system: Rc<RefCell<MaterialSystem<'a>>>,
     geometry_system: Rc<RefCell<GeometrySystem<'a>>>,
+    texture_system: Rc<RefCell<TextureSystem<'a>>>,
 }
 
 impl<'a> RenderViewSystem<'a> {
@@ -99,6 +101,7 @@ impl<'a> RenderViewSystem<'a> {
         camera_system: Rc<RefCell<CameraSystem>>,
         material_system: Rc<RefCell<MaterialSystem<'a>>>,
         geometry_system: Rc<RefCell<GeometrySystem<'a>>>,
+        texture_system: Rc<RefCell<TextureSystem<'a>>>,
     ) -> Result<Self> {
         let registered_view_hashmap = HashMap::<String, RenderViewRef>::new();
         let mut registered_views = Vec::<Box<dyn RenderView>>::with_capacity(config.max_count);
@@ -114,6 +117,7 @@ impl<'a> RenderViewSystem<'a> {
             shader_system,
             material_system,
             geometry_system,
+            texture_system,
         })
     }
 
@@ -231,10 +235,13 @@ impl<'a> RenderViewSystem<'a> {
         render_view_handle: RenderViewHandle,
         mesh_packet: &mut MeshPacketData,
     ) -> Result<RenderViewPacket> {
-        Ok(
-            self.registered_views[render_view_handle]
-                .build_packet(mesh_packet, &self.camera_system),
-        )
+        Ok(self.registered_views[render_view_handle].build_packet(
+            mesh_packet,
+            &self.camera_system,
+            &self.geometry_system,
+            &self.material_system,
+            &self.texture_system,
+        )?)
     }
 
     pub fn on_render(

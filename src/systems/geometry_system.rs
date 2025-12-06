@@ -467,6 +467,15 @@ impl<'a> GeometrySystem<'a> {
             config.indices.push(v_offset + 1);
         }
 
+        config.center = Vec3::new_zeroes();
+        config.min_extents.data[0] = min_x;
+        config.min_extents.data[1] = min_y;
+        config.min_extents.data[2] = min_z;
+
+        config.max_extents.data[0] = max_x;
+        config.max_extents.data[1] = max_y;
+        config.max_extents.data[2] = max_z;
+
         config.name = name.to_string();
         config.material_name = material_name.to_string();
         geometry_generate_tangents(&mut config.vertices, &mut config.indices);
@@ -520,6 +529,10 @@ impl<'a> GeometrySystem<'a> {
             &config.vertices,
             &config.indices,
         )?;
+
+        geo.center = config.center;
+        geo.extents.min = config.min_extents;
+        geo.extents.max = config.max_extents;
 
         let mut material_config = MaterialConfig::default()
             .name(&config.material_name)

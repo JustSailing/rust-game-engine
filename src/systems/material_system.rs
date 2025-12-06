@@ -14,8 +14,8 @@ use crate::{
         resource_system::{ResourceSysError, ResourceSystem},
         shader_system::{ShaderSysError, ShaderSystem},
         texture_system::{
-            TextureSysError, TextureSystem, DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_NORMAL_NAME,
-            DEFAULT_TEXTURE_SPECULAR_NAME,
+            DEFAULT_TEXTURE_NAME, DEFAULT_TEXTURE_NORMAL_NAME, DEFAULT_TEXTURE_SPECULAR_NAME,
+            TextureSysError, TextureSystem,
         },
     },
 };
@@ -701,7 +701,7 @@ impl<'a> MaterialSystem<'a> {
                 .acquire(&config.specular_map_name, config.auto_release)?;
             mat.specular_map.texture_handle = texture_handle;
         } else {
-            mat.specular_map.use_type = TextureUse::MapDiffuse;
+            mat.specular_map.use_type = TextureUse::MapSpecular;
             mat.specular_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
@@ -726,7 +726,7 @@ impl<'a> MaterialSystem<'a> {
                 .acquire(&config.normal_map_name, config.auto_release)?;
             mat.normal_map.texture_handle = texture_handle;
         } else {
-            mat.normal_map.use_type = TextureUse::MapDiffuse;
+            mat.normal_map.use_type = TextureUse::MapNormal;
             mat.normal_map.texture_handle = self
                 .texture_system
                 .borrow_mut()

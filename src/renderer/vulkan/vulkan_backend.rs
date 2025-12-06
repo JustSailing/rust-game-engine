@@ -1,32 +1,32 @@
 use crate::basic::{
-        math::{consts::INVALID_ID, vec3::Vector3D},
-        window::Window,
+    math::{consts::INVALID_ID, vec3::Vector3D},
+    window::Window,
 };
 use crate::renderer::{
-        renderer_types::{
-            GeometryRenderData, RenderTarget, RendererBackendConfig, Renderpass,
-            RenderpassClearFlags, RenderpassHandle,
-        },
-        vulkan::{
-            vulkan_buffer::VulkanBuffer,
-            vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer},
-            vulkan_device::VulkanDevice,
-            vulkan_image::VulkanImage,
-            vulkan_pipeline::VulkanPipeline,
-            vulkan_swapchain::VulkanSwapchain,
-            vulkan_sync_objects::{InFlightFrames, SyncObjects},
-        },
-    };
- use crate::resources::resource_types::{
-        Geometry, ResourceData, ResourceType, ShaderAttributeType, ShaderScope, ShaderStage,
-        ShaderUniformType, Texture, TextureHandle, TextureMap,
-    };
- use crate::systems::{
-        geometry_system::DEFAULT_GEOMETRY_NAME,
-        resource_system::{ResourceSysError, ResourceSystem},
-        shader_system::{Shader, ShaderInternalData},
-        texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
- };
+    renderer_types::{
+        GeometryRenderData, RenderTarget, RendererBackendConfig, Renderpass, RenderpassClearFlags,
+        RenderpassHandle,
+    },
+    vulkan::{
+        vulkan_buffer::VulkanBuffer,
+        vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer},
+        vulkan_device::VulkanDevice,
+        vulkan_image::VulkanImage,
+        vulkan_pipeline::VulkanPipeline,
+        vulkan_swapchain::VulkanSwapchain,
+        vulkan_sync_objects::{InFlightFrames, SyncObjects},
+    },
+};
+use crate::resources::resource_types::{
+    Geometry, ResourceData, ResourceType, ShaderAttributeType, ShaderScope, ShaderStage,
+    ShaderUniformType, Texture, TextureHandle, TextureMap,
+};
+use crate::systems::{
+    geometry_system::DEFAULT_GEOMETRY_NAME,
+    resource_system::{ResourceSysError, ResourceSystem},
+    shader_system::{Shader, ShaderInternalData},
+    texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
+};
 
 use std::collections::HashMap;
 
@@ -248,7 +248,7 @@ impl Default for VulkanGeometryData {
 }
 
 #[repr(C)]
-pub struct VulkanContext <'a>{
+pub struct VulkanContext<'a> {
     #[cfg(feature = "debug")]
     dbg_messenger: DebugUtilsMessengerEXT,
     #[cfg(feature = "debug")]
@@ -282,7 +282,7 @@ pub struct VulkanContext <'a>{
     instance: Instance,
 }
 
-impl<'a> VulkanContext <'a>{
+impl<'a> VulkanContext<'a> {
     pub fn initialize(
         window: &Window,
         backend_config: &RendererBackendConfig,
@@ -957,7 +957,7 @@ impl<'a> VulkanContext <'a>{
             });
         }
         Ok(*index.unwrap())
-}
+    }
 
     pub fn get_mut_renderpass_by_name(&mut self, name: &str) -> Result<&mut Renderpass> {
         let index = self.get_renderpass_handle(name)?;
@@ -1152,7 +1152,7 @@ impl<'a> VulkanContext <'a>{
     ) -> Result<(VulkanBuffer, VulkanBuffer)> {
         let memory_property_flag = MemoryPropertyFlags::DEVICE_LOCAL;
 
-        const VERTEX_BUFFER_SIZE: usize = size_of::<Vector3D>() * 1024 * 1024;
+        const VERTEX_BUFFER_SIZE: usize = size_of::<Vector3D>() * 1024 * 1024 * 10;
 
         let vertex_buffer = VulkanBuffer::create(
             instance,
@@ -1165,7 +1165,7 @@ impl<'a> VulkanContext <'a>{
             true,
         )?;
 
-        const INDEX_BUFFER_SIZE: usize = size_of::<u32>() * 1024 * 1024;
+        const INDEX_BUFFER_SIZE: usize = size_of::<u32>() * 1024 * 1024 * 10;
 
         let index_buffer = VulkanBuffer::create(
             instance,

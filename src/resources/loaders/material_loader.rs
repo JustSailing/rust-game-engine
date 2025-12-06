@@ -34,18 +34,21 @@ impl MaterialLoader {
                     }
                     config.diffuse_colour = dif_col;
                 }
-                "diffuse_map_name" => config.diffuse_map_name = split[1].trim().to_string(),
+                "diffuse_map_name" => {
+                    config.diffuse_map_name = split[1].trim().to_string();
+                    //println!("{}", config.diffuse_map_name);
+                }
                 "specular_map_name" => config.specular_map_name = split[1].trim().to_string(),
                 "normal_map_name" => config.normal_map_name = split[1].trim().to_string(),
                 "shininess" => {
                     config.shininess = split[1].trim().to_string().parse::<f32>().unwrap()
                 }
                 "shader" => config.shader_name = split[1].trim().to_string(),
-                _ => println!(
-                    "{}={} not added to material config",
-                    split[0].trim(),
-                    split[1].trim()
-                ),
+                _ => {} // println!(
+                        //     "{}={} not added to material config",
+                        //     split[0].trim(),
+                        //     split[1].trim()
+                        // ),
             }
         }
 

@@ -5,6 +5,7 @@ use crate::renderer::vulkan::{
     vulkan_device::VulkanDevice,
 };
 use ash::{
+    Instance,
     vk::{
         AccessFlags, BufferImageCopy, DependencyFlags, DeviceMemory, Extent3D, Format, Image,
         ImageAspectFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
@@ -12,7 +13,6 @@ use ash::{
         ImageViewCreateInfo, ImageViewType, MemoryAllocateInfo, MemoryPropertyFlags,
         PipelineStageFlags, SampleCountFlags, SharingMode,
     },
-    Instance,
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;

@@ -6,12 +6,21 @@ use crate::renderer::renderer_types::{
     GeometryRenderData, MeshPacketData, RenderView, RenderViewKnownType, RenderViewPacket,
     RendererDebugViewMode, RenderpassHandle,
 };
+use crate::resources::resource_types::TextureFlags;
 use crate::systems::camera_system::{CameraHandle, CameraSystem, DEFAULT_CAMERA_NAME};
 use crate::systems::{
     geometry_system::GeometrySystem, material_system::MaterialSystem, shader_system::ShaderSystem,
+    texture_system::TextureSystem,
 };
 
 use std::{cell::RefCell, rc::Rc};
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GeometryDistance {
+    pub grd: GeometryRenderData,
+    pub distance: f32,
+}
 
 #[repr(C)]
 pub struct UIInternalData {
@@ -168,7 +177,10 @@ impl RenderView for UIRenderView {
         &self,
         mesh_packet: &mut MeshPacketData,
         _camera_system: &Rc<RefCell<CameraSystem>>,
-    ) -> RenderViewPacket {
+        _geometry_system: &Rc<RefCell<GeometrySystem>>,
+        _material_system: &Rc<RefCell<MaterialSystem>>,
+        _texture_system: &Rc<RefCell<TextureSystem>>,
+    ) -> Result<RenderViewPacket, RendererError> {
         let mut packet = RenderViewPacket {
             view_matrix: self.internal_data.view_matrix,
             projection_matrix: self.internal_data.projection_matrix,
@@ -179,15 +191,15 @@ impl RenderView for UIRenderView {
         };
 
         for mesh in mesh_packet.meshes.iter_mut() {
-            for geo in mesh.geometries.iter_mut() {
+            for g in mesh.geometries.iter_mut() {
                 let render_data = GeometryRenderData {
                     model: mesh.transform.borrow_mut().get_world(),
-                    geometry_handle: *geo,
+                    geometry_handle: *g,
                 };
                 packet.geometries.push(render_data);
             }
         }
-        packet
+        Ok(packet)
     }
     fn render(
         &self,
@@ -423,7 +435,10 @@ impl RenderView for WorldRenderView {
         &self,
         mesh_packet: &mut MeshPacketData,
         camera_system: &Rc<RefCell<CameraSystem>>,
-    ) -> RenderViewPacket {
+        geometry_system: &Rc<RefCell<GeometrySystem>>,
+        material_system: &Rc<RefCell<MaterialSystem>>,
+        texture_system: &Rc<RefCell<TextureSystem>>,
+    ) -> Result<RenderViewPacket, RendererError> {
         let mut packet = RenderViewPacket {
             view_matrix: *camera_system
                 .borrow()
@@ -439,16 +454,54 @@ impl RenderView for WorldRenderView {
             geometries: Vec::<GeometryRenderData>::new(),
         };
 
+        // NOTE: should probably set teh geometry_handle to the geometry internal id since after
+        // building packet its then sent to the backend. the draw geometry uses geometry internal
+        // id as an index for vertex buffer offset and index buffer offset. Right now the render
+        // function switches the geometry handle from id to internal_id. Since this is not used
+        // outside the render view, either
+        // 1. add a reference to geometry system as a parameter and set the internal id here
+        // 2. add internal id to GeometryRenderData
+        let mut geometry_distances = Vec::<GeometryDistance>::new();
         for mesh in mesh_packet.meshes.iter_mut() {
-            for geo in mesh.geometries.iter_mut() {
+            for g in mesh.geometries.iter_mut() {
+                if *g == INVALID_ID {
+                    println!("geometry handle is INVALID");
+                    continue;
+                }
+                let geo_sys = geometry_system.borrow();
+                let geo = geo_sys.get_geometry(*g)?;
                 let render_data = GeometryRenderData {
                     model: mesh.transform.borrow_mut().get_world(),
-                    geometry_handle: *geo,
+                    geometry_handle: *g,
                 };
-                packet.geometries.push(render_data);
+                let mat_sys = material_system.borrow();
+                let mat = mat_sys.get_material(geo.material_handle)?;
+                let tex_sys = texture_system.borrow();
+                let transparency = tex_sys
+                    .get_texture(mat.diffuse_map.texture_handle)?
+                    .flags
+                    .contains(TextureFlags::Transparency);
+                if !transparency {
+                    packet.geometries.push(render_data);
+                } else {
+                    let center = geo.center.transform(&render_data.model);
+                    let distance = center
+                        .distance(camera_system.borrow().get_default_camera().get_position())
+                        .abs();
+                    let geo_dist = GeometryDistance {
+                        grd: render_data,
+                        distance: distance,
+                    };
+                    geometry_distances.push(geo_dist);
+                }
             }
         }
-        packet
+        quicksort(&mut geometry_distances, false);
+        for i in 0..geometry_distances.len() {
+            packet.geometries.push(geometry_distances[i].grd);
+        }
+
+        Ok(packet)
     }
     fn render(
         &self,
@@ -480,8 +533,16 @@ impl RenderView for WorldRenderView {
 
             for g in render_view_packet.geometries.iter_mut() {
                 let geo_sys = geometry_system.borrow();
+                if g.geometry_handle == INVALID_ID {
+                    println!("Geomtery Render Data: geometry handle is invlaid");
+                    continue;
+                }
                 let geo = geo_sys.get_geometry(g.geometry_handle)?;
                 let mut material_sys = material_system.borrow_mut();
+                if geo.material_handle == INVALID_ID {
+                    println!("geometry: material handle is invlaid");
+                    continue;
+                }
                 let needs_update = material_sys
                     .get_material(geo.material_handle)?
                     .render_frame_number
@@ -506,4 +567,39 @@ impl RenderView for WorldRenderView {
         }
         Ok(())
     }
+}
+
+fn quicksort(arr: &mut [GeometryDistance], ascending: bool) {
+    if arr.len() <= 1 {
+        return;
+    }
+
+    let pivot_index = partition(arr, ascending);
+
+    let (left, right) = arr.split_at_mut(pivot_index);
+    quicksort(left, ascending);
+    quicksort(&mut right[1..], ascending);
+}
+
+fn partition(arr: &mut [GeometryDistance], ascending: bool) -> usize {
+    let pivot_index = arr.len() / 2;
+    arr.swap(pivot_index, arr.len() - 1); // Move pivot to the end
+
+    let mut i = 0;
+    for j in 0..arr.len() - 1 {
+        if ascending {
+            if arr[j].distance <= arr[arr.len() - 1].distance {
+                arr.swap(i, j);
+                i += 1;
+            }
+        } else {
+            if arr[j].distance >= arr[arr.len() - 1].distance {
+                arr.swap(i, j);
+                i += 1;
+            }
+        }
+    }
+
+    arr.swap(i, arr.len() - 1);
+    i
 }
