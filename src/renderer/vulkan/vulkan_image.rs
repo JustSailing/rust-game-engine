@@ -1,16 +1,19 @@
-use crate::renderer::vulkan::{
-    vulkan_backend::{VulkanBackendError, VulkanContext},
-    vulkan_buffer::VulkanBuffer,
-    vulkan_command_buffer::VulkanCommandBuffer,
-    vulkan_device::VulkanDevice,
+use crate::{
+    renderer::vulkan::{
+        vulkan_backend::{VulkanBackendError, VulkanContext},
+        vulkan_buffer::VulkanBuffer,
+        vulkan_command_buffer::VulkanCommandBuffer,
+        vulkan_device::VulkanDevice,
+    },
+    resources::resource_types::TextureType,
 };
 use ash::{
     Instance,
     vk::{
         AccessFlags, BufferImageCopy, DependencyFlags, DeviceMemory, Extent3D, Format, Image,
-        ImageAspectFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier, ImageSubresourceLayers,
-        ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags, ImageView,
-        ImageViewCreateInfo, ImageViewType, MemoryAllocateInfo, MemoryPropertyFlags,
+        ImageAspectFlags, ImageCreateFlags, ImageCreateInfo, ImageLayout, ImageMemoryBarrier,
+        ImageSubresourceLayers, ImageSubresourceRange, ImageTiling, ImageType, ImageUsageFlags,
+        ImageView, ImageViewCreateInfo, ImageViewType, MemoryAllocateInfo, MemoryPropertyFlags,
         PipelineStageFlags, SampleCountFlags, SharingMode,
     },
 };
@@ -30,7 +33,7 @@ pub struct VulkanImage {
 impl VulkanImage {
     pub fn create(
         instance: &Instance,
-        image_type: ImageType,
+        texture_type: TextureType,
         width: u32,
         height: u32,
         format: Format,
@@ -42,16 +45,27 @@ impl VulkanImage {
         device: &VulkanDevice,
     ) -> Result<Self> {
         let image_create_info = ImageCreateInfo::default()
-            .image_type(image_type)
+            .image_type(match texture_type {
+                TextureType::_2D => ImageType::TYPE_2D,
+                TextureType::Cube => ImageType::TYPE_2D,
+            })
             .extent(Extent3D::default().height(height).width(width).depth(1))
             .mip_levels(4)
-            .array_layers(1)
+            .array_layers(match texture_type {
+                TextureType::_2D => 1,
+                TextureType::Cube => 6,
+            })
             .format(format)
             .tiling(tiling)
             .initial_layout(ImageLayout::UNDEFINED)
             .usage(usage)
             .samples(SampleCountFlags::TYPE_1)
-            .sharing_mode(SharingMode::EXCLUSIVE);
+            .sharing_mode(SharingMode::EXCLUSIVE)
+            .flags(match texture_type {
+                TextureType::_2D => ImageCreateFlags::empty(),
+                TextureType::Cube => ImageCreateFlags::CUBE_COMPATIBLE,
+            });
+
         let image = unsafe {
             match device.device.create_image(&image_create_info, None) {
                 Ok(i) => i,
@@ -110,7 +124,13 @@ impl VulkanImage {
         };
         let mut image_view: Option<ImageView> = None;
         if create_view {
-            image_view = Some(Self::create_view(device, image, format, view_aspect_flags)?);
+            image_view = Some(Self::create_view(
+                device,
+                texture_type,
+                image,
+                format,
+                view_aspect_flags,
+            )?);
             return Ok(VulkanImage {
                 image,
                 memory: device_memory,
@@ -131,20 +151,27 @@ impl VulkanImage {
 
     fn create_view(
         device: &VulkanDevice,
+        texture_type: TextureType,
         image: Image,
         format: Format,
         aspect_flags: ImageAspectFlags,
     ) -> Result<ImageView> {
         let view_create_info = ImageViewCreateInfo::default()
             .image(image)
-            .view_type(ImageViewType::TYPE_2D)
+            .view_type(match texture_type {
+                TextureType::_2D => ImageViewType::TYPE_2D,
+                TextureType::Cube => ImageViewType::CUBE,
+            })
             .format(format)
             .subresource_range(
                 ImageSubresourceRange::default()
                     .aspect_mask(aspect_flags)
                     .base_array_layer(0)
                     .base_mip_level(0)
-                    .layer_count(1)
+                    .layer_count(match texture_type {
+                        TextureType::_2D => 1,
+                        TextureType::Cube => 6,
+                    })
                     .level_count(1),
             );
         unsafe {
@@ -162,6 +189,7 @@ impl VulkanImage {
     pub fn transition_layout(
         &self,
         device: &VulkanDevice,
+        texture_type: TextureType,
         command_buffer: &VulkanCommandBuffer,
         _format: Format,
         old_layout: ImageLayout,
@@ -180,7 +208,10 @@ impl VulkanImage {
                     .base_mip_level(0)
                     .level_count(1)
                     .base_array_layer(0)
-                    .layer_count(1),
+                    .layer_count(match texture_type {
+                        TextureType::_2D => 1,
+                        TextureType::Cube => 6,
+                    }),
             );
 
         let mut source_stage = PipelineStageFlags::empty();
@@ -227,6 +258,7 @@ impl VulkanImage {
     pub fn copy_from_buffer(
         &self,
         device: &VulkanDevice,
+        texture_type: TextureType,
         buffer: &VulkanBuffer,
         command_buffer: &VulkanCommandBuffer,
         index: usize,
@@ -240,7 +272,10 @@ impl VulkanImage {
                     .aspect_mask(ImageAspectFlags::COLOR)
                     .mip_level(0)
                     .base_array_layer(0)
-                    .layer_count(1),
+                    .layer_count(match texture_type {
+                        TextureType::_2D => 1,
+                        TextureType::Cube => 6,
+                    }),
             )
             .image_extent(
                 Extent3D::default()

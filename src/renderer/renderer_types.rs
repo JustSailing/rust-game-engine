@@ -7,7 +7,7 @@ use crate::{
         frontend_renderer::{Renderer, RendererError},
         vulkan::vulkan_backend::VulkanRenderPass,
     },
-    resources::resource_types::{GeometryHandle, Mesh, TextureHandle},
+    resources::resource_types::{GeometryHandle, Mesh, Skybox, TextureHandle},
     systems::{
         camera_system::CameraSystem, geometry_system::GeometrySystem,
         material_system::MaterialSystem, shader_system::ShaderSystem,
@@ -19,7 +19,9 @@ use std::{cell::RefCell, rc::Rc};
 use ash::vk::Framebuffer;
 use bitflags::bitflags;
 
+#[derive(Default, Debug, Clone, Copy)]
 pub enum RendererBackendType {
+    #[default]
     Vulkan,
     OpenGL,
     DirectX,
@@ -40,13 +42,28 @@ pub struct RendererPacket {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct MeshPacketData {
     pub meshes: Vec<Mesh>,
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone)]
+pub struct SkyboxPacketData {
+    pub skybox: Skybox,
+}
+
+#[repr(C)]
+//#[derive(Clone)]
+pub enum PacketData<'a> {
+    Skybox(&'a mut SkyboxPacketData),
+    Mesh(&'a mut MeshPacketData),
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone)]
 pub enum RendererDebugViewMode {
+    #[default]
     Default = 0,
     Lighting = 1,
     Normals = 2,
@@ -117,46 +134,32 @@ pub struct RendererBackendConfig {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum RenderViewKnownType {
+    #[default]
     Unknown = 0x0,
     World = 0x1,
     UI = 0x2,
-}
-
-impl Default for RenderViewKnownType {
-    fn default() -> Self {
-        Self::Unknown
-    }
+    Skybox = 0x3,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum RenderViewMatrixViewSource {
+    #[default]
     Unknown = 0x0,
     SceneCamera = 0x1,
     UICamera = 0x2,
     LightCamera = 0x3,
 }
 
-impl Default for RenderViewMatrixViewSource {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
-
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum RenderViewProjectionMatrixSource {
+    #[default]
     Unknown = 0x0,
     Perspective = 0x1,
     Orthographic = 0x2,
-}
-
-impl Default for RenderViewProjectionMatrixSource {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 #[repr(C)]
@@ -237,7 +240,8 @@ pub struct RenderViewPacket {
     pub projection_matrix: Matrix4,
     pub view_position: Vec3,
     pub ambient_colour: Vec4,
-    pub geometries: Vec<GeometryRenderData>,
+    pub data: Vec<GeometryRenderData>,
+    pub extended: Option<Skybox>,
     pub custom_shader_name: String,
 }
 
@@ -256,7 +260,7 @@ pub trait RenderView {
     ) -> Result<(), RendererError>;
     fn build_packet(
         &self,
-        mesh_packet: &mut MeshPacketData,
+        packet: &mut PacketData,
         camera_system: &Rc<RefCell<CameraSystem>>,
         geometry_system: &Rc<RefCell<GeometrySystem>>,
         material_system: &Rc<RefCell<MaterialSystem>>,

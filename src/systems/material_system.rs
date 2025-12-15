@@ -5,10 +5,12 @@ use crate::{
         filesystem::FileHandleError,
         math::{consts::INVALID_ID, matrix4::Matrix4, vec3::Vec3, vec4::Vec4},
     },
-    renderer::frontend_renderer::{Renderer, RendererError},
+    renderer::frontend_renderer::{
+        BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI, Renderer, RendererError,
+    },
     resources::resource_types::{
-        Material, MaterialConfig, MaterialHandle, ResourceData, ResourceType, TextureFilter,
-        TextureRepeat, TextureUse,
+        Material, MaterialConfig, MaterialHandle, ResourceData, ResourceFlags, ResourceType,
+        TextureFilter, TextureRepeat, TextureUse,
     },
     systems::{
         resource_system::{ResourceSysError, ResourceSystem},
@@ -187,8 +189,6 @@ impl Default for MaterialUiUniformLocations {
 }
 
 pub const DEFAULT_MATERIAL_NAME: &'static str = "default";
-pub const BUILTIN_SHADER_NAME_MATERIAL: &'static str = "Shader.Builtin.Material";
-pub const BUILTIN_SHADER_NAME_UI: &'static str = "Shader.Builtin.UI";
 
 pub struct MaterialSystem<'a> {
     config: MaterialSysConfig,
@@ -255,19 +255,22 @@ impl<'a> MaterialSystem<'a> {
             .texture_system
             .borrow_mut()
             .acquire(DEFAULT_TEXTURE_NAME, true)?;
-        material.diffuse_map.use_type = TextureUse::MapDiffuse;
+        material.diffuse_map.use_type = TextureUse::DiffuseMap;
+        material.diffuse_map.texture_name = DEFAULT_TEXTURE_NAME.to_string();
 
         material.specular_map.texture_handle = self
             .texture_system
             .borrow_mut()
             .acquire(DEFAULT_TEXTURE_SPECULAR_NAME, true)?;
-        material.specular_map.use_type = TextureUse::MapSpecular;
+        material.specular_map.use_type = TextureUse::SpecularMap;
+        material.specular_map.texture_name = DEFAULT_TEXTURE_SPECULAR_NAME.to_string();
 
         material.normal_map.texture_handle = self
             .texture_system
             .borrow_mut()
             .acquire(DEFAULT_TEXTURE_NORMAL_NAME, true)?;
-        material.normal_map.use_type = TextureUse::MapNormal;
+        material.normal_map.use_type = TextureUse::NormalMap;
+        material.normal_map.texture_name = DEFAULT_TEXTURE_NORMAL_NAME.to_string();
 
         material.shininess = 32.0;
 
@@ -311,10 +314,17 @@ impl<'a> MaterialSystem<'a> {
     }
 
     pub fn acquire(&mut self, config: &mut MaterialConfig) -> Result<(MaterialHandle, usize)> {
-        let mut material_res = self
-            .resource_system
-            .borrow()
-            .load(&config.name, ResourceType::Material)?;
+        if config.name == DEFAULT_MATERIAL_NAME || config.name.len() < 1 {
+            // This might cause an issue with shader aquire resources not being called
+            // TODO: I need to call shader aquire resources to get an material_instance id
+            return Ok((self.default_material.id, self.default_material.internal_id));
+        }
+
+        let mut material_res = self.resource_system.borrow().load(
+            &config.name,
+            ResourceType::Material,
+            ResourceFlags::empty(),
+        )?;
 
         let mat_config = match material_res.data {
             ResourceData::MaterialResourceData(ref mut material_config) => material_config,
@@ -563,6 +573,11 @@ impl<'a> MaterialSystem<'a> {
                 line: line!(),
             });
         }
+        self.frontend_renderer.borrow().bind_globals_for_shader(
+            self.shader_system
+                .borrow_mut()
+                .get_mut_shader_by_id(self.material_shader_id)?,
+        )?;
         self.shader_system.borrow_mut().apply_globals()?;
         Ok(())
     }
@@ -670,13 +685,13 @@ impl<'a> MaterialSystem<'a> {
             .acquire_texture_map_resources(&mut mat.diffuse_map)?;
 
         if config.diffuse_map_name.len() > 0 {
-            mat.diffuse_map.use_type = TextureUse::MapDiffuse;
+            mat.diffuse_map.use_type = TextureUse::DiffuseMap;
             mat.diffuse_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
                 .acquire(&config.diffuse_map_name, config.auto_release)?;
         } else {
-            mat.diffuse_map.use_type = TextureUse::MapDiffuse;
+            mat.diffuse_map.use_type = TextureUse::DiffuseMap;
             mat.diffuse_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
@@ -694,14 +709,14 @@ impl<'a> MaterialSystem<'a> {
             .acquire_texture_map_resources(&mut mat.specular_map)?;
 
         if config.specular_map_name.len() > 0 {
-            mat.specular_map.use_type = TextureUse::MapSpecular;
+            mat.specular_map.use_type = TextureUse::SpecularMap;
             let texture_handle = self
                 .texture_system
                 .borrow_mut()
                 .acquire(&config.specular_map_name, config.auto_release)?;
             mat.specular_map.texture_handle = texture_handle;
         } else {
-            mat.specular_map.use_type = TextureUse::MapSpecular;
+            mat.specular_map.use_type = TextureUse::SpecularMap;
             mat.specular_map.texture_handle = self
                 .texture_system
                 .borrow_mut()
@@ -719,14 +734,14 @@ impl<'a> MaterialSystem<'a> {
             .acquire_texture_map_resources(&mut mat.normal_map)?;
 
         if config.normal_map_name.len() > 0 {
-            mat.normal_map.use_type = TextureUse::MapNormal;
+            mat.normal_map.use_type = TextureUse::NormalMap;
             let texture_handle = self
                 .texture_system
                 .borrow_mut()
                 .acquire(&config.normal_map_name, config.auto_release)?;
             mat.normal_map.texture_handle = texture_handle;
         } else {
-            mat.normal_map.use_type = TextureUse::MapNormal;
+            mat.normal_map.use_type = TextureUse::NormalMap;
             mat.normal_map.texture_handle = self
                 .texture_system
                 .borrow_mut()

@@ -155,8 +155,11 @@ pub struct Range {
 pub struct Shader<'a> {
     pub id: usize,
     name: String,
-    pub use_instances: bool,
-    use_locals: bool,
+    pub global_uniform_ct: u8,
+    pub global_uniform_sampler_ct: u8,
+    pub instance_uniform_ct: u8,
+    pub instance_uniform_sampler_ct: u8,
+    pub local_uniform_ct: u8,
     pub required_ubo_alignment: usize,
     pub global_ubo_size: usize,
     pub global_ubo_stride: usize,
@@ -186,8 +189,11 @@ impl<'a> Default for Shader<'a> {
         Self {
             id: INVALID_ID,
             name: Default::default(),
-            use_instances: Default::default(),
-            use_locals: Default::default(),
+            global_uniform_ct: Default::default(),
+            global_uniform_sampler_ct: Default::default(),
+            instance_uniform_ct: Default::default(),
+            instance_uniform_sampler_ct: Default::default(),
+            local_uniform_ct: Default::default(),
             required_ubo_alignment: Default::default(),
             global_ubo_size: Default::default(),
             global_ubo_stride: Default::default(),
@@ -326,26 +332,21 @@ impl<'a> ShaderSystem<'a> {
                 } else {
                     None
                 }
-            });
-
-        if id.is_none() {
-            return Err(ShaderSysError::ShaderSystemFull {
+            })
+            .ok_or(ShaderSysError::ShaderSystemFull {
                 file: file!(),
                 line: line!(),
-            });
-        }
+            })?;
 
-        self.registered_shaders[id.unwrap()].id = id.unwrap();
-        self.registered_shaders[id.unwrap()].name = shader_config.name.clone();
-        self.registered_shaders[id.unwrap()].state = ShaderState::NotCreated;
-        self.registered_shaders[id.unwrap()].use_instances = shader_config.use_instances;
-        self.registered_shaders[id.unwrap()].use_locals = shader_config.use_locals;
-        self.registered_shaders[id.unwrap()].push_constant_range_count = 0;
-        self.registered_shaders[id.unwrap()].bound_instance_id = INVALID_ID;
-        self.registered_shaders[id.unwrap()].push_constant_size = 0;
-        self.registered_shaders[id.unwrap()].attribute_stride = 0;
+        self.registered_shaders[id].id = id;
+        self.registered_shaders[id].name = shader_config.name.clone();
+        self.registered_shaders[id].state = ShaderState::NotCreated;
+        self.registered_shaders[id].push_constant_range_count = 0;
+        self.registered_shaders[id].bound_instance_id = INVALID_ID;
+        self.registered_shaders[id].push_constant_size = 0;
+        self.registered_shaders[id].attribute_stride = 0;
 
-        self.registered_shaders[id.unwrap()].attributes = shader_config
+        self.registered_shaders[id].attributes = shader_config
             .attributes
             .iter()
             .map(|attr_config| {
@@ -354,16 +355,14 @@ impl<'a> ShaderSystem<'a> {
                     attribute_type: attr_config.attribute_type.clone(),
                     size: attr_config.size,
                 };
-                self.registered_shaders[id.unwrap()].attribute_stride += attr_config.size;
+                self.registered_shaders[id].attribute_stride += attr_config.size;
                 attrib
             })
             .collect::<Vec<ShaderAttribute>>();
 
         for config in shader_config.uniforms.iter() {
             match config.uniform_type {
-                ShaderUniformType::Sampler => {
-                    self.add_sampler(config, &shader_config, id.unwrap())?
-                }
+                ShaderUniformType::Sampler => self.add_sampler(config, &shader_config, id)?,
                 ShaderUniformType::Unknown => {
                     return Err(ShaderSysError::ShaderUniformTypeUnknown {
                         file: file!(),
@@ -371,7 +370,7 @@ impl<'a> ShaderSystem<'a> {
                     });
                 }
                 _ => self.add_uniform(
-                    id.unwrap(),
+                    id,
                     &config.name,
                     config.size as u32,
                     config.uniform_type,
@@ -383,7 +382,8 @@ impl<'a> ShaderSystem<'a> {
         }
 
         self.frontend_renderer.borrow_mut().create_shader(
-            &mut self.registered_shaders[id.unwrap()],
+            &mut self.registered_shaders[id],
+            shader_config,
             &shader_config.renderpass_name,
             shader_config.stages.len() as u8,
             &shader_config.stage_filenames,
@@ -393,12 +393,12 @@ impl<'a> ShaderSystem<'a> {
         self.lookup.insert(
             shader_config.name.clone(),
             ShaderRef {
-                handle: self.registered_shaders[id.unwrap()].id,
+                handle: self.registered_shaders[id].id,
                 reference_count: 1,
                 auto_release: true,
             },
         );
-        Ok(id.unwrap())
+        Ok(id)
     }
 
     pub fn get_mut_shader_by_name(&mut self, name: &str) -> Result<&mut Shader<'a>> {
@@ -492,6 +492,21 @@ impl<'a> ShaderSystem<'a> {
         Ok(u.index)
     }
 
+    pub fn get_uniform_index_by_shader_id(&self, shader_id: usize, name: &str) -> Result<u16> {
+        let uniform = self.registered_shaders[shader_id].uniform_lookup.get(name);
+        let u = match uniform {
+            Some(ref u) => u,
+            None => {
+                return Err(ShaderSysError::ShaderInvalid {
+                    name: name.to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+        };
+        Ok(u.index)
+    }
+
     pub fn set_uniform(&mut self, name: &str, value: *const c_void) -> Result<()> {
         if self.current_shader_id == INVALID_ID {
             return Err(ShaderSysError::NoShaderInUse {
@@ -562,15 +577,6 @@ impl<'a> ShaderSystem<'a> {
         shader_config: &ShaderConfig,
         shader_id: usize,
     ) -> Result<()> {
-        if config.scope == ShaderScope::Instance && !shader_config.use_instances {
-            return Err(ShaderSysError::ShaderAddSamplerError {
-                reason: "cannot use instance sampler for a shader that does not use instances"
-                    .to_string(),
-                file: file!(),
-                line: line!(),
-            });
-        }
-
         if config.scope == ShaderScope::Local {
             return Err(ShaderSysError::ShaderAddSamplerError {
                 reason: "cannot add sampler at local scope".to_string(),
@@ -683,9 +689,7 @@ impl<'a> ShaderSystem<'a> {
             };
             entry.size = if is_sampler { 0 } else { size as usize }
         } else {
-            if entry.shader_scope == ShaderScope::Local
-                && !self.registered_shaders[shader_id].use_locals
-            {
+            if entry.shader_scope == ShaderScope::Local {
                 return Err(ShaderSysError::ShaderUniformUseLocal {
                     file: file!(),
                     line: line!(),

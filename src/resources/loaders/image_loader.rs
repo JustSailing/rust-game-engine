@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::{
     basic::math::consts::INVALID_ID,
-    resources::resource_types::{ImageData, Resource, ResourceData},
+    resources::resource_types::{ImageData, Resource, ResourceData, ResourceFlags},
     systems::resource_system::ResourceSysError,
 };
 use thiserror::Error;
@@ -20,7 +20,7 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ImageLoader;
 
 impl ImageLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+    pub fn load(name: &str, path: &str, flags: ResourceFlags, base_path: &str) -> Result<Resource> {
         // FIXME: need to find name with out extension
         let directory = format!("{}/{}", base_path, path);
         let entries =
@@ -64,10 +64,14 @@ impl ImageLoader {
             });
         }
 
-        let data = image::open(&full_filename)?.flipv().to_rgba8();
-        let width = data.width();
-        let height = data.height();
-        let pixels = data.into_raw();
+        let mut data = image::open(&full_filename)?;
+        if flags.contains(ResourceFlags::flip_v) {
+            data = data.flipv();
+        }
+        let d = data.into_rgba8();
+        let width = d.width();
+        let height = d.height();
+        let pixels = d.into_raw();
         let channel_count: u8 = 4;
 
         let res_data = ResourceData::ImageResourceData(ImageData {

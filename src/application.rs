@@ -10,19 +10,24 @@ use crate::basic::math::transform::Transform;
 use crate::basic::math::vec2::Vec2;
 use crate::basic::math::vec3::{Vec3, Vector2D};
 use crate::basic::math::vec4::Quat;
-use crate::resources::resource_types::{GeometryConfig, Mesh, ResourceData, ResourceType};
+use crate::resources::resource_types::{
+    GeometryConfig, Mesh, ResourceData, ResourceFlags, ResourceType, Skybox, TextureFilter,
+    TextureRepeat, TextureUse,
+};
 
 use crate::basic::event::{EventCodes, EventCtx, EventSysError, EventSystem};
 use crate::basic::input::{InputState, InputSysError};
 use crate::basic::window::{Window, WindowError};
-use crate::renderer::frontend_renderer::{Renderer, RendererError};
+use crate::renderer::frontend_renderer::{
+    BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_SKYBOX, BUILTIN_SHADER_NAME_UI, Renderer,
+    RendererError,
+};
 use crate::renderer::renderer_types::{
-    MeshPacketData, RenderViewConfig, RenderViewKnownType, RenderViewMatrixViewSource,
-    RenderViewPassConfig,
+    MeshPacketData, PacketData, RenderViewConfig, RenderViewKnownType, RenderViewMatrixViewSource,
+    RenderViewPassConfig, SkyboxPacketData,
 };
 use crate::systems::camera_system::{CameraSysConfig, CameraSysError, CameraSystem};
 use crate::systems::geometry_system::{GeometrySysConfig, GeometrySysError, GeometrySystem};
-use crate::systems::material_system::{BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_UI};
 use crate::systems::material_system::{MaterialSysConfig, MaterialSysError, MaterialSystem};
 use crate::systems::render_view_system::{
     RenderViewSysConfig, RenderViewSysError, RenderViewSystem,
@@ -128,6 +133,8 @@ pub struct ApplicationState<'a> {
     height: i32,
     world_view_handle: usize,
     ui_view_handle: usize,
+    skybox_view_handle: usize,
+    skybox: Skybox,
     ui_meshes: Vec<Mesh>,
     meshes: Vec<Mesh>,
     resource_system: Rc<RefCell<ResourceSystem>>,
@@ -219,9 +226,11 @@ impl<'a> ApplicationState<'a> {
             Rc::clone(&texture_system),
         )?));
 
-        let material_shader = resource_system
-            .borrow()
-            .load(BUILTIN_SHADER_NAME_MATERIAL, ResourceType::Shader)?;
+        let material_shader = resource_system.borrow().load(
+            BUILTIN_SHADER_NAME_MATERIAL,
+            ResourceType::Shader,
+            ResourceFlags::empty(),
+        )?;
         let material_shader_config = match material_shader.data {
             ResourceData::ShaderResourceData(ref shader_config) => shader_config,
             _ => {
@@ -235,9 +244,11 @@ impl<'a> ApplicationState<'a> {
 
         shader_system.borrow_mut().create(material_shader_config)?;
 
-        let ui_shader = resource_system
-            .borrow()
-            .load(BUILTIN_SHADER_NAME_UI, ResourceType::Shader)?;
+        let ui_shader = resource_system.borrow().load(
+            BUILTIN_SHADER_NAME_UI,
+            ResourceType::Shader,
+            ResourceFlags::empty(),
+        )?;
 
         let ui_shader_config = match ui_shader.data {
             ResourceData::ShaderResourceData(ref shader_config) => shader_config,
@@ -251,6 +262,25 @@ impl<'a> ApplicationState<'a> {
         };
 
         shader_system.borrow_mut().create(ui_shader_config)?;
+
+        let skybox_shader = resource_system.borrow().load(
+            BUILTIN_SHADER_NAME_SKYBOX,
+            ResourceType::Shader,
+            ResourceFlags::empty(),
+        )?;
+
+        let skybox_shader_config = match skybox_shader.data {
+            ResourceData::ShaderResourceData(ref shader_config) => shader_config,
+            _ => {
+                return Err(AppError::OperationFailed {
+                    issue: "Wrong resource type. Expected: shader config".to_string(),
+                    file: file!(),
+                    line: line!(),
+                });
+            }
+        };
+
+        let skybox_shader = shader_system.borrow_mut().create(skybox_shader_config)?;
 
         let material_sys_config = MaterialSysConfig::default().max_count(4096);
         let material_system = Rc::new(RefCell::new(MaterialSystem::initialize(
@@ -297,8 +327,19 @@ impl<'a> ApplicationState<'a> {
                 RenderViewPassConfig::default().name("Renderpass.Builtin.World"),
             ])
             .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
-
         let world_view_handle = render_view_system.borrow_mut().create_view(&world)?;
+
+        let skybox = RenderViewConfig::default()
+            .known_type(RenderViewKnownType::Skybox)
+            .width(0)
+            .height(0)
+            .name("skybox")
+            .passes(vec![
+                RenderViewPassConfig::default().name("Renderpass.Builtin.Skybox"),
+            ])
+            .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
+
+        let skybox_view_handle = render_view_system.borrow_mut().create_view(&skybox)?;
 
         let ui = RenderViewConfig::default()
             .known_type(RenderViewKnownType::UI)
@@ -322,6 +363,45 @@ impl<'a> ApplicationState<'a> {
             input_system: Rc::clone(&input_system),
             event_system: Rc::clone(&event_system),
         }));
+
+        // NOTE: TEMPORARY CODE
+        //
+        let mut cube_map = Skybox::default();
+        cube_map.cube_map.use_type = TextureUse::CubeMap;
+        cube_map.cube_map.texture_name = "skybox".to_string();
+        cube_map.cube_map.filter_minify = TextureFilter::Linear;
+        cube_map.cube_map.filter_magnify = TextureFilter::Linear;
+        cube_map.cube_map.repeat_u = TextureRepeat::ClampToEdge;
+        cube_map.cube_map.repeat_v = TextureRepeat::ClampToEdge;
+        cube_map.cube_map.repeat_w = TextureRepeat::ClampToEdge;
+
+        renderer_system
+            .borrow_mut()
+            .acquire_texture_map_resources(&mut cube_map.cube_map)?;
+
+        texture_system.borrow_mut().acquire_cube("skybox", true)?;
+
+        let skybox_config = geometry_system.borrow_mut().generate_cube_config(
+            10.0,
+            10.0,
+            10.0,
+            1.0,
+            1.0,
+            "skybox_cube",
+            "",
+        )?;
+        cube_map.geometry_handle = geometry_system
+            .borrow_mut()
+            .acquire_from_config(skybox_config, true)?;
+
+        cube_map.instance_id = renderer_system
+            .borrow_mut()
+            .acquire_shader_instance_resources(
+                shader_system
+                    .borrow_mut()
+                    .get_mut_shader_by_id(skybox_shader)?,
+                &vec![&cube_map.cube_map],
+            )? as usize;
 
         let w = 256.0;
         let h = 128.0;
@@ -352,6 +432,7 @@ impl<'a> ApplicationState<'a> {
             max_extents: Default::default(),
             name: String::from("test_ui_geometry"),
             material_name: String::from("test_ui"),
+            //shader_name: BUILTIN_SHADER_NAME_UI.to_string(),
         };
 
         let ui_meshes = vec![Mesh {
@@ -376,6 +457,7 @@ impl<'a> ApplicationState<'a> {
             1.0,
             "test_cube",
             "test_material",
+            // BUILTIN_SHADER_NAME_MATERIAL,
         )?;
 
         cube_mesh.geometries.push(
@@ -399,6 +481,7 @@ impl<'a> ApplicationState<'a> {
             1.0,
             "test_cube2",
             "test_material",
+            // BUILTIN_SHADER_NAME_MATERIAL,
         )?;
 
         let middle_cube = geometry_system
@@ -422,6 +505,7 @@ impl<'a> ApplicationState<'a> {
             1.0,
             "test_cube3",
             "test_material",
+            // BUILTIN_SHADER_NAME_MATERIAL,
         )?;
 
         let little_cube = geometry_system
@@ -435,9 +519,10 @@ impl<'a> ApplicationState<'a> {
             transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
         };
 
-        let mut resource = resource_system
-            .borrow()
-            .load("falcon", ResourceType::Mesh)?;
+        let mut resource =
+            resource_system
+                .borrow()
+                .load("falcon", ResourceType::Mesh, ResourceFlags::empty())?;
 
         let geometry_configs = match resource.data {
             ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
@@ -468,7 +553,10 @@ impl<'a> ApplicationState<'a> {
             ))),
         };
 
-        let mut resource = resource_system.borrow().load("scene", ResourceType::Mesh)?;
+        let mut resource =
+            resource_system
+                .borrow()
+                .load("scene", ResourceType::Mesh, ResourceFlags::empty())?;
 
         let geometry_configs = match resource.data {
             ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
@@ -498,9 +586,10 @@ impl<'a> ApplicationState<'a> {
             ))),
         };
 
-        let mut resource = resource_system
-            .borrow()
-            .load("Georg_C", ResourceType::Mesh)?;
+        let mut resource =
+            resource_system
+                .borrow()
+                .load("Georg_C", ResourceType::Mesh, ResourceFlags::empty())?;
 
         let geometry_configs = match resource.data {
             ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
@@ -547,6 +636,8 @@ impl<'a> ApplicationState<'a> {
             height: app_config.start_height,
             world_view_handle,
             ui_view_handle,
+            skybox_view_handle,
+            skybox: cube_map,
             meshes: meshes,
             ui_meshes: ui_meshes,
             resource_system,
@@ -570,6 +661,9 @@ impl<'a> ApplicationState<'a> {
         const FPS: f32 = 60.0;
         let frame_duration: Duration = Duration::from_secs_f32(1.0 / FPS);
         let mut last_frame_time = Instant::now();
+        let mut skybox_packet_data = SkyboxPacketData {
+            skybox: self.skybox.clone(),
+        };
         let mut world_mesh_data = MeshPacketData {
             meshes: self.meshes.clone(),
         };
@@ -647,12 +741,30 @@ impl<'a> ApplicationState<'a> {
                 }
                 let frame_number = self.renderer_system.borrow().frame_number;
 
+                let mut skybox_view_packet = self
+                    .render_view_system
+                    .borrow_mut()
+                    .get_mut_render_view_by_id(self.skybox_view_handle)?
+                    .build_packet(
+                        &mut PacketData::Skybox(&mut skybox_packet_data),
+                        &self.camera_system,
+                        &self.geometry_system,
+                        &self.material_system,
+                        &self.texture_system,
+                    )?;
+
+                self.render_view_system.borrow().on_render(
+                    self.skybox_view_handle,
+                    frame_number,
+                    &mut skybox_view_packet,
+                )?;
+
                 let mut world_view_packet = self
                     .render_view_system
                     .borrow_mut()
                     .get_mut_render_view_by_id(self.world_view_handle)?
                     .build_packet(
-                        &mut world_mesh_data,
+                        &mut PacketData::Mesh(&mut world_mesh_data),
                         &self.camera_system,
                         &self.geometry_system,
                         &self.material_system,
@@ -670,7 +782,7 @@ impl<'a> ApplicationState<'a> {
                     .borrow_mut()
                     .get_mut_render_view_by_id(self.ui_view_handle)?
                     .build_packet(
-                        &mut ui_mesh_data,
+                        &mut PacketData::Mesh(&mut ui_mesh_data),
                         &self.camera_system,
                         &self.geometry_system,
                         &self.material_system,

@@ -5,9 +5,9 @@ use crate::{
     renderer::{
         frontend_renderer::{Renderer, RendererError},
         renderer_types::{
-            MeshPacketData, RenderView, RenderViewConfig, RenderViewKnownType, RenderViewPacket,
+            PacketData, RenderView, RenderViewConfig, RenderViewKnownType, RenderViewPacket,
         },
-        views::render_views::{UIRenderView, WorldRenderView},
+        views::render_views::{SkyboxRenderView, UIRenderView, WorldRenderView},
     },
     systems::{
         camera_system::CameraSystem, geometry_system::GeometrySystem,
@@ -153,7 +153,7 @@ impl<'a> RenderViewSystem<'a> {
 
         match config.known_type {
             RenderViewKnownType::UI => {
-                let mut view = UIRenderView::default()
+                let mut view: UIRenderView = UIRenderView::default()
                     .id(id)
                     .known_type(config.known_type)
                     .custom_shader_name(&config.custom_shader_name);
@@ -173,6 +173,25 @@ impl<'a> RenderViewSystem<'a> {
             }
             RenderViewKnownType::World => {
                 let mut view = WorldRenderView::default()
+                    .id(id)
+                    .known_type(config.known_type)
+                    .custom_shader_name(&config.custom_shader_name);
+                for pass in config.passes.iter() {
+                    view.passes.push(
+                        self.renderer_system
+                            .borrow()
+                            .get_renderpass_handle(&pass.name)?,
+                    );
+                }
+                view.create(&self.shader_system, &self.camera_system)?;
+                let _ = std::mem::replace(&mut self.registered_views[id], Box::new(view));
+                self.registered_view_hashmap.insert(
+                    config.custom_shader_name.clone(),
+                    RenderViewRef::default().handle(id),
+                );
+            }
+            RenderViewKnownType::Skybox => {
+                let mut view = SkyboxRenderView::default()
                     .id(id)
                     .known_type(config.known_type)
                     .custom_shader_name(&config.custom_shader_name);
@@ -233,10 +252,10 @@ impl<'a> RenderViewSystem<'a> {
     pub fn build_packet(
         &self,
         render_view_handle: RenderViewHandle,
-        mesh_packet: &mut MeshPacketData,
+        data_packet: &mut PacketData,
     ) -> Result<RenderViewPacket> {
         Ok(self.registered_views[render_view_handle].build_packet(
-            mesh_packet,
+            data_packet,
             &self.camera_system,
             &self.geometry_system,
             &self.material_system,

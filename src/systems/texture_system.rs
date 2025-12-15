@@ -4,7 +4,8 @@ use crate::{
     basic::math::consts::INVALID_ID,
     renderer::frontend_renderer::{Renderer, RendererError},
     resources::resource_types::{
-        ResourceData, ResourceType, Texture, TextureData, TextureFlags, TextureHandle,
+        ResourceData, ResourceFlags, ResourceType, Texture, TextureData, TextureFlags,
+        TextureHandle, TextureType,
     },
     systems::resource_system::{ResourceSysError, ResourceSystem},
 };
@@ -215,6 +216,7 @@ impl<'a> TextureSystem<'a> {
         }
         let mut texture = Texture::default()
             .id(self.default_texture)
+            .texture_type(TextureType::_2D)
             .width(TEX_DIMENSION as u32)
             .height(TEX_DIMENSION as u32)
             .channel_count(CHANNELS)
@@ -239,6 +241,7 @@ impl<'a> TextureSystem<'a> {
         let spec_pixels = [0u8; 16 * 16 * 4];
         let mut specular_texture = Texture::default()
             .id(self.default_specular_texture)
+            .texture_type(TextureType::_2D)
             .width(16)
             .height(16)
             .channel_count(4)
@@ -262,6 +265,7 @@ impl<'a> TextureSystem<'a> {
 
         let mut normal_texture = Texture::default()
             .id(self.default_normal_texture)
+            .texture_type(TextureType::_2D)
             .width(16)
             .height(16)
             .channel_count(4)
@@ -298,11 +302,12 @@ impl<'a> TextureSystem<'a> {
         Ok(())
     }
 
+    // NOTE: CHANGE this function to take resource flags (flipv can be used)
     fn load_texture(&self, name: &str) -> Result<Texture> {
-        let mut img_res = self
-            .resource_system
-            .borrow()
-            .load(name, ResourceType::Image)?;
+        let mut img_res =
+            self.resource_system
+                .borrow()
+                .load(name, ResourceType::Image, ResourceFlags::all())?;
         let data = match img_res.data {
             ResourceData::ImageResourceData(ref image_resource_data) => image_resource_data,
             ResourceData::Unknown => {
@@ -355,7 +360,8 @@ impl<'a> TextureSystem<'a> {
             .height(data.height)
             .channel_count(data.channel_count)
             .generation(INVALID_ID)
-            .name(name.to_string());
+            .name(name.to_string())
+            .texture_type(TextureType::_2D);
 
         if let Some(ref renderer) = self.frontend_renderer {
             renderer
@@ -363,6 +369,88 @@ impl<'a> TextureSystem<'a> {
                 .create_texture(name, data.pixels.as_slice(), &mut texture)?;
         }
         self.resource_system.borrow().unload(&mut img_res)?;
+        Ok(texture)
+    }
+
+    fn load_cube_textures(&self, name: &str, texture_names: &[String]) -> Result<Texture> {
+        let mut pixels = Vec::new();
+        //let mut total_size = 0;
+        let mut width = 0;
+        let mut height = 0;
+        let mut channel_count = 0;
+        let mut transparency = false;
+        for tex_name in texture_names.iter() {
+            let mut img_res = self.resource_system.borrow().load(
+                tex_name,
+                ResourceType::Image,
+                ResourceFlags::empty(),
+            )?;
+            let data = match img_res.data {
+                ResourceData::ImageResourceData(ref image_resource_data) => image_resource_data,
+                ResourceData::Unknown => {
+                    return Err(TextureSysError::WrongResourceDataType {
+                        ty: "Unknown".to_string(),
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+                ResourceData::BinaryResourceData(_) => {
+                    return Err(TextureSysError::WrongResourceDataType {
+                        ty: "BinaryResourceData".to_string(),
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+                ResourceData::ShaderResourceData(_) => {
+                    return Err(TextureSysError::WrongResourceDataType {
+                        ty: "ShaderResourceData".to_string(),
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+                ResourceData::MaterialResourceData(_) => {
+                    return Err(TextureSysError::WrongResourceDataType {
+                        ty: "MaterialResourceData".to_string(),
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+                ResourceData::MeshResourceData(_) => {
+                    return Err(TextureSysError::WrongResourceDataType {
+                        ty: "MeshResourceData".to_string(),
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+            };
+
+            // total_size += data.width * data.height * data.channel_count as u32;
+            for i in 0..data.pixels.len() as usize - 3 {
+                if data.pixels[i + 3] < 255 {
+                    transparency = true;
+                    break;
+                }
+            }
+            width = data.width;
+            height = data.height;
+            channel_count = data.channel_count;
+            pixels.extend(data.pixels.iter());
+            self.resource_system.borrow().unload(&mut img_res)?;
+        }
+        let mut texture = Texture::default()
+            .transparency_flag(transparency)
+            .width(width)
+            .height(height)
+            .channel_count(channel_count)
+            .generation(INVALID_ID)
+            .name(name.to_string())
+            .texture_type(TextureType::Cube);
+
+        if let Some(ref renderer) = self.frontend_renderer {
+            renderer
+                .borrow()
+                .create_texture(name, pixels.as_slice(), &mut texture)?;
+        }
         Ok(texture)
     }
 
@@ -377,7 +465,6 @@ impl<'a> TextureSystem<'a> {
     pub fn acquire(&mut self, name: &str, auto_release: bool) -> Result<TextureHandle> {
         // println!("texture acquire name {}", name);
         if name == DEFAULT_TEXTURE_NAME {
-            // NOTE: probably worry about normal and specular texuters here as well
             return Ok(self.default_texture);
         } else if name == DEFAULT_TEXTURE_SPECULAR_NAME {
             return Ok(self.default_specular_texture);
@@ -386,7 +473,22 @@ impl<'a> TextureSystem<'a> {
         }
 
         let mut id = INVALID_ID as u32;
-        self.process_texture_reference(name, 1, auto_release, false, &mut id)?;
+        self.process_texture_reference(name, TextureType::_2D, 1, auto_release, false, &mut id)?;
+        Ok(id as usize)
+    }
+
+    pub fn acquire_cube(&mut self, name: &str, auto_release: bool) -> Result<TextureHandle> {
+        // println!("texture acquire name {}", name);
+        if name == DEFAULT_TEXTURE_NAME {
+            return Ok(self.default_texture);
+        } else if name == DEFAULT_TEXTURE_SPECULAR_NAME {
+            return Ok(self.default_specular_texture);
+        } else if name == DEFAULT_TEXTURE_NORMAL_NAME {
+            return Ok(self.default_normal_texture);
+        }
+
+        let mut id = INVALID_ID as u32;
+        self.process_texture_reference(name, TextureType::Cube, 1, auto_release, false, &mut id)?;
         Ok(id as usize)
     }
 
@@ -400,14 +502,16 @@ impl<'a> TextureSystem<'a> {
     ) -> Result<TextureHandle> {
         let mut id = INVALID_ID as u32;
 
-        self.process_texture_reference(name, 1, false, true, &mut id)?;
+        self.process_texture_reference(name, TextureType::_2D, 1, false, true, &mut id)?;
         // println!("texture name writable: {}, id {}", name, id);
 
         let texture = &mut self.registered_textures[id as usize];
         texture.width = width;
         texture.height = height;
+        texture.name = name.to_string();
         texture.channel_count = channel_count;
         texture.generation = INVALID_ID;
+        texture.texture_type = TextureType::_2D;
         if has_transparency {
             texture.flags.insert(TextureFlags::Transparency)
         }
@@ -432,7 +536,7 @@ impl<'a> TextureSystem<'a> {
     ) -> Result<TextureHandle> {
         let mut id = INVALID_ID as u32;
         if register_texture {
-            self.process_texture_reference(name, 1, false, true, &mut id)?;
+            self.process_texture_reference(name, TextureType::_2D, 1, false, true, &mut id)?;
         };
         let mut texture = Texture::default();
 
@@ -440,7 +544,9 @@ impl<'a> TextureSystem<'a> {
         texture.width = width;
         texture.height = height;
         texture.channel_count = channel_count;
+        texture.name = name.to_string();
         texture.generation = INVALID_ID;
+        texture.texture_type = TextureType::_2D;
         if has_transparency {
             texture.flags.insert(TextureFlags::Transparency)
         }
@@ -488,13 +594,14 @@ impl<'a> TextureSystem<'a> {
 
     pub fn release(&mut self, texture_name: &str) -> Result<()> {
         let mut id = INVALID_ID as u32;
-        self.process_texture_reference(texture_name, -1, false, false, &mut id)?;
+        self.process_texture_reference(texture_name, TextureType::_2D, -1, false, false, &mut id)?;
         Ok(())
     }
 
     fn process_texture_reference(
         &mut self,
         name: &str,
+        texture_type: TextureType,
         loadable: i8,
         auto_release: bool,
         skip_load: bool,
@@ -550,17 +657,40 @@ impl<'a> TextureSystem<'a> {
             return Ok(());
         }
 
-        tex_ref.handle = free_handle;
+        if tex_ref.handle == INVALID_ID {
+            tex_ref.handle = free_handle;
+        }
         let load_needed = tex_ref.reference_count == 0;
 
         if loadable > 0 {
+            // acquire block
             tex_ref.reference_count += 1;
+            if skip_load {
+            } else {
+                if load_needed {
+                    if texture_type == TextureType::Cube {
+                        let texture_names = [
+                            format!("{}_r", name),
+                            format!("{}_l", name),
+                            format!("{}_u", name),
+                            format!("{}_d", name),
+                            format!("{}_f", name),
+                            format!("{}_b", name),
+                        ];
+                        self.registered_textures[tex_ref.handle] =
+                            self.load_cube_textures(name, &texture_names)?;
+                        self.registered_textures[tex_ref.handle].id = tex_ref.handle;
+                        self.registered_textures[tex_ref.handle].texture_type = texture_type;
+                    } else {
+                        self.registered_textures[tex_ref.handle] = self.load_texture(name)?;
+                        self.registered_textures[tex_ref.handle].id = tex_ref.handle;
+                        self.registered_textures[tex_ref.handle].texture_type = texture_type;
+                    }
+                }
+            }
         } else {
+            // release block
             tex_ref.reference_count -= 1;
-        }
-
-        // release
-        if loadable < 0 {
             if tex_ref.reference_count == 0 && tex_ref.auto_release {
                 let texture = &mut self.registered_textures[tex_ref.handle];
                 let renderer = if let Some(ref renderer) = self.frontend_renderer {
@@ -570,17 +700,8 @@ impl<'a> TextureSystem<'a> {
                 };
                 renderer.borrow().destroy_texture(&texture)?;
             }
-        } else {
-            // new texture
-            if skip_load {
-                // nothing happens here
-            } else {
-                if load_needed {
-                    self.registered_textures[tex_ref.handle] = self.load_texture(name)?;
-                    self.registered_textures[tex_ref.handle].id = tex_ref.handle;
-                }
-            }
         }
+
         *id = tex_ref.handle as u32;
         self.registered_textures_hashmap
             .insert(name.to_string(), tex_ref);

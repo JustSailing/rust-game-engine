@@ -533,16 +533,18 @@ impl<'a> GeometrySystem<'a> {
         geo.center = config.center;
         geo.extents.min = config.min_extents;
         geo.extents.max = config.max_extents;
+        if config.material_name.len() > 0 {
+            let mut material_config = MaterialConfig::default()
+                .name(&config.material_name)
+                .auto_release(auto_release);
+            //.shader_name(&config.shader_name);
 
-        let mut material_config = MaterialConfig::default()
-            .name(&config.material_name)
-            .auto_release(auto_release);
-
-        geo.material_name = config.material_name.clone();
-        (geo.material_handle, geo.material_instance_id) = self
-            .material_system
-            .borrow_mut()
-            .acquire(&mut material_config)?;
+            geo.material_name = config.material_name.clone();
+            (geo.material_handle, geo.material_instance_id) = self
+                .material_system
+                .borrow_mut()
+                .acquire(&mut material_config)?;
+        }
         Ok(())
     }
 

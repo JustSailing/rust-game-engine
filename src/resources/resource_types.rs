@@ -12,6 +12,7 @@ use std::rc::Rc;
 #[repr(C)]
 pub struct Texture {
     pub id: usize,
+    pub texture_type: TextureType,
     pub width: u32,
     pub height: u32,
     pub channel_count: u8,
@@ -28,6 +29,10 @@ impl Texture {
         } else {
             self.flags.remove(TextureFlags::Transparency);
         }
+        self
+    }
+    pub fn texture_type(mut self, texture_type: TextureType) -> Self {
+        self.texture_type = texture_type;
         self
     }
     pub fn id(mut self, id: usize) -> Self {
@@ -68,6 +73,7 @@ impl Default for Texture {
     fn default() -> Self {
         Self {
             id: INVALID_ID,
+            texture_type: TextureType::_2D,
             width: 0,
             height: 0,
             channel_count: 0,
@@ -89,19 +95,28 @@ bitflags! {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextureType {
+    #[default]
+    _2D,
+    Cube,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 #[repr(C)]
 pub struct TextureData {
     pub image: VulkanImage,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub enum TextureUse {
+    #[default]
     Unknown = 0x00,
-    MapDiffuse = 0x01,
-    MapSpecular = 0x02,
-    MapNormal = 0x03,
+    DiffuseMap = 0x01,
+    SpecularMap = 0x02,
+    NormalMap = 0x03,
+    CubeMap = 0x4,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -120,9 +135,10 @@ impl Into<Filter> for TextureFilter {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 #[repr(C)]
 pub enum TextureRepeat {
+    #[default]
     Repeat = 0x1,
     MirroredRepeat = 0x2,
     ClampToEdge = 0x3,
@@ -192,7 +208,7 @@ impl Default for MaterialConfig {
             auto_release: Default::default(),
             diffuse_colour: Vec4::new_ones(),
             shininess: Default::default(), // might change this to 32.0
-            shader_name: String::from("Builtin.Material"),
+            shader_name: String::from(""),
             diffuse_map_name: Default::default(),
             specular_map_name: Default::default(),
             normal_map_name: Default::default(),
@@ -203,6 +219,11 @@ impl Default for MaterialConfig {
 impl MaterialConfig {
     pub fn name(mut self, name: &String) -> Self {
         self.name = name.clone();
+        self
+    }
+
+    pub fn shader_name(mut self, name: &String) -> Self {
+        self.shader_name = name.clone();
         self
     }
 
@@ -341,12 +362,33 @@ impl Default for Geometry {
 pub struct Mesh {
     pub geometries: Vec<GeometryHandle>,
     pub transform: Rc<RefCell<Transform>>,
-    //pub model: Matrix4,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct Skybox {
+    pub cube_map: TextureMap,
+    pub geometry_handle: GeometryHandle,
+    pub instance_id: usize,
+    pub render_frame_number: usize,
+}
+
+impl Default for Skybox {
+    fn default() -> Self {
+        Self {
+            cube_map: Default::default(),
+            geometry_handle: INVALID_ID,
+            instance_id: INVALID_ID,
+            render_frame_number: INVALID_ID,
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 pub enum ResourceType {
+    #[default]
+    Unknown,
     Text,
     Binary,
     Image,
@@ -354,11 +396,12 @@ pub enum ResourceType {
     Mesh,
     Shader,
     Custom,
-    Unknown,
 }
-#[derive(Clone)]
+
+#[derive(Default, Clone)]
 #[repr(C)]
 pub enum ResourceData {
+    #[default]
     Unknown,
     ImageResourceData(ImageData),
     MaterialResourceData(MaterialConfig),
@@ -367,11 +410,23 @@ pub enum ResourceData {
     MeshResourceData(Vec<GeometryConfig<Vector3D, u32>>),
 }
 
-impl Default for ResourceData {
-    fn default() -> Self {
-        Self::Unknown
+bitflags! {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ResourceFlags: u32 {
+        // for image resource flip vertical
+        const flip_v = 1;
     }
 }
+
+#[derive(Default, Debug, Clone, Copy)]
+pub enum FaceCullMode {
+    #[default]
+    None = 0x0,
+    Front = 0x1,
+    Back = 0x2,
+    FrontAndBack = 0x3,
+}
+
 #[derive(Clone)]
 #[repr(C)]
 pub struct Resource {
@@ -410,7 +465,7 @@ pub enum ShaderStage {
     Compute = 0x8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub enum ShaderAttributeType {
     Float32 = 0,
@@ -424,10 +479,11 @@ pub enum ShaderAttributeType {
     Uint16 = 8,
     Int32 = 9,
     Uint32 = 10,
+    #[default]
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub enum ShaderUniformType {
     Float32 = 0,
@@ -443,15 +499,17 @@ pub enum ShaderUniformType {
     Matrix4 = 10,
     Sampler = 11,
     Custom = 254,
+    #[default]
     Unknown,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(C)]
 pub enum ShaderScope {
     Global = 0,
     Instance = 1,
     Local = 2,
+    #[default]
     Unknown,
 }
 
@@ -476,13 +534,11 @@ pub struct ShaderUniformConfig {
 #[repr(C)]
 pub struct ShaderConfig {
     pub name: String,
-    pub use_instances: bool,
-    pub use_locals: bool,
+    pub face_cull_mode: FaceCullMode,
     pub attributes: Vec<ShaderAttributeConfig>,
     pub uniforms: Vec<ShaderUniformConfig>,
     pub renderpass_name: String,
     pub stages: Vec<ShaderStage>,
-    //pub stage_names: Vec<String>,
     pub stage_filenames: Vec<String>,
 }
 
@@ -490,8 +546,7 @@ impl Default for ShaderConfig {
     fn default() -> Self {
         Self {
             name: Default::default(),
-            use_instances: Default::default(),
-            use_locals: Default::default(),
+            face_cull_mode: Default::default(),
             attributes: Default::default(),
             uniforms: Default::default(),
             renderpass_name: Default::default(),

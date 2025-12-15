@@ -4,8 +4,9 @@ use crate::{
         math::consts::INVALID_ID,
     },
     resources::resource_types::{
-        Resource, ResourceData, ShaderAttributeConfig, ShaderAttributeType, ShaderConfig,
-        ShaderScope, ShaderStage, ShaderUniformConfig, ShaderUniformType,
+        FaceCullMode, Resource, ResourceData, ResourceFlags, ShaderAttributeConfig,
+        ShaderAttributeType, ShaderConfig, ShaderScope, ShaderStage, ShaderUniformConfig,
+        ShaderUniformType,
     },
     systems::resource_system::ResourceSysError,
 };
@@ -15,7 +16,12 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct ShaderLoader;
 
 impl ShaderLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+    pub fn load(
+        name: &str,
+        path: &str,
+        _flags: ResourceFlags,
+        base_path: &str,
+    ) -> Result<Resource> {
         let full_path = format!("{}/{}/{}.{}", base_path, path, name, "config");
         let mut file_handle = FileHandle::open(&full_path, FileModes::READ, false)?;
 
@@ -58,14 +64,26 @@ impl ShaderLoader {
                         })
                         .count();
                 }
-                "use_local" => {
-                    let check = split[1].trim().parse::<i32>()?;
-                    shader_config.use_locals = if 1 == check { true } else { false };
+                "cull_mode" => {
+                    let cull_mode = split[1].trim();
+                    match cull_mode {
+                        "back" => shader_config.face_cull_mode = FaceCullMode::Back,
+                        "front" => shader_config.face_cull_mode = FaceCullMode::Front,
+                        "front_and_back" => {
+                            shader_config.face_cull_mode = FaceCullMode::FrontAndBack
+                        }
+                        "none" => shader_config.face_cull_mode = FaceCullMode::None,
+                        _ => {}
+                    }
                 }
-                "use_instance" => {
-                    let check = split[1].trim().parse::<i32>()?;
-                    shader_config.use_instances = if 1 == check { true } else { false };
-                }
+                // "use_local" => {
+                //     let check = split[1].trim().parse::<i32>()?;
+                //     shader_config.use_locals = if 1 == check { true } else { false };
+                // }
+                // "use_instance" => {
+                //     let check = split[1].trim().parse::<i32>()?;
+                //     shader_config.use_instances = if 1 == check { true } else { false };
+                // }
                 "attribute" => {
                     let attr: Vec<&str> = split[1].split(',').map(|s| s.trim()).collect();
                     let shader_attr = Self::get_attribute(&attr);
@@ -164,230 +182,108 @@ impl ShaderLoader {
     }
 
     fn get_uniform(uniform: &Vec<&str>) -> Result<ShaderUniformConfig> {
+        let scope = match uniform[1].parse::<u32>()? {
+            0 => ShaderScope::Global,
+            1 => ShaderScope::Instance,
+            2 => ShaderScope::Local,
+            _ => {
+                println!("warning: shader scope should be 0..2");
+                ShaderScope::Unknown
+            }
+        };
+        let name = uniform[2].to_string();
         match uniform[0] {
-            "f32" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 4,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Float32,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "vec2" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 8,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Float32_2,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "vec3" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 12,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Float32_3,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "vec4" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 16,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Float32_4,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "u8" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 1,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Uint8,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "u16" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 2,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Uint16,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "u32" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 4,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Uint32,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "i8" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 1,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Int8,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "i16" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 2,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Int16,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "i32" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 4,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Int32,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "mat4" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 64,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Matrix4,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
-            "samp" => {
-                let scope = uniform[1].parse::<u32>()?;
-                Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
-                    size: 0,
-                    location: 0,
-                    uniform_type: ShaderUniformType::Sampler,
-                    scope: match scope {
-                        0 => ShaderScope::Global,
-                        1 => ShaderScope::Instance,
-                        2 => ShaderScope::Local,
-                        _ => {
-                            println!("warning: shader scope should be 0..2");
-                            ShaderScope::Unknown
-                        }
-                    },
-                })
-            }
+            "f32" => Ok(ShaderUniformConfig {
+                name: name,
+                scope: scope,
+                size: 4,
+                location: 0,
+                uniform_type: ShaderUniformType::Float32,
+            }),
+            "vec2" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 8,
+                location: 0,
+                uniform_type: ShaderUniformType::Float32_2,
+                scope: scope,
+            }),
+            "vec3" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 12,
+                location: 0,
+                uniform_type: ShaderUniformType::Float32_3,
+                scope: scope,
+            }),
+            "vec4" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 16,
+                location: 0,
+                uniform_type: ShaderUniformType::Float32_4,
+                scope: scope,
+            }),
+            "u8" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 1,
+                location: 0,
+                uniform_type: ShaderUniformType::Uint8,
+                scope: scope,
+            }),
+            "u16" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 2,
+                location: 0,
+                uniform_type: ShaderUniformType::Uint16,
+                scope: scope,
+            }),
+            "u32" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 4,
+                location: 0,
+                uniform_type: ShaderUniformType::Uint32,
+                scope: scope,
+            }),
+            "i8" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 1,
+                location: 0,
+                uniform_type: ShaderUniformType::Int8,
+                scope: scope,
+            }),
+            "i16" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 2,
+                location: 0,
+                uniform_type: ShaderUniformType::Int16,
+                scope: scope,
+            }),
+            "i32" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 4,
+                location: 0,
+                uniform_type: ShaderUniformType::Int32,
+                scope: scope,
+            }),
+            "mat4" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 64,
+                location: 0,
+                uniform_type: ShaderUniformType::Matrix4,
+                scope: scope,
+            }),
+            "samp" => Ok(ShaderUniformConfig {
+                name: name,
+                size: 0,
+                location: 0,
+                uniform_type: ShaderUniformType::Sampler,
+                scope: scope,
+            }),
             _ => {
                 println!(
                     "warning: unsupported attributed type: {}, scope: {}, name: {}",
                     uniform[0], uniform[1], uniform[2]
                 );
                 Ok(ShaderUniformConfig {
-                    name: uniform[2].to_string(),
+                    name: name,
                     size: 0,
                     location: 0,
                     uniform_type: ShaderUniformType::Unknown,

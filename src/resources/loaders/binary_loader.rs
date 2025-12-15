@@ -3,7 +3,7 @@ use crate::{
         filesystem::{FileHandle, FileModes},
         math::consts::INVALID_ID,
     },
-    resources::resource_types::{Resource, ResourceData},
+    resources::resource_types::{Resource, ResourceData, ResourceFlags},
     systems::resource_system::ResourceSysError,
 };
 
@@ -11,7 +11,12 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct BinaryLoader;
 
 impl BinaryLoader {
-    pub fn load(name: &str, path: &str, _base_path: &str) -> Result<Resource> {
+    pub fn load(
+        name: &str,
+        path: &str,
+        _flags: ResourceFlags,
+        _base_path: &str,
+    ) -> Result<Resource> {
         let file_path = format!("{}/{}/{}", "bin/assets", path, name,);
 
         let mut file = FileHandle::open(&file_path, FileModes::READ, true)?;

@@ -31,6 +31,10 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, RendererError>;
 
+pub const BUILTIN_SHADER_NAME_MATERIAL: &'static str = "Shader.Builtin.Material";
+pub const BUILTIN_SHADER_NAME_UI: &'static str = "Shader.Builtin.UI";
+pub const BUILTIN_SHADER_NAME_SKYBOX: &'static str = "Shader.Builtin.Skybox";
+
 #[derive(Error, Debug)]
 pub enum RendererError {
     #[error("frontend renderer error: already initialized {} {}", file, line)]
@@ -75,6 +79,7 @@ pub struct Renderer<'a> {
     camera_system: Rc<RefCell<CameraSystem>>,
     render_view_system: Option<Rc<RefCell<RenderViewSystem<'a>>>>,
     camera: CameraHandle,
+    skybox_shader_id: u32,
     material_shader_id: u32,
     ui_shader_id: u32,
     window_render_target_count: u32,
@@ -97,15 +102,24 @@ impl<'a> Renderer<'a> {
             .borrow_mut()
             .acquire(DEFAULT_CAMERA_NAME, true)?;
 
+        let skybox_renderpass_name = String::from("Renderpass.Builtin.Skybox");
         let world_renderpass_name = String::from("Renderpass.Builtin.World");
         let ui_renderpass_name = String::from("Renderpass.Builtin.UI");
-        let world_renderpass_clear_flags: RenderpassClearFlags = RenderpassClearFlags::ColourBuffer
-            | RenderpassClearFlags::DepthBuffer
-            | RenderpassClearFlags::StencilBuffer;
+        let world_renderpass_clear_flags: RenderpassClearFlags =
+            RenderpassClearFlags::DepthBuffer | RenderpassClearFlags::StencilBuffer;
+
+        let skybox_renderpass_config = RenderpassConfig {
+            name: skybox_renderpass_name.clone(),
+            prev_name: String::from(""),
+            next_name: world_renderpass_name.clone(),
+            render_area: Vec4::new(0.0, 0.0, 1280.0, 720.0),
+            clear_color: Vec4::new(0.0, 0.0, 0.2, 1.0),
+            clear_flags: RenderpassClearFlags::ColourBuffer,
+        };
 
         let world_renderpass_config = RenderpassConfig {
             name: world_renderpass_name.clone(),
-            prev_name: String::from(""),
+            prev_name: skybox_renderpass_name.clone(),
             next_name: ui_renderpass_name.clone(),
             render_area: Vec4::new(0.0, 0.0, 1280.0, 720.0),
             clear_color: Vec4::new(0.0, 0.0, 0.2, 1.0),
@@ -121,7 +135,11 @@ impl<'a> Renderer<'a> {
             clear_flags: RenderpassClearFlags::empty(),
         };
 
-        let renderpass_configs = vec![world_renderpass_config, ui_renderpass_config];
+        let renderpass_configs = vec![
+            skybox_renderpass_config,
+            world_renderpass_config,
+            ui_renderpass_config,
+        ];
         let renderpass_backend_config = RendererBackendConfig {
             application_name: app_name.to_string(),
             renderpass_configs,
@@ -143,6 +161,7 @@ impl<'a> Renderer<'a> {
             camera_system: camera_system,
             material_shader_id: INVALID_ID as u32,
             ui_shader_id: INVALID_ID as u32,
+            skybox_shader_id: INVALID_ID as u32,
             frame_number: 0,
             resource_system,
             render_view_system: None,
@@ -264,6 +283,7 @@ impl<'a> Renderer<'a> {
     pub fn create_shader(
         &mut self,
         shader: &mut Shader<'a>,
+        shader_config: &ShaderConfig,
         renderpass_name: &str,
         stage_count: u8,
         stage_filenames: &Vec<String>,
@@ -271,6 +291,7 @@ impl<'a> Renderer<'a> {
     ) -> Result<()> {
         self.backend.create_shader(
             shader,
+            shader_config,
             renderpass_name,
             stage_count,
             stage_filenames,

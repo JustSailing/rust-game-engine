@@ -1,31 +1,38 @@
-use crate::basic::{
-    math::{consts::INVALID_ID, vec3::Vector3D},
-    window::Window,
-};
-use crate::renderer::{
-    renderer_types::{
-        GeometryRenderData, RenderTarget, RendererBackendConfig, Renderpass, RenderpassClearFlags,
-        RenderpassHandle,
-    },
-    vulkan::{
-        vulkan_buffer::VulkanBuffer,
-        vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer},
-        vulkan_device::VulkanDevice,
-        vulkan_image::VulkanImage,
-        vulkan_pipeline::VulkanPipeline,
-        vulkan_swapchain::VulkanSwapchain,
-        vulkan_sync_objects::{InFlightFrames, SyncObjects},
-    },
-};
 use crate::resources::resource_types::{
     Geometry, ResourceData, ResourceType, ShaderAttributeType, ShaderScope, ShaderStage,
-    ShaderUniformType, Texture, TextureHandle, TextureMap,
+    ShaderUniformType, Texture, TextureHandle, TextureMap, TextureType, TextureUse,
 };
+use crate::systems::texture_system::{DEFAULT_TEXTURE_NORMAL_NAME, DEFAULT_TEXTURE_SPECULAR_NAME};
 use crate::systems::{
     geometry_system::DEFAULT_GEOMETRY_NAME,
     resource_system::{ResourceSysError, ResourceSystem},
     shader_system::{Shader, ShaderInternalData},
     texture_system::{DEFAULT_TEXTURE_NAME, TextureSysError, TextureSystem},
+};
+use crate::{
+    basic::{
+        math::{consts::INVALID_ID, vec3::Vector3D},
+        window::Window,
+    },
+    resources::resource_types::{FaceCullMode, ResourceFlags},
+};
+use crate::{
+    renderer::{
+        renderer_types::{
+            GeometryRenderData, RenderTarget, RendererBackendConfig, Renderpass,
+            RenderpassClearFlags, RenderpassHandle,
+        },
+        vulkan::{
+            vulkan_buffer::VulkanBuffer,
+            vulkan_command_buffer::{CommandBufferState, VulkanCommandBuffer},
+            vulkan_device::VulkanDevice,
+            vulkan_image::VulkanImage,
+            vulkan_pipeline::VulkanPipeline,
+            vulkan_swapchain::VulkanSwapchain,
+            vulkan_sync_objects::{InFlightFrames, SyncObjects},
+        },
+    },
+    resources::resource_types::ShaderConfig,
 };
 
 use std::collections::HashMap;
@@ -44,7 +51,7 @@ use ash::{
         DescriptorPoolCreateFlags, DescriptorPoolCreateInfo, DescriptorPoolSize, DescriptorSet,
         DescriptorSetAllocateInfo, DescriptorSetLayout, DescriptorSetLayoutBinding,
         DescriptorSetLayoutCreateInfo, DescriptorType, DeviceSize, Extent2D, Fence, Format,
-        Framebuffer, FramebufferCreateInfo, ImageAspectFlags, ImageLayout, ImageTiling, ImageType,
+        Framebuffer, FramebufferCreateInfo, ImageAspectFlags, ImageLayout, ImageTiling,
         ImageUsageFlags, IndexType, MemoryMapFlags, MemoryPropertyFlags, Offset2D,
         PipelineBindPoint, PipelineShaderStageCreateInfo, PipelineStageFlags, Queue, Rect2D,
         RenderPass, RenderPassBeginInfo, RenderPassCreateInfo, SUBPASS_EXTERNAL, SampleCountFlags,
@@ -98,8 +105,6 @@ const VULKAN_SHADER_MAX_BINDINGS: usize = 2;
 const VULKAN_SHADER_MAX_PUSH_CONST_RANGE: usize = 32;
 const DESC_SET_INDEX_GLOBAL: usize = 0;
 const DESC_SET_INDEX_INSTANCE: usize = 1;
-const BINDING_INDEX_UBO: usize = 0;
-const BINDING_INDEX_SAMPLER: usize = 1;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -140,6 +145,7 @@ pub struct VulkanShaderStage<'a> {
 #[repr(C)]
 pub struct VulkanDescriptorSetConfig<'a> {
     binding_count: u8,
+    sampler_binding_index: u8,
     bindings: [DescriptorSetLayoutBinding<'a>; VULKAN_SHADER_MAX_BINDINGS],
 }
 
@@ -159,6 +165,7 @@ pub struct VulkanShaderConfig<'a> {
     descriptor_set_count: u8,
     descriptor_set_configs: [VulkanDescriptorSetConfig<'a>; 2],
     attributes: [VertexInputAttributeDescription; VULKAN_SHADER_MAX_ATTRIBUTES],
+    face_cull_mode: FaceCullMode,
 }
 
 #[derive(Clone)]
@@ -219,6 +226,7 @@ pub struct VulkanShader<'a> {
     instance_count: u32,
     instance_states: [VulkanShaderInstanceState; VULKAN_MAX_MATERIAL_COUNT],
 }
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct VulkanGeometryData {
@@ -789,7 +797,11 @@ impl<'a> VulkanContext<'a> {
             depth_attachment = AttachmentDescription::default()
                 .format(depth_format)
                 .samples(SampleCountFlags::TYPE_1)
-                .load_op(AttachmentLoadOp::CLEAR)
+                .load_op(if has_previous_pass {
+                    AttachmentLoadOp::CLEAR
+                } else {
+                    AttachmentLoadOp::DONT_CARE
+                })
                 .store_op(AttachmentStoreOp::DONT_CARE)
                 .stencil_load_op(AttachmentLoadOp::DONT_CARE)
                 .stencil_store_op(AttachmentStoreOp::DONT_CARE)
@@ -897,6 +909,8 @@ impl<'a> VulkanContext<'a> {
                     float32: renderpass.clear_colour.data,
                 },
             };
+            clear_value_count += 1;
+        } else {
             clear_value_count += 1;
         }
         if renderpass
@@ -1183,12 +1197,17 @@ impl<'a> VulkanContext<'a> {
     pub fn create_texture(&self, name: &str, pixels: &[u8], texture: &mut Texture) -> Result<()> {
         let image_size: DeviceSize = (texture.width as u64
             * texture.height as u64
-            * texture.channel_count as u64) as DeviceSize;
+            * texture.channel_count as u64
+            * if texture.texture_type == TextureType::Cube {
+                6
+            } else {
+                1
+            }) as DeviceSize;
         let image_format = Format::R8G8B8A8_UNORM;
 
         texture.internal_data.image = VulkanImage::create(
             &self.instance,
-            ImageType::TYPE_2D,
+            texture.texture_type,
             texture.width,
             texture.height,
             image_format,
@@ -1280,6 +1299,7 @@ impl<'a> VulkanContext<'a> {
 
         texture.internal_data.image.transition_layout(
             &self.device,
+            texture.texture_type,
             &temp_command_buffer,
             image_format,
             ImageLayout::UNDEFINED,
@@ -1289,6 +1309,7 @@ impl<'a> VulkanContext<'a> {
 
         texture.internal_data.image.copy_from_buffer(
             &self.device,
+            texture.texture_type,
             &staging,
             &temp_command_buffer,
             0,
@@ -1296,6 +1317,7 @@ impl<'a> VulkanContext<'a> {
 
         texture.internal_data.image.transition_layout(
             &self.device,
+            texture.texture_type,
             &temp_command_buffer,
             image_format,
             ImageLayout::TRANSFER_DST_OPTIMAL,
@@ -1323,7 +1345,7 @@ impl<'a> VulkanContext<'a> {
 
         texture.internal_data.image = VulkanImage::create(
             &self.instance,
-            ImageType::TYPE_2D,
+            texture.texture_type,
             texture.width,
             texture.height,
             image_format,
@@ -1354,7 +1376,7 @@ impl<'a> VulkanContext<'a> {
         texture.internal_data.image.destroy(&self.device);
         texture.internal_data.image = VulkanImage::create(
             &self.instance,
-            ImageType::TYPE_2D,
+            texture.texture_type,
             new_width,
             new_height,
             Format::R8G8B8A8_UNORM,
@@ -1508,6 +1530,7 @@ impl<'a> VulkanContext<'a> {
     pub fn create_shader(
         &self,
         shader: &mut Shader<'a>,
+        shader_config: &ShaderConfig,
         renderpass_name: &str,
         stage_count: u8,
         stage_filenames: &Vec<String>,
@@ -1550,43 +1573,105 @@ impl<'a> VulkanContext<'a> {
                 .descriptor_count(4096),
         ];
 
-        let mut global_descriptor_set_config: VulkanDescriptorSetConfig =
-            VulkanDescriptorSetConfig {
-                binding_count: 0,
-                bindings: [DescriptorSetLayoutBinding::default(); VULKAN_SHADER_MAX_BINDINGS],
-            };
-        global_descriptor_set_config.bindings[BINDING_INDEX_UBO].binding = BINDING_INDEX_UBO as u32;
-        global_descriptor_set_config.bindings[BINDING_INDEX_UBO].descriptor_count = 1;
-        global_descriptor_set_config.bindings[BINDING_INDEX_UBO].descriptor_type =
-            DescriptorType::UNIFORM_BUFFER;
-        global_descriptor_set_config.bindings[BINDING_INDEX_UBO].stage_flags =
-            ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
-        global_descriptor_set_config.binding_count += 1;
+        shader.global_uniform_ct = 0;
+        shader.global_uniform_sampler_ct = 0;
+        shader.instance_uniform_ct = 0;
+        shader.instance_uniform_sampler_ct = 0;
+
+        for uniform in shader_config.uniforms.iter() {
+            match uniform.scope {
+                ShaderScope::Global => {
+                    if uniform.uniform_type == ShaderUniformType::Sampler {
+                        shader.global_uniform_sampler_ct += 1;
+                    } else {
+                        shader.global_uniform_ct += 1;
+                    }
+                }
+                ShaderScope::Instance => {
+                    if uniform.uniform_type == ShaderUniformType::Sampler {
+                        shader.instance_uniform_sampler_ct += 1;
+                    } else {
+                        shader.instance_uniform_ct += 1;
+                    }
+                }
+                ShaderScope::Local => {
+                    shader.local_uniform_ct += 1;
+                }
+                ShaderScope::Unknown => {
+                    return Err(VulkanBackendError::OperationFailed {
+                        issue: "shader scope Unknown",
+                        file: file!(),
+                        line: line!(),
+                    });
+                }
+            }
+        }
 
         let mut descriptor_count = 0;
         let mut vulkan_shader_config_descriptor_sets: [VulkanDescriptorSetConfig; 2] =
             [(); 2].map(|_| VulkanDescriptorSetConfig::default());
 
-        vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_GLOBAL] = global_descriptor_set_config;
-        descriptor_count += 1;
+        if shader.global_uniform_ct > 0 || shader.global_uniform_sampler_ct > 0 {
+            if shader.global_uniform_ct > 0 {
+                let binding_index =
+                    vulkan_shader_config_descriptor_sets[descriptor_count].binding_count as usize;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .binding = binding_index as u32;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_count = 1;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_type = DescriptorType::UNIFORM_BUFFER;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .stage_flags = ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
+                vulkan_shader_config_descriptor_sets[descriptor_count].binding_count += 1;
+            }
+            if shader.global_uniform_sampler_ct > 0 {
+                let binding_index =
+                    vulkan_shader_config_descriptor_sets[descriptor_count].binding_count as usize;
+                vulkan_shader_config_descriptor_sets[descriptor_count].sampler_binding_index =
+                    binding_index as u8;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .binding = binding_index as u32;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_count = shader.global_uniform_sampler_ct as u32;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_type = DescriptorType::COMBINED_IMAGE_SAMPLER;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .stage_flags = ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
+                vulkan_shader_config_descriptor_sets[descriptor_count].binding_count += 1;
+            }
+            descriptor_count += 1;
+        }
 
-        if shader.use_instances {
-            let mut instance_descriptor_set_config: VulkanDescriptorSetConfig =
-                VulkanDescriptorSetConfig {
-                    binding_count: 0,
-                    bindings: [DescriptorSetLayoutBinding::default(); VULKAN_SHADER_MAX_BINDINGS],
-                };
-            instance_descriptor_set_config.bindings[BINDING_INDEX_UBO].binding =
-                BINDING_INDEX_UBO as u32;
-            instance_descriptor_set_config.bindings[BINDING_INDEX_UBO].descriptor_count = 1;
-            instance_descriptor_set_config.bindings[BINDING_INDEX_UBO].descriptor_type =
-                DescriptorType::UNIFORM_BUFFER;
-            instance_descriptor_set_config.bindings[BINDING_INDEX_UBO].stage_flags =
-                ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
-            instance_descriptor_set_config.binding_count += 1;
-
-            vulkan_shader_config_descriptor_sets[DESC_SET_INDEX_INSTANCE] =
-                instance_descriptor_set_config;
+        if shader.instance_uniform_ct > 0 || shader.instance_uniform_sampler_ct > 0 {
+            if shader.instance_uniform_ct > 0 {
+                let binding_index =
+                    vulkan_shader_config_descriptor_sets[descriptor_count].binding_count as usize;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .binding = binding_index as u32;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_count = 1;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_type = DescriptorType::UNIFORM_BUFFER;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .stage_flags = ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
+                vulkan_shader_config_descriptor_sets[descriptor_count].binding_count += 1;
+            }
+            if shader.instance_uniform_sampler_ct > 0 {
+                let binding_index =
+                    vulkan_shader_config_descriptor_sets[descriptor_count].binding_count as usize;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .binding = binding_index as u32;
+                vulkan_shader_config_descriptor_sets[descriptor_count].sampler_binding_index =
+                    binding_index as u8;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_count = shader.instance_uniform_sampler_ct as u32;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .descriptor_type = DescriptorType::COMBINED_IMAGE_SAMPLER;
+                vulkan_shader_config_descriptor_sets[descriptor_count].bindings[binding_index]
+                    .stage_flags = ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
+                vulkan_shader_config_descriptor_sets[descriptor_count].binding_count += 1;
+            }
             descriptor_count += 1;
         }
 
@@ -1595,12 +1680,14 @@ impl<'a> VulkanContext<'a> {
             stages: vulkan_shader_config_stages,
             pool_sizes,
             max_descriptor_set_count: max_descriptor_allocate_count as u16,
-            descriptor_set_count: descriptor_count,
+            descriptor_set_count: descriptor_count as u8,
             descriptor_set_configs: vulkan_shader_config_descriptor_sets,
+            face_cull_mode: shader_config.face_cull_mode,
             attributes: [(); VULKAN_SHADER_MAX_ATTRIBUTES]
                 .map(|_| VertexInputAttributeDescription::default()),
         };
-        let vk_shader = self.initialize_shader(shader, vulkan_shader_config, renderpass_name)?;
+        let vk_shader =
+            self.initialize_shader(shader, shader_config, vulkan_shader_config, renderpass_name)?;
         shader.internal_data = ShaderInternalData::Vulkan(vk_shader);
         Ok(())
     }
@@ -1608,6 +1695,7 @@ impl<'a> VulkanContext<'a> {
     pub fn initialize_shader(
         &self,
         shader: &mut Shader<'a>,
+        shader_config: &ShaderConfig,
         mut vulkan_shader_config: VulkanShaderConfig<'a>,
         renderpass_name: &str,
     ) -> Result<VulkanShader<'a>> {
@@ -1655,30 +1743,6 @@ impl<'a> VulkanContext<'a> {
             offset += shader.attributes[i].size;
         }
 
-        let uniform_count = shader.uniforms.len();
-        for i in 0..uniform_count {
-            if shader.uniforms[i].uniform_type == ShaderUniformType::Sampler {
-                let set_index = if shader.uniforms[i].shader_scope == ShaderScope::Global {
-                    DESC_SET_INDEX_GLOBAL
-                } else {
-                    DESC_SET_INDEX_INSTANCE
-                };
-                let set_config = &mut vulkan_shader_config.descriptor_set_configs[set_index];
-                if set_config.binding_count < 2 {
-                    set_config.bindings[BINDING_INDEX_SAMPLER].binding =
-                        BINDING_INDEX_SAMPLER as u32;
-                    set_config.bindings[BINDING_INDEX_SAMPLER].descriptor_count = 1;
-                    set_config.bindings[BINDING_INDEX_SAMPLER].descriptor_type =
-                        DescriptorType::COMBINED_IMAGE_SAMPLER;
-                    set_config.bindings[BINDING_INDEX_SAMPLER].stage_flags =
-                        ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
-                    set_config.binding_count += 1;
-                } else {
-                    set_config.bindings[BINDING_INDEX_SAMPLER].descriptor_count += 1;
-                }
-            }
-        }
-
         let pool_info = DescriptorPoolCreateInfo::default()
             .max_sets(vulkan_shader_config.max_descriptor_set_count as u32)
             .pool_sizes(&vulkan_shader_config.pool_sizes)
@@ -1693,13 +1757,13 @@ impl<'a> VulkanContext<'a> {
         let mut descriptor_set_layout: [DescriptorSetLayout; 2] =
             [DescriptorSetLayout::default(); 2];
 
-        for (i, set_layout) in descriptor_set_layout.iter_mut().enumerate() {
+        for i in 0..vulkan_shader_config.descriptor_set_count {
             let mut layout_info = DescriptorSetLayoutCreateInfo::default();
             layout_info.p_bindings =
-                &vulkan_shader_config.descriptor_set_configs[i].bindings as *const _;
+                &vulkan_shader_config.descriptor_set_configs[i as usize].bindings as *const _;
             layout_info.binding_count =
-                vulkan_shader_config.descriptor_set_configs[i].binding_count as u32;
-            *set_layout = unsafe {
+                vulkan_shader_config.descriptor_set_configs[i as usize].binding_count as u32;
+            descriptor_set_layout[i as usize] = unsafe {
                 self.device
                     .device
                     .create_descriptor_set_layout(&layout_info, None)?
@@ -1735,12 +1799,13 @@ impl<'a> VulkanContext<'a> {
             shader.attribute_stride as u32,
             attribute_count as u32,
             &vulkan_shader_config.attributes,
-            2,
+            vulkan_shader_config.descriptor_set_count as u32,
             &descriptor_set_layout,
             vulkan_shader_config.stage_count as u32,
             &pipeline_create_infos,
             view_port,
             scissor,
+            shader_config.face_cull_mode,
             false,
             true,
             // &shader.push_constant_ranges,
@@ -1810,6 +1875,7 @@ impl<'a> VulkanContext<'a> {
         let bin_res = self.resource_system.borrow().load(
             &vulkan_shader_config.stages[index].file_name,
             ResourceType::Binary,
+            ResourceFlags::empty(),
         )?;
         let data = match bin_res.data {
             ResourceData::BinaryResourceData(ref items) => items,
@@ -2047,36 +2113,37 @@ impl<'a> VulkanContext<'a> {
 
         let mut descriptor_count = 0;
         let mut descriptor_index = 0;
-
-        let instance_ubo_generation = &mut object_state.descriptor_set_state.descriptor_states
-            [descriptor_index as usize]
-            .generations[self.in_flight_frames.current_frame];
-
         let buffer_info = DescriptorBufferInfo::default()
             .buffer(internal_data.uniform_buffer.buffer)
             .offset(shader.bound_ubo_offset as u64)
             .range(shader.ubo_stride as u64);
 
-        if *instance_ubo_generation == INVALID_ID as u8 {
-            let ubo_descriptor = WriteDescriptorSet::default()
-                .buffer_info(std::slice::from_ref(&buffer_info))
-                .dst_set(object_descriptor_set)
-                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .dst_binding(descriptor_index);
-            descriptor_writes[descriptor_count] = ubo_descriptor;
-            descriptor_count += 1;
-            *instance_ubo_generation = 1;
-        }
-        descriptor_index += 1;
+        if shader.instance_uniform_ct > 0 {
+            let instance_ubo_generation = &mut object_state.descriptor_set_state.descriptor_states
+                [descriptor_index as usize]
+                .generations[self.in_flight_frames.current_frame];
 
-        if internal_data.vulkan_shader_config.descriptor_set_configs[DESC_SET_INDEX_INSTANCE]
-            .binding_count
-            > 1
-        {
+            if *instance_ubo_generation == INVALID_ID as u8 {
+                let ubo_descriptor = WriteDescriptorSet::default()
+                    .buffer_info(std::slice::from_ref(&buffer_info))
+                    .dst_set(object_descriptor_set)
+                    .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                    .descriptor_count(1)
+                    .dst_binding(descriptor_index);
+                descriptor_writes[descriptor_count] = ubo_descriptor;
+                descriptor_count += 1;
+                *instance_ubo_generation = 1;
+            }
+            descriptor_index += 1;
+        }
+
+        if shader.instance_uniform_sampler_ct > 0 {
+            let binding_index: usize = internal_data.vulkan_shader_config.descriptor_set_configs
+                [DESC_SET_INDEX_INSTANCE]
+                .sampler_binding_index as usize;
             let total_sampler_count = internal_data.vulkan_shader_config.descriptor_set_configs
                 [DESC_SET_INDEX_INSTANCE]
-                .bindings[BINDING_INDEX_SAMPLER]
+                .bindings[binding_index]
                 .descriptor_count;
             let mut update_sampler_count = 0;
             let mut image_infos =
@@ -2120,31 +2187,23 @@ impl<'a> VulkanContext<'a> {
             descriptor_writes[descriptor_count] = sampler_descriptor;
             descriptor_count += 1;
         }
-
-        if descriptor_count == 1 {
-            unsafe {
-                self.device.device.update_descriptor_sets(
-                    std::slice::from_ref(descriptor_writes.first().unwrap()),
-                    &[],
-                );
-            }
-        } else if descriptor_count == 2 {
+        if descriptor_count > 0 {
             unsafe {
                 self.device
                     .device
-                    .update_descriptor_sets(&descriptor_writes, &[]);
+                    .update_descriptor_sets(&descriptor_writes[0..descriptor_count], &[]);
             }
-        }
 
-        unsafe {
-            self.device.device.cmd_bind_descriptor_sets(
-                self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
-                PipelineBindPoint::GRAPHICS,
-                internal_data.pipeline.layout,
-                1,
-                std::slice::from_ref(&object_descriptor_set),
-                &[],
-            );
+            unsafe {
+                self.device.device.cmd_bind_descriptor_sets(
+                    self.graphics_cmd_bufs.command_buffer[self.in_flight_frames.current_frame],
+                    PipelineBindPoint::GRAPHICS,
+                    internal_data.pipeline.layout,
+                    1,
+                    std::slice::from_ref(&object_descriptor_set),
+                    &[],
+                );
+            }
         }
 
         Ok(())
@@ -2226,10 +2285,13 @@ impl<'a> VulkanContext<'a> {
         }
 
         let instance_state = &mut internal_data.instance_states[instance_id as usize];
+        let binding_index = internal_data.vulkan_shader_config.descriptor_set_configs
+            [DESC_SET_INDEX_INSTANCE]
+            .sampler_binding_index as usize;
 
         let instance_texture_map_count = internal_data.vulkan_shader_config.descriptor_set_configs
             [DESC_SET_INDEX_INSTANCE]
-            .bindings[BINDING_INDEX_SAMPLER]
+            .bindings[binding_index]
             .descriptor_count;
 
         instance_state
@@ -2237,18 +2299,47 @@ impl<'a> VulkanContext<'a> {
             .reserve(instance_texture_map_count as usize);
         // NOTE: not sure if to use instance_texture_map_count or map.len()
         for i in 0..instance_texture_map_count {
+            // let debug_check = maps[i as usize];
             instance_state
                 .instance_texture_maps
                 .push((*maps[i as usize]).clone());
-            instance_state.instance_texture_maps[i as usize].texture_handle = self
-                .texture_system
-                .borrow_mut()
-                .acquire(DEFAULT_TEXTURE_NAME, true)
-                .map_err(|_| VulkanBackendError::OperationFailed {
-                    issue: "could not aquire default texture",
-                    file: file!(),
-                    line: line!(),
-                })?;
+            let texture_name = if maps[i as usize].texture_name.len() < 1 {
+                match maps[i as usize].use_type {
+                    TextureUse::Unknown => DEFAULT_TEXTURE_NAME,
+                    TextureUse::DiffuseMap => DEFAULT_TEXTURE_NAME,
+                    TextureUse::NormalMap => DEFAULT_TEXTURE_NORMAL_NAME,
+                    TextureUse::CubeMap => {
+                        return Err(VulkanBackendError::OperationFailed {
+                            issue: "cube map should have name",
+                            file: file!(),
+                            line: line!(),
+                        });
+                    }
+                    TextureUse::SpecularMap => DEFAULT_TEXTURE_SPECULAR_NAME,
+                }
+            } else {
+                &maps[i as usize].texture_name
+            };
+            instance_state.instance_texture_maps[i as usize].texture_handle =
+                if maps[i as usize].use_type != TextureUse::CubeMap {
+                    self.texture_system
+                        .borrow_mut()
+                        .acquire(texture_name, true)
+                        .map_err(|_| VulkanBackendError::OperationFailed {
+                            issue: "could not aquire default texture",
+                            file: file!(),
+                            line: line!(),
+                        })?
+                } else {
+                    self.texture_system
+                        .borrow_mut()
+                        .acquire_cube(texture_name, true)
+                        .map_err(|_| VulkanBackendError::OperationFailed {
+                            issue: "could not aquire default texture",
+                            file: file!(),
+                            line: line!(),
+                        })?
+                }
         }
 
         let set_state = &mut instance_state.descriptor_set_state;

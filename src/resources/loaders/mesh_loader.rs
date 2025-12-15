@@ -4,7 +4,9 @@ use std::path::Path;
 use crate::basic::filesystem::{FileHandle, FileModes};
 use crate::basic::math::vec4::Vec4;
 use crate::basic::math::{consts::INVALID_ID, vec2::Vec2, vec3::Vec3, vec3::Vector3D};
-use crate::resources::resource_types::{GeometryConfig, MaterialConfig, Resource, ResourceData};
+use crate::resources::resource_types::{
+    GeometryConfig, MaterialConfig, Resource, ResourceData, ResourceFlags,
+};
 use crate::systems::geometry_system::{geometry_deduplicate_vertices, geometry_generate_tangents};
 use crate::systems::resource_system::ResourceSysError;
 
@@ -58,7 +60,12 @@ pub struct MeshGroupData {
 pub struct MeshLoader;
 
 impl MeshLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+    pub fn load(
+        name: &str,
+        path: &str,
+        _flags: ResourceFlags,
+        base_path: &str,
+    ) -> Result<Resource> {
         const SUPPORTED_FILETYPE_COUNT: usize = 2;
         let supported_filetypes: [SupportedMeshFileTypes; 2] = [
             SupportedMeshFileTypes {

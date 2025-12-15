@@ -3,7 +3,7 @@ use crate::{
         filesystem::{FileHandle, FileModes},
         math::{consts::INVALID_ID, vec4::Vec4},
     },
-    resources::resource_types::{MaterialConfig, Resource, ResourceData},
+    resources::resource_types::{MaterialConfig, Resource, ResourceData, ResourceFlags},
     systems::resource_system::ResourceSysError,
 };
 
@@ -11,7 +11,12 @@ type Result<T> = std::result::Result<T, ResourceSysError>;
 pub struct MaterialLoader;
 
 impl MaterialLoader {
-    pub fn load(name: &str, path: &str, base_path: &str) -> Result<Resource> {
+    pub fn load(
+        name: &str,
+        path: &str,
+        _flags: ResourceFlags,
+        base_path: &str,
+    ) -> Result<Resource> {
         let full_path = format!("{}/{}/{}.{}", base_path, path, name, "gmt");
         let mut file_handle = FileHandle::open(&full_path, FileModes::READ, false)?;
         let mut config = MaterialConfig::default();

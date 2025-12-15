@@ -10,10 +10,13 @@ use ash::vk::{
     VertexInputAttributeDescription, VertexInputBindingDescription, VertexInputRate, Viewport,
 };
 
-use crate::renderer::vulkan::{
-    vulkan_backend::{VulkanBackendError, VulkanRenderPass},
-    vulkan_command_buffer::VulkanCommandBuffer,
-    vulkan_device::VulkanDevice,
+use crate::{
+    renderer::vulkan::{
+        vulkan_backend::{VulkanBackendError, VulkanRenderPass},
+        vulkan_command_buffer::VulkanCommandBuffer,
+        vulkan_device::VulkanDevice,
+    },
+    resources::resource_types::FaceCullMode,
 };
 
 type Result<T> = std::result::Result<T, VulkanBackendError>;
@@ -38,6 +41,7 @@ impl VulkanPipeline {
         stages: &[PipelineShaderStageCreateInfo],
         viewport: Viewport,
         scissor: Rect2D,
+        cull_mode: FaceCullMode,
         is_wireframe: bool,
         depth_test_enabled: bool,
         // push_constant_ranges: &[Range],
@@ -60,7 +64,12 @@ impl VulkanPipeline {
                 PolygonMode::FILL
             })
             .line_width(1.0)
-            .cull_mode(CullModeFlags::BACK)
+            .cull_mode(match cull_mode {
+                FaceCullMode::Back => CullModeFlags::BACK,
+                FaceCullMode::FrontAndBack => CullModeFlags::FRONT_AND_BACK,
+                FaceCullMode::Front => CullModeFlags::FRONT,
+                FaceCullMode::None => CullModeFlags::NONE,
+            })
             .front_face(FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false)
             .depth_bias_constant_factor(0.0)

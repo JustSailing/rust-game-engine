@@ -3,16 +3,16 @@ use crate::renderer::vulkan::{
 };
 
 //use crate::application::renderer::renderer_types::RenderTarget;
-use crate::resources::resource_types::{TextureData, TextureHandle};
+use crate::resources::resource_types::{TextureData, TextureHandle, TextureType};
 use crate::systems::texture_system::TextureSystem;
 use ash::{
     Instance,
     khr::{surface, swapchain},
     vk::{
         self, CompositeAlphaFlagsKHR, Extent2D, Fence, ImageAspectFlags, ImageSubresourceRange,
-        ImageTiling, ImageType, ImageUsageFlags, ImageViewCreateInfo, ImageViewType,
-        MemoryPropertyFlags, PresentInfoKHR, PresentModeKHR, Queue, Semaphore, SharingMode,
-        SurfaceFormatKHR, SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
+        ImageTiling, ImageUsageFlags, ImageViewCreateInfo, ImageViewType, MemoryPropertyFlags,
+        PresentInfoKHR, PresentModeKHR, Queue, Semaphore, SharingMode, SurfaceFormatKHR,
+        SurfaceKHR, SwapchainCreateInfoKHR, SwapchainKHR,
     },
 };
 use std::cell::RefCell;
@@ -265,7 +265,7 @@ impl VulkanSwapchain {
         let depth_texture_data = TextureData {
             image: VulkanImage::create(
                 instance,
-                ImageType::TYPE_2D,
+                TextureType::_2D,
                 swapchain_extent.width,
                 swapchain_extent.height,
                 device.depth_format,
@@ -602,7 +602,7 @@ impl VulkanSwapchain {
         let depth_texture_data = TextureData {
             image: VulkanImage::create(
                 instance,
-                ImageType::TYPE_2D,
+                TextureType::_2D,
                 swapchain_extent.width,
                 swapchain_extent.height,
                 device.depth_format,
