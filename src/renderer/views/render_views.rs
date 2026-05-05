@@ -255,8 +255,8 @@ impl RenderView for UIRenderView {
                         geo.material_instance_id,
                         &g.model,
                     )?;
-                } else {
-                    material_sys
+
+                     material_sys
                         .get_mut_material(g.geometry_handle)?
                         .render_frame_number = frame_number;
                 }

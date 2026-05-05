@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -19,8 +19,8 @@ use crate::basic::event::{EventCodes, EventCtx, EventSysError, EventSystem};
 use crate::basic::input::{InputState, InputSysError};
 use crate::basic::window::{Window, WindowError};
 use crate::renderer::frontend_renderer::{
-    BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_SKYBOX, BUILTIN_SHADER_NAME_UI, Renderer,
-    RendererError,
+    Renderer, RendererError, BUILTIN_SHADER_NAME_MATERIAL, BUILTIN_SHADER_NAME_SKYBOX,
+    BUILTIN_SHADER_NAME_UI,
 };
 use crate::renderer::renderer_types::{
     MeshPacketData, PacketData, RenderViewConfig, RenderViewKnownType, RenderViewMatrixViewSource,
@@ -324,7 +324,7 @@ impl<'a> ApplicationState<'a> {
             .height(0)
             .name("world")
             .passes(vec![
-                RenderViewPassConfig::default().name("Renderpass.Builtin.World"),
+                RenderViewPassConfig::default().name("Renderpass.Builtin.World")
             ])
             .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
         let world_view_handle = render_view_system.borrow_mut().create_view(&world)?;
@@ -335,7 +335,7 @@ impl<'a> ApplicationState<'a> {
             .height(0)
             .name("skybox")
             .passes(vec![
-                RenderViewPassConfig::default().name("Renderpass.Builtin.Skybox"),
+                RenderViewPassConfig::default().name("Renderpass.Builtin.Skybox")
             ])
             .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
 
@@ -347,7 +347,7 @@ impl<'a> ApplicationState<'a> {
             .height(0)
             .name("ui")
             .passes(vec![
-                RenderViewPassConfig::default().name("Renderpass.Builtin.UI"),
+                RenderViewPassConfig::default().name("Renderpass.Builtin.UI")
             ])
             .view_matrix_source(RenderViewMatrixViewSource::SceneCamera);
 
@@ -436,113 +436,111 @@ impl<'a> ApplicationState<'a> {
         };
 
         let ui_meshes = vec![Mesh {
-            geometries: vec![
-                geometry_system
-                    .borrow_mut()
-                    .acquire_from_config(ui_config, true)?,
-            ],
+            geometries: vec![geometry_system
+                .borrow_mut()
+                .acquire_from_config(ui_config, true)?],
             transform: Rc::new(RefCell::new(Transform::create())),
         }];
 
-        let mut cube_mesh = Mesh {
-            geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::create())),
-        };
+        //        let mut cube_mesh = Mesh {
+        //            geometries: Vec::new(),
+        //            transform: Rc::new(RefCell::new(Transform::create())),
+        //        };
+        //
+        //        let geo_config = geometry_system.borrow().generate_cube_config(
+        //            10.0,
+        //            10.0,
+        //            10.0,
+        //            1.0,
+        //            1.0,
+        //            "test_cube",
+        //            "test_material",
+        //            // BUILTIN_SHADER_NAME_MATERIAL,
+        //        )?;
+        //
+        //        cube_mesh.geometries.push(
+        //            geometry_system
+        //                .borrow_mut()
+        //                .acquire_from_config(geo_config, true)?,
+        //        );
+        //
+        //        let mut cube_mesh2 = Mesh {
+        //            geometries: Vec::new(),
+        //            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
+        //        };
+        //
+        //        Transform::set_parent(&cube_mesh2.transform, &cube_mesh.transform);
+        //
+        //        let geo_config2 = geometry_system.borrow().generate_cube_config(
+        //            5.0,
+        //            5.0,
+        //            5.0,
+        //            1.0,
+        //            1.0,
+        //            "test_cube2",
+        //            "test_material",
+        //            // BUILTIN_SHADER_NAME_MATERIAL,
+        //        )?;
+        //
+        //        let middle_cube = geometry_system
+        //            .borrow_mut()
+        //            .acquire_from_config(geo_config2, true)?;
+        //
+        //        cube_mesh2.geometries.push(middle_cube);
+        //
+        //        let mut cube_mesh3 = Mesh {
+        //            geometries: Vec::new(),
+        //            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(7.0, 0.0, 0.0)))),
+        //        };
+        //
+        //        Transform::set_parent(&cube_mesh3.transform, &cube_mesh2.transform);
+        //
+        //        let geo_config3 = geometry_system.borrow().generate_cube_config(
+        //            2.0,
+        //            2.0,
+        //            2.0,
+        //            1.0,
+        //            1.0,
+        //            "test_cube3",
+        //            "test_material",
+        //            // BUILTIN_SHADER_NAME_MATERIAL,
+        //        )?;
+        //
+        //        let little_cube = geometry_system
+        //            .borrow_mut()
+        //            .acquire_from_config(geo_config3, true)?;
+        //
+        //        cube_mesh3.geometries.push(little_cube);
 
-        let geo_config = geometry_system.borrow().generate_cube_config(
-            10.0,
-            10.0,
-            10.0,
-            1.0,
-            1.0,
-            "test_cube",
-            "test_material",
-            // BUILTIN_SHADER_NAME_MATERIAL,
-        )?;
-
-        cube_mesh.geometries.push(
-            geometry_system
-                .borrow_mut()
-                .acquire_from_config(geo_config, true)?,
-        );
-
-        let mut cube_mesh2 = Mesh {
-            geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
-        };
-
-        Transform::set_parent(&cube_mesh2.transform, &cube_mesh.transform);
-
-        let geo_config2 = geometry_system.borrow().generate_cube_config(
-            5.0,
-            5.0,
-            5.0,
-            1.0,
-            1.0,
-            "test_cube2",
-            "test_material",
-            // BUILTIN_SHADER_NAME_MATERIAL,
-        )?;
-
-        let middle_cube = geometry_system
-            .borrow_mut()
-            .acquire_from_config(geo_config2, true)?;
-
-        cube_mesh2.geometries.push(middle_cube);
-
-        let mut cube_mesh3 = Mesh {
-            geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(7.0, 0.0, 0.0)))),
-        };
-
-        Transform::set_parent(&cube_mesh3.transform, &cube_mesh2.transform);
-
-        let geo_config3 = geometry_system.borrow().generate_cube_config(
-            2.0,
-            2.0,
-            2.0,
-            1.0,
-            1.0,
-            "test_cube3",
-            "test_material",
-            // BUILTIN_SHADER_NAME_MATERIAL,
-        )?;
-
-        let little_cube = geometry_system
-            .borrow_mut()
-            .acquire_from_config(geo_config3, true)?;
-
-        cube_mesh3.geometries.push(little_cube);
-
-        let mut car_mesh = Mesh {
-            geometries: Vec::new(),
-            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
-        };
-
-        let mut resource =
-            resource_system
-                .borrow()
-                .load("falcon", ResourceType::Mesh, ResourceFlags::empty())?;
-
-        let geometry_configs = match resource.data {
-            ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
-            _ => {
-                return Err(AppError::OperationFailed {
-                    issue: "wrong resource data for falcon".to_string(),
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-        };
-
-        for geo_config in geometry_configs.iter_mut() {
-            car_mesh.geometries.push(
-                geometry_system
-                    .borrow_mut()
-                    .acquire_from_config(geo_config.clone(), true)?,
-            );
-        }
-        resource_system.borrow_mut().unload(&mut resource)?;
+        //        let mut car_mesh = Mesh {
+        //            geometries: Vec::new(),
+        //            transform: Rc::new(RefCell::new(Transform::from_pos(Vec3::new(15.0, 0.0, 0.0)))),
+        //        };
+        //
+        //        let mut resource =
+        //            resource_system
+        //                .borrow()
+        //                .load("falcon", ResourceType::Mesh, ResourceFlags::empty())?;
+        //
+        //        let geometry_configs = match resource.data {
+        //            ResourceData::MeshResourceData(ref mut geometry_configs) => geometry_configs,
+        //            _ => {
+        //                return Err(AppError::OperationFailed {
+        //                    issue: "wrong resource data for falcon".to_string(),
+        //                    file: file!(),
+        //                    line: line!(),
+        //                });
+        //            }
+        //        };
+        //
+        //        for geo_config in geometry_configs.iter_mut() {
+        //            car_mesh.geometries.push(
+        //                geometry_system
+        //                    .borrow_mut()
+        //                    .acquire_from_config(geo_config.clone(), true)?,
+        //            );
+        //        }
+        //        resource_system.borrow_mut().unload(&mut resource)?;
 
         let mut sponza_mesh = Mesh {
             geometries: Vec::new(),
@@ -611,10 +609,10 @@ impl<'a> ApplicationState<'a> {
         }
         resource_system.borrow_mut().unload(&mut resource)?;
         let meshes = vec![
-            cube_mesh,
-            cube_mesh2,
-            cube_mesh3,
-            car_mesh,
+            //           cube_mesh,
+            //           cube_mesh2,
+            //           cube_mesh3,
+            //           car_mesh,
             sponza_mesh,
             st_george,
         ];
@@ -797,10 +795,10 @@ impl<'a> ApplicationState<'a> {
 
                 self.renderer_system.borrow_mut().end_frame(delta)?;
 
-                let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 100.0 * delta, false);
-
-                self.meshes[0].transform.borrow_mut().rotate(quat);
-                self.meshes[1].transform.borrow_mut().rotate(quat);
+                //                let quat = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 100.0 * delta, false);
+                //
+                //                self.meshes[0].transform.borrow_mut().rotate(quat);
+                //                self.meshes[1].transform.borrow_mut().rotate(quat);
                 // self.meshes[2].transform.borrow_mut().rotate(quat);
 
                 let elapsed_since_last_frame = last_frame_time.elapsed();

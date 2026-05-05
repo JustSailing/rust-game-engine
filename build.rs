@@ -2,7 +2,6 @@ use core::panic;
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rustc-link-arg=-fuse-ld=mold");
     println!("cargo:rustc-link-lib=X11");
     println!("cargo:rustc-link-lib=vulkan");
     compile_shaders();

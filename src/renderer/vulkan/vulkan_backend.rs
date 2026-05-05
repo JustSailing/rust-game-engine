@@ -303,7 +303,7 @@ impl<'a> VulkanContext<'a> {
         let app_name = CString::new(backend_config.application_name.clone())?;
 
         let app_info = vk::ApplicationInfo::default()
-            .api_version(vk::make_api_version(0, 1, 3, 0))
+            .api_version(vk::make_api_version(0, 1, 4, 0))
             .application_name(app_name.as_c_str())
             .application_version(vk::make_api_version(0, 0, 1, 0))
             .engine_name(c"IronOxide")
@@ -1336,7 +1336,7 @@ impl<'a> VulkanContext<'a> {
             texture.generation = 0
         } else {
             texture.generation += 1
-        };
+        }
         Ok(())
     }
 
@@ -1363,7 +1363,7 @@ impl<'a> VulkanContext<'a> {
             texture.generation = 0
         } else {
             texture.generation += 1
-        };
+        }
         Ok(())
     }
 
@@ -1407,17 +1407,17 @@ impl<'a> VulkanContext<'a> {
         indices: &[U],
     ) -> Result<()> {
         let is_reupload = geometry.internal_id != INVALID_ID;
-        let mut old_range = VulkanGeometryData::default();
+        let mut _old_range = VulkanGeometryData::default();
         let mut internal_data: Option<&mut VulkanGeometryData> = None;
         if is_reupload {
             internal_data = Some(&mut self.geometries[geometry.internal_id]);
             let int_data = internal_data.as_mut().unwrap();
-            old_range.index_buffer_offset = int_data.index_buffer_offset;
-            old_range.index_count = int_data.index_count;
-            old_range.index_size = int_data.index_size;
-            old_range.vertex_buffer_offset = int_data.vertex_buffer_offset;
-            old_range.vertex_count = int_data.vertex_count;
-            old_range.vertex_size = int_data.vertex_size;
+            _old_range.index_buffer_offset = int_data.index_buffer_offset;
+            _old_range.index_count = int_data.index_count;
+            _old_range.index_size = int_data.index_size;
+            _old_range.vertex_buffer_offset = int_data.vertex_buffer_offset;
+            _old_range.vertex_count = int_data.vertex_count;
+            _old_range.vertex_size = int_data.vertex_size;
         } else {
             for (i, geo) in self.geometries.iter_mut().enumerate() {
                 if geo.id == INVALID_ID {
